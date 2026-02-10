@@ -290,10 +290,12 @@ func pressingDirection():
 	
 func moveSprite(dir):
 	if dir != Vector2.ZERO:
+		if heldTicks == 0:
+			UndoManager.save_state_continuous()
 		heldTicks += 1
 	else:
 		heldTicks = 0
-	
+
 	if heldTicks > 30 or heldTicks == 1:
 		var multiplier = 2
 		if heldTicks == 1:
@@ -304,10 +306,12 @@ func moveSprite(dir):
 
 func moveOrigin(dir):
 	if dir != Vector2.ZERO:
+		if origTick == 0:
+			UndoManager.save_state_continuous()
 		origTick += 1
 	else:
 		origTick = 0
-	
+
 	if origTick > 30 or origTick == 1:
 		var multiplier = 2
 		if origTick == 1:

@@ -290,7 +290,8 @@ func swapMode():
 	
 #Adds sprite object to scene
 func add_image(path):
-	
+	UndoManager.save_state()
+
 	var rand = RandomNumberGenerator.new()
 	var id = rand.randi()
 	
@@ -415,6 +416,7 @@ func _process_psd_thread(_delta):
 		psdImportDialog.visible = true
 
 func _on_psd_import_confirmed(selected_layers: Array, preserve_hierarchy: bool, canvas_size: Vector2):
+	UndoManager.save_state()
 	var canvas_center = canvas_size * 0.5
 	var sprites_added = []
 
@@ -457,6 +459,7 @@ func _on_load_button_pressed():
 
 #LOAD AVATAR
 func _on_load_dialog_file_selected(path):
+	UndoManager.save_state()
 	var data = Saving.read_save(path)
 	
 	if data == null:
@@ -605,7 +608,9 @@ func _on_replace_button_pressed():
 	$ReplaceDialog.visible = true
 
 func _on_replace_dialog_file_selected(path):
+	UndoManager.save_state()
 	Global.heldSprite.replaceSprite(path)
+	UndoManager.invalidate_image(Global.heldSprite.id)
 	Global.spriteList.updateData()
 	Global.pushUpdate("Replacing sprite with: " + path)
 
@@ -616,6 +621,7 @@ func _on_replace_dialog_visibility_changed():
 func _on_duplicate_button_pressed():
 	if Global.heldSprite == null:
 		return
+	UndoManager.save_state()
 	var rand = RandomNumberGenerator.new()
 	var id = rand.randi()
 	

@@ -105,10 +105,12 @@ func _process(delta):
 	
 	if main != null and heldSprite != null:
 		if Input.is_action_just_pressed("zDown"):
+			UndoManager.save_state()
 			heldSprite.z -= 1
 			heldSprite.setZIndex()
 			pushUpdate("Moved sprite layer.")
 		if Input.is_action_just_pressed("zUp"):
+			UndoManager.save_state()
 			heldSprite.z += 1
 			heldSprite.setZIndex()
 			pushUpdate("Moved sprite layer.")
@@ -142,6 +144,10 @@ func _process(delta):
 		if Input.is_action_pressed("control"):
 			if Input.is_action_just_pressed("saveImages"):
 				saveImagesFromData()
+			if Input.is_action_just_pressed("undo"):
+				UndoManager.undo()
+			if Input.is_action_just_pressed("redo"):
+				UndoManager.redo()
 	
 	
 func select(areas):
@@ -192,6 +198,7 @@ func select(areas):
 	spriteEdit.setImage()
 
 func linkSprite(sprite,newParent):
+	UndoManager.save_state()
 	if sprite == newParent:
 		reparentMode = false
 		
@@ -320,6 +327,7 @@ func refresh():
 	pushUpdate("Refreshed all sprites.")
 
 func unlinkSprite():
+	UndoManager.save_state()
 	if heldSprite == null:
 		return
 	if heldSprite.parentId == null:

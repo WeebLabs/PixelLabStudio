@@ -115,36 +115,43 @@ func _process(delta):
 
 
 func _on_drag_slider_value_changed(value):
+	UndoManager.save_state_continuous()
 	if Global.heldSprite != null:
 		$Slider/Label.text = "drag: " + str(value)
 		Global.heldSprite.dragSpeed = value
 
 
 func _on_x_frq_value_changed(value):
+	UndoManager.save_state_continuous()
 	$WobbleControl/xFrqLabel.text = "x frequency: " + str(value)
 	Global.heldSprite.xFrq = value
 	
 
 func _on_x_amp_value_changed(value):
+	UndoManager.save_state_continuous()
 	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(value)
 	Global.heldSprite.xAmp = value
 
 
 func _on_y_frq_value_changed(value):
+	UndoManager.save_state_continuous()
 	$WobbleControl/yFrqLabel.text = "y frequency: " + str(value)
 	Global.heldSprite.yFrq = value
 
 func _on_y_amp_value_changed(value):
+	UndoManager.save_state_continuous()
 	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(value)
 	Global.heldSprite.yAmp = value
 
 
 func _on_r_drag_value_changed(value):
+	UndoManager.save_state_continuous()
 	$Rotation/rDragLabel.text = "rotational drag: " + str(value)
 	Global.heldSprite.rdragStr = value
 
 
 func _on_speaking_pressed():
+	UndoManager.save_state()
 	var f = $Buttons/Speaking.frame
 	f = (f+1) % 3
 	
@@ -153,6 +160,7 @@ func _on_speaking_pressed():
 
 
 func _on_blinking_pressed():
+	UndoManager.save_state()
 	var f = $Buttons/Blinking.frame
 	f = (f+1) % 3
 	
@@ -161,12 +169,14 @@ func _on_blinking_pressed():
 
 
 func _on_trash_pressed():
+	UndoManager.save_state()
 	Global.heldSprite.queue_free()
 	Global.heldSprite = null
 	
 	Global.spriteList.updateData()
 
 func _on_unlink_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.parentId == null:
 		return
 	Global.unlinkSprite()
@@ -174,12 +184,14 @@ func _on_unlink_pressed():
 	
 
 func _on_rot_limit_min_value_changed(value):
+	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(value)
 	Global.heldSprite.rLimitMin = value
 	
 	changeRotLimit()
 
 func _on_rot_limit_max_value_changed(value):
+	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(value)
 	Global.heldSprite.rLimitMax = value
 	
@@ -218,6 +230,7 @@ func setLayerButtons():
 
 
 func _on_layer_button_1_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[0] == 0:
 		Global.heldSprite.costumeLayers[0] = 1
 	else:
@@ -226,6 +239,7 @@ func _on_layer_button_1_pressed():
 
 
 func _on_layer_button_2_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[1] == 0:
 		Global.heldSprite.costumeLayers[1] = 1
 	else:
@@ -234,6 +248,7 @@ func _on_layer_button_2_pressed():
 
 
 func _on_layer_button_3_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[2] == 0:
 		Global.heldSprite.costumeLayers[2] = 1
 	else:
@@ -242,6 +257,7 @@ func _on_layer_button_3_pressed():
 
 
 func _on_layer_button_4_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[3] == 0:
 		Global.heldSprite.costumeLayers[3] = 1
 	else:
@@ -250,6 +266,7 @@ func _on_layer_button_4_pressed():
 
 
 func _on_layer_button_5_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[4] == 0:
 		Global.heldSprite.costumeLayers[4] = 1
 	else:
@@ -257,6 +274,7 @@ func _on_layer_button_5_pressed():
 	setLayerButtons()
 
 func _on_layer_button_6_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[5] == 0:
 		Global.heldSprite.costumeLayers[5] = 1
 	else:
@@ -264,6 +282,7 @@ func _on_layer_button_6_pressed():
 	setLayerButtons()
 
 func _on_layer_button_7_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[6] == 0:
 		Global.heldSprite.costumeLayers[6] = 1
 	else:
@@ -271,6 +290,7 @@ func _on_layer_button_7_pressed():
 	setLayerButtons()
 
 func _on_layer_button_8_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[7] == 0:
 		Global.heldSprite.costumeLayers[7] = 1
 	else:
@@ -278,6 +298,7 @@ func _on_layer_button_8_pressed():
 	setLayerButtons()
 
 func _on_layer_button_9_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[8] == 0:
 		Global.heldSprite.costumeLayers[8] = 1
 	else:
@@ -285,6 +306,7 @@ func _on_layer_button_9_pressed():
 	setLayerButtons()
 
 func _on_layer_button_10_pressed():
+	UndoManager.save_state()
 	if Global.heldSprite.costumeLayers[9] == 0:
 		Global.heldSprite.costumeLayers[9] = 1
 	else:
@@ -318,19 +340,23 @@ func layerSelected():
 
 
 func _on_squash_value_changed(value):
+	UndoManager.save_state_continuous()
 	$Rotation/squashlabel.text = "squash: " + str(value)
 	Global.heldSprite.stretchAmount = value
 
 
 func _on_check_box_toggled(button_pressed):
+	UndoManager.save_state()
 	Global.heldSprite.ignoreBounce = button_pressed
 
 
 func _on_anim_speed_value_changed(value):
+	UndoManager.save_state_continuous()
 	$Animation/animSpeedLabel.text = "animation speed: " + str(value)
 	Global.heldSprite.animSpeed = value
 
 func _on_anim_frames_value_changed(value):
+	UndoManager.save_state_continuous()
 	$Animation/animFramesLabel.text = "sprite frames: " + str(value)
 	Global.heldSprite.frames = value
 	spriteSpin.hframes = Global.heldSprite.frames
@@ -338,15 +364,18 @@ func _on_anim_frames_value_changed(value):
 
 
 func _on_clip_linked_toggled(button_pressed):
+	UndoManager.save_state()
 	Global.heldSprite.setClip(button_pressed)
 
 
 func _on_delete_pressed():
+	UndoManager.save_state()
 	Global.heldSprite.toggle = "null"
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 	Global.heldSprite.makeVis()
 
 func _on_set_toggle_pressed():
+	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
 	await Global.main.fatfuckingballs
 	
