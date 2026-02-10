@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://dcjecs1r85i3f"]
+
+[ext_resource type="Script" uid="uid://d38qy6cwewv7a" path="res://ui_scenes/psdImport/psd_import_dialog.gd" id="1_script"]
+
+[node name="PSDImportDialog" type="Node2D"]
+visible = false
+script = ExtResource("1_script")

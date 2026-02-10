@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://b4v5uvwp3q4dh"]
 
-[ext_resource type="Script" path="res://ui_scenes/selectedSprite/spriteObject.gd" id="1_r8clt"]
+[ext_resource type="Script" uid="uid://d3pxkrwc3wcbt" path="res://ui_scenes/selectedSprite/spriteObject.gd" id="1_r8clt"]
 [ext_resource type="Texture2D" uid="uid://b0qvkbedini2y" path="res://ui_scenes/selectedSprite/origin.png" id="4_i4lmg"]
 
 [node name="Sprite" type="Node2D" groups=["saved"]]

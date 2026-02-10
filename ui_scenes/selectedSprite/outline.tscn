@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://brka0vhju0bi3"]
 
-[ext_resource type="Shader" path="res://ui_scenes/selectedSprite/outline.gdshader" id="1_5obyk"]
+[ext_resource type="Shader" uid="uid://sl1gjt3np3uw" path="res://ui_scenes/selectedSprite/outline.gdshader" id="1_5obyk"]
 [ext_resource type="Texture2D" uid="uid://c4ie3egchfcg0" path="res://ui_scenes/selectedSprite/shader.png" id="2_7nkk4"]
 
 [sub_resource type="Gradient" id="Gradient_dhq1b"]
@@ -14,9 +14,9 @@ width = 128
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_td48g"]
 shader = ExtResource("1_5obyk")
 shader_parameter/speed = 0.0
-shader_parameter/palette_speed = 1.3
 shader_parameter/backImg = ExtResource("2_7nkk4")
 shader_parameter/palette = SubResource("GradientTexture1D_ly2o5")
+shader_parameter/palette_speed = 1.3
 
 [node name="Line2D" type="Line2D"]
 z_index = 2096

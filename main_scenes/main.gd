@@ -16,6 +16,8 @@ var editMode = true
 @onready var replaceDialog = $ReplaceDialog
 @onready var saveDialog = $SaveDialog
 @onready var loadDialog = $LoadDialog
+@onready var psdDialog = $PSDFileDialog
+@onready var psdImportDialog = $PSDImportDialog
 
 @onready var lines = $Lines
 
@@ -42,6 +44,10 @@ var bounceOnCostumeChange = false
 
 #Zooming
 var scaleOverall = 100
+
+#Camera Pan
+var _panning = false
+var _pan_offset = Vector2.ZERO
 
 var bounceChange = 0.0
 
@@ -149,8 +155,21 @@ func _process(delta):
 	zoomScene()
 	
 	fileSystemOpen = isFileSystemOpen()
-	
+
+	_process_psd_thread(delta)
+	panCamera()
 	followShadow()
+
+func _unhandled_input(event):
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			_panning = event.pressed
+	elif event is InputEventMouseMotion and _panning:
+		_pan_offset -= event.relative / camera.zoom
+		onWindowSizeChange()
+
+func panCamera():
+	camera.position = origin.position + _pan_offset
 
 func followShadow():
 	shadow.visible = is_instance_valid(Global.heldSprite)
@@ -167,12 +186,15 @@ func followShadow():
 	
 
 func isFileSystemOpen():
-	for obj in [replaceDialog,fileDialog,saveDialog,loadDialog]:
+	for obj in [replaceDialog,fileDialog,saveDialog,loadDialog,psdDialog]:
 		if obj.visible:
 			if obj == replaceDialog:
 				return true
 			Global.heldSprite = null
 			return true
+	if psdImportDialog.visible:
+		Global.heldSprite = null
+		return true
 	return false
 
 #Displays control panel whether or not application is focused
@@ -198,7 +220,7 @@ func onWindowSizeChange():
 	lines.position = s*0.5
 	lines.drawLine()
 	
-	camera.position = origin.position
+	camera.position = origin.position + _pan_offset
 	controlPanel.position = camera.position + (s/(camera.zoom*2.0))
 	tutorial.position = controlPanel.position
 	editControls.position = camera.position - (s/(camera.zoom*2.0))
@@ -282,6 +304,142 @@ func add_image(path):
 	
 	Global.pushUpdate("Added new sprite.")
 	
+func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector2):
+	var rand = RandomNumberGenerator.new()
+	var id = rand.randi()
+
+	var sprite = spriteObject.instantiate()
+	sprite.loadedImage = img
+	sprite.path = "psd://" + layer_name
+	sprite.id = id
+	origin.add_child(sprite)
+	sprite.position = canvas_position
+
+	return sprite
+
+func _on_psd_import_button_pressed():
+	psdDialog.visible = true
+
+var _psd_parser: PSDParser = null
+var _psd_thread: Thread = null
+var _psd_result = null
+var _psd_progress_dialog: Node2D = null
+
+func _on_psd_dialog_file_selected(path):
+	_psd_parser = PSDParser.new()
+	_psd_result = null
+
+	# Show progress bar
+	_psd_progress_dialog = _create_psd_progress_dialog()
+	add_child(_psd_progress_dialog)
+
+	# Run parser in a thread
+	_psd_thread = Thread.new()
+	_psd_thread.start(func(): return _psd_parser.parse(path))
+
+func _create_psd_progress_dialog() -> Node2D:
+	var dialog = Node2D.new()
+	dialog.z_index = 4095
+	dialog.position = camera.position
+
+	var overlay = ColorRect.new()
+	overlay.position = Vector2(-960, -540)
+	overlay.size = Vector2(1920, 1080)
+	overlay.color = Color(0, 0, 0, 0.5)
+	dialog.add_child(overlay)
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-160, -50)
+	bg.size = Vector2(320, 100)
+	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	dialog.add_child(bg)
+
+	var label = Label.new()
+	label.name = "StatusLabel"
+	label.position = Vector2(-150, -40)
+	label.size = Vector2(300, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.text = "Loading PSD..."
+	dialog.add_child(label)
+
+	var bar = ProgressBar.new()
+	bar.name = "ProgressBar"
+	bar.position = Vector2(-140, 0)
+	bar.size = Vector2(280, 24)
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	dialog.add_child(bar)
+
+	var blocker = Area2D.new()
+	blocker.add_to_group("penis")
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(3840, 2160)
+	col.shape = shape
+	blocker.add_child(col)
+	dialog.add_child(blocker)
+
+	dialog.set_process(true)
+	return dialog
+
+func _process_psd_thread(_delta):
+	if _psd_thread == null or _psd_parser == null:
+		return
+	if _psd_progress_dialog == null:
+		return
+
+	# Update progress bar
+	_psd_progress_dialog.get_node("ProgressBar").value = _psd_parser.progress
+	_psd_progress_dialog.get_node("StatusLabel").text = _psd_parser.status_text
+
+	# Check if thread is done
+	if !_psd_thread.is_alive():
+		_psd_result = _psd_thread.wait_to_finish()
+		_psd_thread = null
+
+		# Remove progress dialog
+		_psd_progress_dialog.queue_free()
+		_psd_progress_dialog = null
+
+		var result = _psd_result
+		_psd_result = null
+		_psd_parser = null
+
+		if result.error != "":
+			Global.pushUpdate("PSD Error: " + result.error)
+			Global.epicFail(ERR_INVALID_DATA)
+			return
+
+		psdImportDialog.setup(result)
+		psdImportDialog.visible = true
+
+func _on_psd_import_confirmed(selected_layers: Array, preserve_hierarchy: bool, canvas_size: Vector2):
+	var canvas_center = canvas_size * 0.5
+	var sprites_added = []
+
+	for layer in selected_layers:
+		var layer_center = Vector2(
+			(layer.left + layer.right) * 0.5,
+			(layer.top + layer.bottom) * 0.5
+		)
+		var pos = layer_center - canvas_center
+		var sprite = add_image_from_data(layer.image, layer.name, pos)
+		sprites_added.append(sprite)
+
+	if preserve_hierarchy and sprites_added.size() > 1:
+		# Wait for sprites to initialize before linking
+		await get_tree().create_timer(0.2).timeout
+		for i in range(1, sprites_added.size()):
+			if is_instance_valid(sprites_added[i]) and is_instance_valid(sprites_added[0]):
+				Global.linkSprite(sprites_added[i], sprites_added[0])
+
+	Global.spriteList.updateData()
+	Global.pushUpdate("Imported " + str(sprites_added.size()) + " layers from PSD.")
+
+func _on_psd_import_cancelled():
+	Global.pushUpdate("PSD import cancelled.")
+
 #Opens File Dialog
 func _on_add_button_pressed():
 	fileDialog.visible = true

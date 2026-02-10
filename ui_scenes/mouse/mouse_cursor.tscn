@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://fxku5nddarp8"]
 
-[ext_resource type="Script" path="res://ui_scenes/mouse/mouse_cursor.gd" id="1_t6obd"]
+[ext_resource type="Script" uid="uid://cmyjn353yhxfk" path="res://ui_scenes/mouse/mouse_cursor.gd" id="1_t6obd"]
 [ext_resource type="Texture2D" uid="uid://23rqddatjku3" path="res://ui_scenes/mouse/tooltipBox.png" id="2_qcn8h"]
 [ext_resource type="FontFile" uid="uid://ukj8gv8ucqsg" path="res://font/goober_pixel.ttf" id="3_v627m"]
 

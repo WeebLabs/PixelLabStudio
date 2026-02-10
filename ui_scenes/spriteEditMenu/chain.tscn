@@ -1,7 +1,7 @@
 [gd_scene load_steps=8 format=3 uid="uid://6ah4i0nx1tu6"]
 
-[ext_resource type="Script" path="res://ui_scenes/spriteEditMenu/chain.gd" id="1_66udn"]
-[ext_resource type="Shader" path="res://ui_scenes/spriteEditMenu/chain.gdshader" id="2_58fpx"]
+[ext_resource type="Script" uid="uid://bp66p3xxb66ht" path="res://ui_scenes/spriteEditMenu/chain.gd" id="1_66udn"]
+[ext_resource type="Shader" uid="uid://dbev2qtbxj5ah" path="res://ui_scenes/spriteEditMenu/chain.gdshader" id="2_58fpx"]
 [ext_resource type="Texture2D" uid="uid://7antbeiop3my" path="res://ui_scenes/spriteEditMenu/buh.png" id="3_rsife"]
 [ext_resource type="Texture2D" uid="uid://cc5kaiuc8ikpx" path="res://ui_scenes/spriteEditMenu/plug.png" id="4_gywbm"]
 
@@ -14,9 +14,9 @@ gradient = SubResource("Gradient_bmcbo")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_12eg4"]
 shader = ExtResource("2_58fpx")
-shader_parameter/speed = null
-shader_parameter/palette_speed = 1.0
+shader_parameter/speed = 0.0
 shader_parameter/palette = SubResource("GradientTexture1D_vomwt")
+shader_parameter/palette_speed = 1.0
 
 [node name="Chain" type="Node2D"]
 script = ExtResource("1_66udn")

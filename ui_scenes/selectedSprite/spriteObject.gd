@@ -8,6 +8,7 @@ var tex = null
 @export var path = ""
 
 var loadedImageData = null
+var loadedImage: Image = null  # Direct in-memory Image (for PSD import)
 
 var id = 0
 var parentId = null
@@ -87,22 +88,26 @@ func _ready():
 	Global.main.spriteVisToggles.connect(visToggle)
 	
 	var img = Image.new()
-	var err = img.load(path)
-	if err != OK:
-		#Runs if image import fails. Needs error dialog box at some point
-		if loadedImageData == null:
-			Global.epicFail(err)
-			print_debug("Failed to load image.")
-			queue_free()
-			return
-		else:
-			var data = Marshalls.base64_to_raw(loadedImageData)
-			var errr = img.load_png_from_buffer(data)
-			if errr != OK:
+	if loadedImage != null:
+		img = loadedImage
+		loadedImage = null
+	else:
+		var err = img.load(path)
+		if err != OK:
+			#Runs if image import fails. Needs error dialog box at some point
+			if loadedImageData == null:
 				Global.epicFail(err)
 				print_debug("Failed to load image.")
 				queue_free()
 				return
+			else:
+				var data = Marshalls.base64_to_raw(loadedImageData)
+				var errr = img.load_png_from_buffer(data)
+				if errr != OK:
+					Global.epicFail(err)
+					print_debug("Failed to load image.")
+					queue_free()
+					return
 		
 	var texture = ImageTexture.new()
 	texture = ImageTexture.create_from_image(img)
