@@ -17,7 +17,8 @@ func _process(delta):
 			visible = false
 		global_position = get_global_mouse_position()
 		if Input.is_action_just_pressed("mouse_left"):
-			Global.select(area.get_overlapping_areas())
+			if !Global.originMode:
+				Global.select(area.get_overlapping_areas())
 	else:
 		visible = false
 	

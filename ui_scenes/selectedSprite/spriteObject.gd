@@ -48,6 +48,10 @@ var dragSpeed = 0
 #Origin
 var origTick = 0
 var offset = Vector2.ZERO
+var _origin_dragging = false
+var _origin_drag_start_mouse_local = Vector2.ZERO
+var _origin_drag_start_offset = Vector2.ZERO
+var _origin_drag_start_pos = Vector2.ZERO
 
 #Wobble
 var xFrq = 0.0
@@ -244,7 +248,12 @@ func _process(delta):
 		grabDelay -= 1
 	
 	talkBlink()
-	
+
+	if Global.originMode and Global.heldSprite == self:
+		var mouse_pos = get_global_mouse_position()
+		if mouse_pos.distance_to(sprite.global_position) <= 24.0:
+			Global.mouse.text = "Drag origin"
+
 	animation()
 
 func animation():
@@ -271,12 +280,42 @@ func talkBlink():
 func delete():
 	queue_free()
 
+func _input(event):
+	if !Global.originMode or Global.heldSprite != self:
+		_origin_dragging = false
+		return
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			var gizmo_center = sprite.global_position
+			var mouse_pos = get_global_mouse_position()
+			if mouse_pos.distance_to(gizmo_center) <= 24.0:
+				UndoManager.save_state()
+				_origin_dragging = true
+				_origin_drag_start_mouse_local = get_parent().to_local(mouse_pos)
+				_origin_drag_start_offset = offset
+				_origin_drag_start_pos = position
+				get_viewport().set_input_as_handled()
+		else:
+			_origin_dragging = false
+
+	elif event is InputEventMouseMotion and _origin_dragging:
+		var mouse_local = get_parent().to_local(get_global_mouse_position())
+		var delta = mouse_local - _origin_drag_start_mouse_local
+		position = _origin_drag_start_pos + delta
+		position = Vector2(int(position.x), int(position.y))
+		offset = _origin_drag_start_offset - delta
+		offset = Vector2(int(offset.x), int(offset.y))
+		sprite.offset = offset
+		grabArea.position = (size * -0.5) + offset
+		get_viewport().set_input_as_handled()
+
 func _physics_process(delta):
 	if Global.heldSprite == self:
 		var dir = pressingDirection()
 		if Input.is_action_pressed("origin"):
 			moveOrigin(dir)
-		else:
+		elif !Global.originMode:
 			moveSprite(dir)
 	else:
 		set_physics_process(false)
@@ -319,9 +358,9 @@ func moveOrigin(dir):
 
 		offset += dir * multiplier
 		position -= dir * multiplier
-		
+
 	offset = Vector2(int(offset.x),int(offset.y))
-	
+
 	sprite.offset = offset
 	grabArea.position = (size*-0.5) + offset
 

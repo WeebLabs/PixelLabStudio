@@ -18,6 +18,8 @@ var lastArray = []
 var i = 0
 
 var reparentMode = false
+var originMode = false
+var _origin_press_time = 0
 var scrollSelection = 0
 
 var backgroundColor = Color(0.0,0.0,0.0,0.0) 
@@ -117,15 +119,30 @@ func _process(delta):
 		if main.editMode:
 			if Input.is_action_just_pressed("reparent"):
 				reparentMode = !reparentMode
+				originMode = false
 				Global.chain.enable(reparentMode)
-				
+			if Input.is_action_just_pressed("origin"):
+				_origin_press_time = Time.get_ticks_msec()
+			if Input.is_action_just_released("origin"):
+				if Time.get_ticks_msec() - _origin_press_time < 300:
+					originMode = !originMode
+					reparentMode = false
+					chain.enable(false)
+					if originMode:
+						pushUpdate("Origin adjustment mode.")
+					else:
+						pushUpdate("Exited origin adjustment mode.")
+
 	else:
 		reparentMode = false
+		originMode = false
 		Global.chain.enable(reparentMode)
 	
 	if main.editMode:
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color.POWDER_BLUE)
+		elif originMode or (heldSprite != null and Input.is_action_pressed("origin")):
+			RenderingServer.set_default_clear_color(Color(0.4, 0.55, 0.4))
 		else:
 			RenderingServer.set_default_clear_color(Color.GRAY)
 
@@ -163,6 +180,7 @@ func select(areas):
 	var prevSpr = heldSprite
 	if areas.size() <= 0:
 		heldSprite = null
+		originMode = false
 		i = 0
 		lastArray = []
 		return
@@ -232,7 +250,10 @@ func linkSprite(sprite,newParent):
 	newParent.set_physics_process(true)
 
 func scrollSprites():
-	
+
+	if originMode:
+		return
+
 	if Input.is_action_pressed("control"):
 		return
 	
