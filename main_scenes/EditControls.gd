@@ -24,8 +24,14 @@ extends Node2D
 @onready var psdButton = $ImportPSD/psdButton
 @onready var psdSprite = $ImportPSD/Fancy
 
-@onready var buttons = [addButton,linkButton,exitButton,saveButton,loadButton,repButton,dupButton,psdButton]
-@onready var sprites = [addSprite,linkSprite,exitSprite,saveSprite,loadSprite,repSprite,dupSprite,psdSprite]
+@onready var clearButton = $ClearAvatar/clearButton
+@onready var clearSprite = $ClearAvatar/Fancy
+
+@onready var resetButton = $ResetAvatar/resetButton
+@onready var resetSprite = $ResetAvatar/Fancy
+
+@onready var buttons = [addButton,linkButton,exitButton,saveButton,loadButton,repButton,dupButton,psdButton,clearButton,resetButton]
+@onready var sprites = [addSprite,linkSprite,exitSprite,saveSprite,loadSprite,repSprite,dupSprite,psdSprite,clearSprite,resetSprite]
 
 func _process(delta):
 	var s = 0
@@ -53,6 +59,10 @@ func _process(delta):
 					Global.mouse.text = "Duplicate sprite"
 				7:
 					Global.mouse.text = "Import PSD"
+				8:
+					Global.mouse.text = "Clear avatar"
+				9:
+					Global.mouse.text = "Reset avatar"
 
 		else:
 			sprites[s].scale = lerp(sprites[s].scale,Vector2(1.0,1.0),0.2)

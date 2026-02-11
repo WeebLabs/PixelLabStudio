@@ -230,10 +230,15 @@ func replaceSprite(pathNew):
 func _process(delta):
 	tick += 1
 	if Global.heldSprite == self:
-		
+
 		grabArea.visible = true
 		originSprite.visible = true
-		
+
+		var cam_zoom = Global.main.camera.zoom.x
+		for child in grabArea.get_children():
+			if child is Line2D:
+				child.width = 3.0 / cam_zoom
+
 	else:
 		grabArea.visible = false
 		originSprite.visible = false
@@ -369,6 +374,17 @@ func moveOrigin(dir):
 
 	sprite.offset = offset
 	grabArea.position = (size*-0.5) + offset
+
+func snapOriginToMouse():
+	var mouse_pos = get_global_mouse_position()
+	var new_pos = get_parent().to_local(mouse_pos)
+	new_pos = Vector2(int(new_pos.x), int(new_pos.y))
+	var delta = new_pos - position
+	position = new_pos
+	offset -= delta
+	offset = Vector2(int(offset.x), int(offset.y))
+	sprite.offset = offset
+	grabArea.position = (size * -0.5) + offset
 
 func drag(delta):
 	if dragSpeed == 0:

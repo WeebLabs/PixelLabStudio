@@ -37,6 +37,7 @@ var blinkTick = 0
 var currentMicrophone = null
 
 var speaking = false
+var micMuted = false
 var spectrum
 var volume = 0
 var volumeSensitivity = 0.0
@@ -106,7 +107,13 @@ func _process(delta):
 	
 	var prev = speaking
 	speaking = volumeSensitivity > senseLimit
-	
+
+	if micMuted:
+		speaking = false
+
+	if Input.is_action_pressed("simMic"):
+		speaking = true
+
 	if prev != speaking:
 		if speaking:
 			emit_signal("startSpeaking")
@@ -131,14 +138,21 @@ func _process(delta):
 				Global.chain.enable(reparentMode)
 			if Input.is_action_just_pressed("origin"):
 				_origin_press_time = Time.get_ticks_msec()
-			if Input.is_action_just_released("origin"):
-				if Time.get_ticks_msec() - _origin_press_time < 300:
-					originMode = !originMode
+			if Input.is_action_pressed("origin") and !originMode:
+				if Time.get_ticks_msec() - _origin_press_time >= 300:
+					originMode = true
 					reparentMode = false
 					chain.enable(false)
+					pushUpdate("Origin adjustment mode.")
+			if Input.is_action_just_released("origin"):
+				if Time.get_ticks_msec() - _origin_press_time < 300:
+					if heldSprite != null:
+						UndoManager.save_state()
+						heldSprite.snapOriginToMouse()
+						pushUpdate("Snapped origin to cursor.")
+				else:
 					if originMode:
-						pushUpdate("Origin adjustment mode.")
-					else:
+						originMode = false
 						pushUpdate("Exited origin adjustment mode.")
 
 	else:
@@ -149,7 +163,7 @@ func _process(delta):
 	if main.editMode:
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color.POWDER_BLUE)
-		elif originMode or (heldSprite != null and Input.is_action_pressed("origin")):
+		elif originMode:
 			RenderingServer.set_default_clear_color(Color(0.4, 0.55, 0.4))
 		else:
 			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))

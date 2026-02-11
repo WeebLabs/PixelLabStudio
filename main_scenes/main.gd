@@ -69,7 +69,9 @@ func _ready():
 	screen_scale = DisplayServer.screen_get_scale()
 
 	Global.connect("startSpeaking",onSpeak)
-	
+
+	$ControlPanel/MicButtong/Button.gui_input.connect(_on_mic_button_gui_input)
+
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 	
 	if Saving.settings["newUser"]:
@@ -767,6 +769,16 @@ func _on_button_pressed():
 	$ControlPanel/MicInputSelect.visible = !$ControlPanel/MicInputSelect.visible
 	settingsMenu.visible = false
 
+func _on_mic_button_gui_input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		Global.micMuted = !Global.micMuted
+		if Global.micMuted:
+			$ControlPanel/MicButtong.modulate = Color(1, 0.3, 0.3)
+			Global.pushUpdate("Microphone muted.")
+		else:
+			$ControlPanel/MicButtong.modulate = Color(1, 1, 1)
+			Global.pushUpdate("Microphone unmuted.")
+
 
 func _on_settings_buttons_pressed():
 	settingsMenu.visible = !settingsMenu.visible
@@ -820,3 +832,22 @@ func bgInputSprite(node, keys_pressed):
 		return
 	
 	spriteVisToggles.emit(keyStrings)
+
+func _on_clear_avatar_pressed():
+	UndoManager.save_state()
+	Global.heldSprite = null
+	origin.queue_free()
+	var new = Node2D.new()
+	$OriginMotion.add_child(new)
+	origin = new
+	Global.spriteList.updateData()
+	onWindowSizeChange()
+	Global.pushUpdate("Cleared avatar.")
+
+func _on_reset_avatar_pressed():
+	var path = Saving.settings["lastAvatar"]
+	if path == null or path == "":
+		Global.pushUpdate("No avatar to reset.")
+		return
+	_on_load_dialog_file_selected(path)
+	Global.pushUpdate("Reset avatar to last saved state.")

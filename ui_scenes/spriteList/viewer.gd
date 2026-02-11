@@ -10,10 +10,13 @@ func updateData():
 	clearContainer()
 	await get_tree().create_timer(0.15).timeout
 	var spritesAll = get_tree().get_nodes_in_group("saved")
-	
+
+	# Sort by z descending so front layers appear at the top
+	spritesAll.sort_custom(func(a, b): return a.z > b.z)
+
 	var spritesWithParents = []
 	var allSprites = []
-	
+
 	for sprite in spritesAll:
 		var listObj = spriteListObject.instantiate()
 		listObj.spritePath = sprite.path
@@ -22,9 +25,9 @@ func updateData():
 		if sprite.parentSprite != null:
 			spritesWithParents.append(listObj)
 		allSprites.append(listObj)
-		
+
 		container.add_child(listObj)
-	
+
 	for child in spritesWithParents:
 		var parentListObj = null
 		var index = 0
@@ -36,13 +39,13 @@ func updateData():
 				break
 		child.parentTag = parentListObj
 		container.move_child(child,index)
-	
+
 	for sprite in allSprites:
 		sprite.updateChildren()
-	
+
 	for child in spritesWithParents:
 		child.updateIndent()
-	
+
 func clearContainer():
 	for i in container.get_children():
 		i.queue_free()
@@ -50,7 +53,6 @@ func clearContainer():
 func updateAllVisible():
 	for i in container.get_children():
 		i.updateVis()
-
 
 func _on_toggle_visibility_pressed():
 	$NinePatchRect.visible = !$NinePatchRect.visible
