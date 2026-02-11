@@ -53,6 +53,9 @@ func _snapshot() -> Dictionary:
 			data[idx]["animSpeed"] = child.animSpeed
 			data[idx]["clipped"] = child.clipped
 			data[idx]["toggle"] = child.toggle
+			data[idx]["eyeTrack"] = child.eyeTrack
+			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
+			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
 		idx += 1
 	return data
 
@@ -158,6 +161,12 @@ func _restore(data: Dictionary):
 			sprite.setClip(d["clipped"])
 		if d.has("toggle"):
 			sprite.toggle = d["toggle"]
+		if d.has("eyeTrack"):
+			sprite.eyeTrack = d["eyeTrack"]
+		if d.has("eyeTrackDistance"):
+			sprite.eyeTrackDistance = d["eyeTrackDistance"]
+		if d.has("eyeTrackSpeed"):
+			sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
 
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
@@ -206,6 +215,9 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("imageData"): sprite.loadedImageData = d["imageData"]
 	if d.has("clipped"): sprite.clipped = d["clipped"]
 	if d.has("toggle"): sprite.toggle = d["toggle"]
+	if d.has("eyeTrack"): sprite.eyeTrack = d["eyeTrack"]
+	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
+	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
 	Global.main.origin.add_child(sprite)
 	sprite.position = str_to_var(d["pos"])
 

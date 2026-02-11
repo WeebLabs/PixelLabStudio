@@ -10,6 +10,8 @@ var chain = null
 
 var animationTick = 0
 
+var cursorWorldPos = Vector2.ZERO
+
 var filtering = false
 
 #Object Selection
@@ -88,7 +90,13 @@ func deleteAllMics():
 
 func _process(delta):
 	animationTick += 1
-	
+
+	if main != null:
+		var screen_pos = DisplayServer.mouse_get_position()
+		var window_pos = DisplayServer.window_get_position()
+		var local_pos = Vector2(screen_pos - window_pos)
+		cursorWorldPos = main.get_viewport().get_screen_transform().affine_inverse() * local_pos
+
 	volume = spectrum.get_magnitude_for_frequency_range(20, 20000).length()
 	if currentMicrophone != null:
 		volumeSensitivity = lerp(volumeSensitivity,0.0,delta*2)

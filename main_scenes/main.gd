@@ -527,7 +527,13 @@ func _on_load_dialog_file_selected(path):
 			sprite.clipped = data[item]["clipped"]
 		if data[item].has("toggle"):
 			sprite.toggle = data[item]["toggle"]
-		
+		if data[item].has("eyeTrack"):
+			sprite.eyeTrack = data[item]["eyeTrack"]
+		if data[item].has("eyeTrackDistance"):
+			sprite.eyeTrackDistance = data[item]["eyeTrackDistance"]
+		if data[item].has("eyeTrackSpeed"):
+			sprite.eyeTrackSpeed = data[item]["eyeTrackSpeed"]
+
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
 	
@@ -585,7 +591,11 @@ func _on_save_dialog_file_selected(path):
 			data[id]["clipped"] = child.clipped
 			
 			data[id]["toggle"] = child.toggle
-			
+
+			data[id]["eyeTrack"] = child.eyeTrack
+			data[id]["eyeTrackDistance"] = child.eyeTrackDistance
+			data[id]["eyeTrackSpeed"] = child.eyeTrackSpeed
+
 		id += 1
 	
 	Saving.settings["lastAvatar"] = path
@@ -661,7 +671,11 @@ func _on_duplicate_button_pressed():
 	sprite.animSpeed = Global.heldSprite.animSpeed
 	
 	sprite.costumeLayers = Global.heldSprite.costumeLayers
-	
+
+	sprite.eyeTrack = Global.heldSprite.eyeTrack
+	sprite.eyeTrackDistance = Global.heldSprite.eyeTrackDistance
+	sprite.eyeTrackSpeed = Global.heldSprite.eyeTrackSpeed
+
 	origin.add_child(sprite)
 	sprite.position = Global.heldSprite.position + Vector2(16,16)
 	
@@ -709,7 +723,7 @@ func moveSpriteMenu(delta):
 	
 	var size = get_viewport().get_visible_rect().size
 	
-	var windowLength = 1250 #1187
+	var windowLength = 1400 #1250
 	
 	$ViewerArrows/Arrows.position.y =  size.y - 25
 	

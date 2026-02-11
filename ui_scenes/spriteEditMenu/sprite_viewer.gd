@@ -69,6 +69,12 @@ func setImage():
 
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 
+	$EyeTracking/EyeTrackToggle.set_pressed_no_signal(Global.heldSprite.eyeTrack)
+	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(Global.heldSprite.eyeTrackDistance)
+	$EyeTracking/eyeTrackDist.set_value_no_signal(Global.heldSprite.eyeTrackDistance)
+	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
+	$EyeTracking/eyeTrackSpeed.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
+
 	changeRotLimit()
 
 	setLayerButtons()
@@ -378,8 +384,22 @@ func _on_set_toggle_pressed():
 	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
 	await Global.main.fatfuckingballs
-	
+
 	var keys = await Global.main.spriteVisToggles
 	var key = keys[0]
 	Global.heldSprite.toggle = key
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
+
+func _on_eye_track_toggled(button_pressed):
+	UndoManager.save_state()
+	Global.heldSprite.eyeTrack = button_pressed
+
+func _on_eye_track_dist_value_changed(value):
+	UndoManager.save_state_continuous()
+	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(value)
+	Global.heldSprite.eyeTrackDistance = value
+
+func _on_eye_track_speed_value_changed(value):
+	UndoManager.save_state_continuous()
+	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(value)
+	Global.heldSprite.eyeTrackSpeed = value

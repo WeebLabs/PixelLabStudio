@@ -74,6 +74,12 @@ var stretchAmount = 0.0
 #Ignore Bounce
 var ignoreBounce = false
 
+#Eye Tracking
+var eyeTrack = false
+var eyeTrackDistance = 20.0
+var eyeTrackSpeed = 0.15
+var _eyeTrackOffset = Vector2.ZERO
+
 #Animation
 var frames = 1
 var animSpeed = 0
@@ -374,6 +380,18 @@ func drag(delta):
 func wobble():
 	wob.position.x = sin(tick*xFrq)*xAmp
 	wob.position.y = sin(tick*yFrq)*yAmp
+
+	if eyeTrack and !Global.main.editMode:
+		var cursor_pos = Global.cursorWorldPos
+		var rest_pos = global_position
+		var direction = cursor_pos - rest_pos
+		var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)
+		_eyeTrackOffset = _eyeTrackOffset.lerp(target_offset, eyeTrackSpeed)
+		wob.position += _eyeTrackOffset
+	else:
+		_eyeTrackOffset = _eyeTrackOffset.lerp(Vector2.ZERO, 0.15)
+		if _eyeTrackOffset.length() > 0.01:
+			wob.position += _eyeTrackOffset
 
 func rotationalDrag(length,delta):
 	var yvel = (length * rdragStr)
