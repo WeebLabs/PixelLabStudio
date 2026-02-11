@@ -253,18 +253,22 @@ func undo():
 	if _undo_stack.is_empty():
 		Global.pushUpdate("Nothing to undo.")
 		return
+	suppressed = true
 	_redo_stack.push_back(_snapshot())
 	var snapshot = _undo_stack.pop_back()
 	_restore(snapshot)
+	suppressed = false
 	Global.pushUpdate("Undo.")
 
 func redo():
 	if _redo_stack.is_empty():
 		Global.pushUpdate("Nothing to redo.")
 		return
+	suppressed = true
 	_undo_stack.push_back(_snapshot())
 	var snapshot = _redo_stack.pop_back()
 	_restore(snapshot)
+	suppressed = false
 	Global.pushUpdate("Redo.")
 
 func _input(event):

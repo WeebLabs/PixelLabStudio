@@ -18,63 +18,60 @@ func setImage():
 	if Global.heldSprite == null:
 		return
 
-	UndoManager.suppressed = true
 	spriteSpin.texture = Global.heldSprite.tex
 	spriteSpin.pixel_size = 1.5 / Global.heldSprite.imageData.get_size().y
 	spriteSpin.hframes = Global.heldSprite.frames
-	
+
 	spriteRotDisplay.texture = Global.heldSprite.tex
 	spriteRotDisplay.offset = Global.heldSprite.offset
 	var displaySize = Global.heldSprite.imageData.get_size().y
 	spriteRotDisplay.scale = Vector2(1,1) * (150.0/displaySize)
-	
+
 	$Slider/Label.text = "drag: " + str(Global.heldSprite.dragSpeed)
-	$Slider/DragSlider.value = Global.heldSprite.dragSpeed
-	
+	$Slider/DragSlider.set_value_no_signal(Global.heldSprite.dragSpeed)
+
 	$WobbleControl/xFrqLabel.text = "x frequency: " + str(Global.heldSprite.xFrq)
 	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(Global.heldSprite.xAmp)
-	
-	$WobbleControl/xFrq.value = Global.heldSprite.xFrq
-	$WobbleControl/xAmp.value = Global.heldSprite.xAmp
-	
+
+	$WobbleControl/xFrq.set_value_no_signal(Global.heldSprite.xFrq)
+	$WobbleControl/xAmp.set_value_no_signal(Global.heldSprite.xAmp)
+
 	$WobbleControl/yFrqLabel.text = "y frequency: " + str(Global.heldSprite.yFrq)
 	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(Global.heldSprite.yAmp)
-	
-	$WobbleControl/yFrq.value = Global.heldSprite.yFrq
-	$WobbleControl/yAmp.value = Global.heldSprite.yAmp
-	
+
+	$WobbleControl/yFrq.set_value_no_signal(Global.heldSprite.yFrq)
+	$WobbleControl/yAmp.set_value_no_signal(Global.heldSprite.yAmp)
+
 	$Rotation/rDragLabel.text = "rotational drag: " + str(Global.heldSprite.rdragStr)
-	$Rotation/rDrag.value = Global.heldSprite.rdragStr
-	
+	$Rotation/rDrag.set_value_no_signal(Global.heldSprite.rdragStr)
+
 	$Buttons/Speaking.frame = Global.heldSprite.showOnTalk
 	$Buttons/Blinking.frame = Global.heldSprite.showOnBlink
-	
-	$RotationalLimits/rotLimitMin.value = Global.heldSprite.rLimitMin
+
+	$RotationalLimits/rotLimitMin.set_value_no_signal(Global.heldSprite.rLimitMin)
 	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(Global.heldSprite.rLimitMin)
-	$RotationalLimits/rotLimitMax.value = Global.heldSprite.rLimitMax
+	$RotationalLimits/rotLimitMax.set_value_no_signal(Global.heldSprite.rLimitMax)
 	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(Global.heldSprite.rLimitMax)
-	
+
 	$Rotation/squashlabel.text = "squash: " + str(Global.heldSprite.stretchAmount)
-	$Rotation/squash.value = Global.heldSprite.stretchAmount
-	
+	$Rotation/squash.set_value_no_signal(Global.heldSprite.stretchAmount)
+
 	$Position/fileTitle.text = Global.heldSprite.path
-	
-	$Buttons/CheckBox.button_pressed = Global.heldSprite.ignoreBounce
-	$Buttons/ClipLinked.button_pressed = Global.heldSprite.clipped
-	
+
+	$Buttons/CheckBox.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
+	$Buttons/ClipLinked.set_pressed_no_signal(Global.heldSprite.clipped)
+
 	$Animation/animSpeedLabel.text = "animation speed: " + str(Global.heldSprite.animSpeed)
-	$Animation/animSpeed.value = Global.heldSprite.animSpeed
+	$Animation/animSpeed.set_value_no_signal(Global.heldSprite.animSpeed)
 
 	$Animation/animFramesLabel.text = "sprite frames: " + str(Global.heldSprite.frames)
-	$Animation/animFrames.value = Global.heldSprite.frames
-	
+	$Animation/animFrames.set_value_no_signal(Global.heldSprite.frames)
+
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
-	
+
 	changeRotLimit()
-	
+
 	setLayerButtons()
-	
-	UndoManager.suppressed = false
 
 	if Global.heldSprite.parentId == null:
 		$Buttons/Unlink.visible = false
