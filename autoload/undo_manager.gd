@@ -5,6 +5,7 @@ const MAX_HISTORY = 50
 var _undo_stack: Array = []
 var _redo_stack: Array = []
 var _continuous_saved: bool = false
+var suppressed: bool = false
 
 var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 
@@ -56,43 +57,55 @@ func _snapshot() -> Dictionary:
 	return data
 
 func _restore(data: Dictionary):
-	if _can_restore_in_place(data):
-		_restore_in_place(data)
-	else:
-		_restore_full(data)
-
-# Check if snapshot has the same sprite IDs as the live scene.
-# If so we can patch properties in place instead of rebuilding everything.
-func _can_restore_in_place(data: Dictionary) -> bool:
 	var nodes = get_tree().get_nodes_in_group("saved")
-	if nodes.size() != data.size():
-		return false
-
-	var by_id = {}
+	var current_ids = {}
 	for node in nodes:
-		by_id[node.id] = node
+		current_ids[node.id] = node
 
+	var snapshot_ids = {}
 	for item in data:
-		if !by_id.has(data[item]["identification"]):
-			return false
+		snapshot_ids[data[item]["identification"]] = true
 
-	return true
+	# Check if any current sprites survive into the snapshot
+	var has_overlap = false
+	for id in current_ids:
+		if snapshot_ids.has(id):
+			has_overlap = true
+			break
 
-# Fast path: same sprites, update properties and reparent if needed.
-func _restore_in_place(data: Dictionary):
-	var nodes = get_tree().get_nodes_in_group("saved")
-	var by_id = {}
-	for node in nodes:
-		by_id[node.id] = node
+	# No overlap at all = complete avatar swap, full rebuild
+	if !has_overlap and (current_ids.size() + data.size()) > 0:
+		_restore_full(data)
+		return
 
-	var reparented = false
+	# In-place: remove extras, add missing, update & reparent existing
+	var scene_changed = false
 
+	# 1. Remove sprites not in snapshot
+	for id in current_ids:
+		if !snapshot_ids.has(id):
+			scene_changed = true
+			var sprite = current_ids[id]
+			if Global.heldSprite == sprite:
+				Global.heldSprite = null
+			sprite.queue_free()
+
+	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
 	for item in data:
 		var d = data[item]
-		var sprite = by_id[d["identification"]]
-		var new_parent_id = d["parentId"]
+		if !current_ids.has(d["identification"]):
+			scene_changed = true
+			_add_sprite_from_data(d)
 
-		# Handle reparenting if parentId changed
+	# 3. Update existing sprites' properties and reparent if needed
+	var reparented = false
+	for item in data:
+		var d = data[item]
+		var sprite = current_ids.get(d["identification"])
+		if sprite == null:
+			continue
+
+		var new_parent_id = d["parentId"]
 		if sprite.parentId != new_parent_id:
 			reparented = true
 			sprite.get_parent().remove_child(sprite)
@@ -101,11 +114,11 @@ func _restore_in_place(data: Dictionary):
 				sprite.parentId = null
 				sprite.parentSprite = null
 			else:
-				var parent_sprite = by_id.get(new_parent_id)
-				if parent_sprite:
-					parent_sprite.sprite.add_child(sprite)
+				var parent_nodes = get_tree().get_nodes_in_group(str(new_parent_id))
+				if parent_nodes.size() > 0:
+					parent_nodes[0].sprite.add_child(sprite)
 					sprite.parentId = new_parent_id
-					sprite.parentSprite = parent_sprite
+					sprite.parentSprite = parent_nodes[0]
 
 		sprite.position = str_to_var(d["pos"])
 		sprite.offset = str_to_var(d["offset"])
@@ -148,7 +161,9 @@ func _restore_in_place(data: Dictionary):
 
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
-	for node in nodes:
+	for node in get_tree().get_nodes_in_group("saved"):
+		if node.is_queued_for_deletion():
+			continue
 		if node.costumeLayers[costume - 1] == 1:
 			node.visible = true
 			node.changeCollision(true)
@@ -156,16 +171,48 @@ func _restore_in_place(data: Dictionary):
 			node.visible = false
 			node.changeCollision(false)
 
-	if reparented:
+	if scene_changed or reparented:
 		Global.spriteList.updateData()
 	if Global.heldSprite != null:
 		Global.spriteEdit.setImage()
 
-# Slow path: sprite set changed, full rebuild (add/delete/link/load).
+# Instantiate a single sprite from snapshot data and add to origin.
+func _add_sprite_from_data(d: Dictionary):
+	var sprite = _sprite_scene.instantiate()
+	sprite.path = d["path"]
+	sprite.id = d["identification"]
+	sprite.parentId = d["parentId"]
+	sprite.offset = str_to_var(d["offset"])
+	sprite.z = d["zindex"]
+	sprite.dragSpeed = d["drag"]
+	sprite.xFrq = d["xFrq"]
+	sprite.xAmp = d["xAmp"]
+	sprite.yFrq = d["yFrq"]
+	sprite.yAmp = d["yAmp"]
+	sprite.rdragStr = d["rotDrag"]
+	sprite.showOnTalk = d["showTalk"]
+	sprite.showOnBlink = d["showBlink"]
+	if d.has("rLimitMin"): sprite.rLimitMin = d["rLimitMin"]
+	if d.has("rLimitMax"): sprite.rLimitMax = d["rLimitMax"]
+	if d.has("costumeLayers"):
+		sprite.costumeLayers = str_to_var(d["costumeLayers"]).duplicate()
+		if sprite.costumeLayers.size() < 8:
+			for i in range(5):
+				sprite.costumeLayers.append(1)
+	if d.has("stretchAmount"): sprite.stretchAmount = d["stretchAmount"]
+	if d.has("ignoreBounce"): sprite.ignoreBounce = d["ignoreBounce"]
+	if d.has("frames"): sprite.frames = d["frames"]
+	if d.has("animSpeed"): sprite.animSpeed = d["animSpeed"]
+	if d.has("imageData"): sprite.loadedImageData = d["imageData"]
+	if d.has("clipped"): sprite.clipped = d["clipped"]
+	if d.has("toggle"): sprite.toggle = d["toggle"]
+	Global.main.origin.add_child(sprite)
+	sprite.position = str_to_var(d["pos"])
+
+# Full rebuild — only used when loading a completely different avatar (no ID overlap).
 func _restore_full(data: Dictionary):
 	Global.heldSprite = null
 
-	# Prime cache from snapshot so restored sprites don't need re-encoding
 	_image_cache.clear()
 	for item in data:
 		if data[item].has("imageData"):
@@ -178,54 +225,7 @@ func _restore_full(data: Dictionary):
 	main.origin = new_origin
 
 	for item in data:
-		var sprite = _sprite_scene.instantiate()
-		sprite.path = data[item]["path"]
-		sprite.id = data[item]["identification"]
-		sprite.parentId = data[item]["parentId"]
-
-		sprite.offset = str_to_var(data[item]["offset"])
-		sprite.z = data[item]["zindex"]
-		sprite.dragSpeed = data[item]["drag"]
-
-		sprite.xFrq = data[item]["xFrq"]
-		sprite.xAmp = data[item]["xAmp"]
-		sprite.yFrq = data[item]["yFrq"]
-		sprite.yAmp = data[item]["yAmp"]
-
-		sprite.rdragStr = data[item]["rotDrag"]
-		sprite.showOnTalk = data[item]["showTalk"]
-		sprite.showOnBlink = data[item]["showBlink"]
-
-		if data[item].has("rLimitMin"):
-			sprite.rLimitMin = data[item]["rLimitMin"]
-		if data[item].has("rLimitMax"):
-			sprite.rLimitMax = data[item]["rLimitMax"]
-
-		if data[item].has("costumeLayers"):
-			sprite.costumeLayers = str_to_var(data[item]["costumeLayers"]).duplicate()
-			if sprite.costumeLayers.size() < 8:
-				for i in range(5):
-					sprite.costumeLayers.append(1)
-
-		if data[item].has("stretchAmount"):
-			sprite.stretchAmount = data[item]["stretchAmount"]
-
-		if data[item].has("ignoreBounce"):
-			sprite.ignoreBounce = data[item]["ignoreBounce"]
-
-		if data[item].has("frames"):
-			sprite.frames = data[item]["frames"]
-		if data[item].has("animSpeed"):
-			sprite.animSpeed = data[item]["animSpeed"]
-		if data[item].has("imageData"):
-			sprite.loadedImageData = data[item]["imageData"]
-		if data[item].has("clipped"):
-			sprite.clipped = data[item]["clipped"]
-		if data[item].has("toggle"):
-			sprite.toggle = data[item]["toggle"]
-
-		new_origin.add_child(sprite)
-		sprite.position = str_to_var(data[item]["pos"])
+		_add_sprite_from_data(data[item])
 
 	Global.main.changeCostume(Global.main.costume)
 	Global.spriteList.updateData()
@@ -235,7 +235,7 @@ func invalidate_image(sprite_id):
 	_image_cache.erase(sprite_id)
 
 func save_state():
-	if Global.main == null or !Global.main.saveLoaded:
+	if suppressed or Global.main == null or !Global.main.saveLoaded:
 		return
 	_undo_stack.push_back(_snapshot())
 	_redo_stack.clear()

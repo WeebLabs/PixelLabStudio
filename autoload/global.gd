@@ -139,6 +139,7 @@ func _process(delta):
 		if Input.is_action_just_pressed("refresh"):
 			refresh()
 		if Input.is_action_just_pressed("unlink"):
+			UndoManager.save_state()
 			unlinkSprite()
 		
 		if Input.is_action_pressed("control"):
@@ -190,6 +191,7 @@ func select(areas):
 		if heldSprite.parentId == prevSpr.id:
 			return
 		
+		UndoManager.save_state()
 		linkSprite(prevSpr,heldSprite)
 		Global.chain.enable(reparentMode)
 	
@@ -198,7 +200,6 @@ func select(areas):
 	spriteEdit.setImage()
 
 func linkSprite(sprite,newParent):
-	UndoManager.save_state()
 	if sprite == newParent:
 		reparentMode = false
 		
@@ -327,7 +328,6 @@ func refresh():
 	pushUpdate("Refreshed all sprites.")
 
 func unlinkSprite():
-	UndoManager.save_state()
 	if heldSprite == null:
 		return
 	if heldSprite.parentId == null:

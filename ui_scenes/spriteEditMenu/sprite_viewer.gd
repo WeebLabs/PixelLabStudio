@@ -17,7 +17,8 @@ func _ready():
 func setImage():
 	if Global.heldSprite == null:
 		return
-	
+
+	UndoManager.suppressed = true
 	spriteSpin.texture = Global.heldSprite.tex
 	spriteSpin.pixel_size = 1.5 / Global.heldSprite.imageData.get_size().y
 	spriteSpin.hframes = Global.heldSprite.frames
@@ -73,17 +74,19 @@ func setImage():
 	
 	setLayerButtons()
 	
+	UndoManager.suppressed = false
+
 	if Global.heldSprite.parentId == null:
 		$Buttons/Unlink.visible = false
 		parentSpin.visible = false
 	else:
 		$Buttons/Unlink.visible = true
-		
+
 		var nodes = get_tree().get_nodes_in_group(str(Global.heldSprite.parentId))
-		
+
 		if nodes.size()<=0:
 			return
-		
+
 		parentSpin.texture = nodes[0].tex
 		parentSpin.pixel_size = 1.5 / nodes[0].imageData.get_size().y
 		parentSpin.hframes = nodes[0].frames
