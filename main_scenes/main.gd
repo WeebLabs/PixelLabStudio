@@ -50,6 +50,7 @@ var _panning = false
 var _pan_offset = Vector2.ZERO
 
 var bounceChange = 0.0
+var screen_scale = 1.0
 
 #IMPORTANT
 var fileSystemOpen = false
@@ -64,8 +65,9 @@ signal fatfuckingballs
 func _ready():
 	Global.main = self
 	Global.fail = $Failed
-	
-	
+
+	screen_scale = DisplayServer.screen_get_scale()
+
 	Global.connect("startSpeaking",onSpeak)
 	
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
@@ -128,7 +130,15 @@ func _ready():
 			Saving.settings["bounceOnCostumeChange"] = false
 		
 		saveLoaded = true
-		
+
+	if screen_scale > 1.0:
+		var logical_size = Vector2(get_window().size) / screen_scale
+		if logical_size.x < 1280 or logical_size.y < 720:
+			get_window().size = Vector2i(
+				int(max(logical_size.x, 1280) * screen_scale),
+				int(max(logical_size.y, 720) * screen_scale)
+			)
+
 	RenderingServer.set_default_clear_color(Global.backgroundColor)
 	swapMode()
 	settingsMenu.setvalues()

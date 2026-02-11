@@ -144,7 +144,7 @@ func _process(delta):
 		elif originMode or (heldSprite != null and Input.is_action_pressed("origin")):
 			RenderingServer.set_default_clear_color(Color(0.4, 0.55, 0.4))
 		else:
-			RenderingServer.set_default_clear_color(Color.GRAY)
+			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))
 
 	
 	blinking()
