@@ -13,6 +13,10 @@ extends Node2D
 
 func _ready():
 	Global.spriteEdit = self
+	$Buttons/Speaking.visible = false
+	$Buttons/Blinking.visible = false
+	$Buttons/Trash.visible = false
+	$Buttons/Unlink.visible = false
 	
 func setImage():
 	if Global.heldSprite == null:
@@ -81,11 +85,8 @@ func setImage():
 	setLayerButtons()
 
 	if Global.heldSprite.parentId == null:
-		$Buttons/Unlink.visible = false
 		parentSpin.visible = false
 	else:
-		$Buttons/Unlink.visible = true
-
 		var nodes = get_tree().get_nodes_in_group(str(Global.heldSprite.parentId))
 
 		if nodes.size()<=0:
@@ -98,12 +99,11 @@ func setImage():
 	
 func _process(delta):
 
-	visible = Global.heldSprite != null
-	coverCollider.disabled = !visible
-	
-	if !visible:
+	coverCollider.disabled = Global.heldSprite == null
+
+	if Global.heldSprite == null:
 		return
-	
+
 	var obj = Global.heldSprite
 	spriteSpin.rotate_y(delta*4.0)
 	parentSpin.rotate_y(delta*4.0)

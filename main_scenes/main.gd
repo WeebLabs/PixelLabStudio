@@ -238,7 +238,8 @@ func onWindowSizeChange():
 	tutorial.position = controlPanel.position
 	editControls.position = camera.position - (s/(camera.zoom*2.0))
 	viewerArrows.position = editControls.position
-	spriteList.position.x = s.x - (spriteList.panel_width + 3)
+	spriteList.position.y = editControls.MENU_BAR_HEIGHT + 2
+	spriteList._apply_size()
 	pushUpdates.position.y = controlPanel.position.y
 	pushUpdates.position.x = editControls.position.x
 
@@ -300,7 +301,8 @@ func swapMode():
 	controlPanel.visible = !editMode
 	lines.visible = editMode
 	spriteList.visible = editMode
-	
+	onWindowSizeChange()
+
 #Adds sprite object to scene
 func add_image(path):
 	UndoManager.save_state()
@@ -884,28 +886,29 @@ func changeCostume(newCostume):
 	Global.pushUpdate("Change costume: " + str(newCostume))
 	
 func moveSpriteMenu(delta):
-	
+
 	#moves sprite viewer editor thing around
-	
+
 	var size = get_viewport().get_visible_rect().size
-	
+	var topY = editControls.MENU_BAR_HEIGHT + 2
+
 	var windowLength = 1400 #1250
-	
+
 	$ViewerArrows/Arrows.position.y =  size.y - 25
-	
+
 	if !Global.spriteEdit.visible:
 		$ViewerArrows/Arrows.visible = false
 		$ViewerArrows/Arrows2.visible = false
 		return
-	
+
 	if size.y > windowLength+50:
-		Global.spriteEdit.position.y = 66
-		
+		Global.spriteEdit.position.y = topY
+
 		$ViewerArrows/Arrows.visible = false
 		$ViewerArrows/Arrows2.visible = false
-		
+
 		return
-	
+
 	if Global.spriteEdit.position.y < 16:
 		$ViewerArrows/Arrows2.visible = true
 	else:
@@ -915,14 +918,14 @@ func moveSpriteMenu(delta):
 	else:
 		$ViewerArrows/Arrows.visible = false
 
-	
+
 	if $EditControls/MoveMenuUp.overlaps_area(Global.mouse.area):
 		Global.spriteEdit.position.y += (delta*432.0)
 	elif $EditControls/MoveMenuDown.overlaps_area(Global.mouse.area):
 		Global.spriteEdit.position.y -= (delta*432.0)
-	
-	if Global.spriteEdit.position.y > 66:
-		Global.spriteEdit.position.y = 66
+
+	if Global.spriteEdit.position.y > topY:
+		Global.spriteEdit.position.y = topY
 	elif Global.spriteEdit.position.y < size.y-windowLength:
 		Global.spriteEdit.position.y = size.y-windowLength
 	
