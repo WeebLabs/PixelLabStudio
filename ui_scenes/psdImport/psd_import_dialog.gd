@@ -1,6 +1,6 @@
 extends Node2D
 
-signal import_confirmed(selected_layers: Array, preserve_hierarchy: bool, canvas_size: Vector2)
+signal import_confirmed(selected_layers: Array, canvas_size: Vector2)
 signal import_cancelled
 
 var psd_file = null
@@ -8,7 +8,6 @@ var layer_entries: Array = []  # Array of {layer, checkbox}
 
 var layerList: VBoxContainer
 var titleLabel: Label
-var hierarchyCheck: CheckBox
 var blocker: Area2D
 
 func _ready():
@@ -32,13 +31,6 @@ func _build_ui():
 	col.shape = shape
 	blocker.add_child(col)
 	add_child(blocker)
-
-	# Semi-transparent overlay
-	var overlay = ColorRect.new()
-	overlay.position = Vector2(-960, -540)
-	overlay.size = Vector2(1920, 1080)
-	overlay.color = Color(0, 0, 0, 0.5)
-	add_child(overlay)
 
 	# Panel background
 	var panel_bg = ColorRect.new()
@@ -81,14 +73,6 @@ func _build_ui():
 	selectNoneBtn.text = "Select None"
 	selectNoneBtn.pressed.connect(_on_select_none)
 	options.add_child(selectNoneBtn)
-
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	options.add_child(spacer)
-
-	hierarchyCheck = CheckBox.new()
-	hierarchyCheck.text = "Link layers"
-	options.add_child(hierarchyCheck)
 
 	# Import / Cancel buttons
 	var buttons = HBoxContainer.new()
@@ -188,7 +172,7 @@ func _on_import():
 
 	visible = false
 	var canvas_size = Vector2(psd_file.width, psd_file.height)
-	import_confirmed.emit(selected, hierarchyCheck.button_pressed, canvas_size)
+	import_confirmed.emit(selected, canvas_size)
 
 func _on_cancel():
 	visible = false

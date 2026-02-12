@@ -78,7 +78,14 @@ var ignoreBounce = false
 var eyeTrack = false
 var eyeTrackDistance = 20.0
 var eyeTrackSpeed = 0.15
+var eyeTrackInvert = false
 var _eyeTrackOffset = Vector2.ZERO
+
+#Blink Animation
+var _blinkAnimPlaying = false
+var _blinkAnimTick = 0
+var _prevBlink = false
+var _blinkQueue = 0
 
 #Animation
 var frames = 1
@@ -265,7 +272,8 @@ func _process(delta):
 		if mouse_pos.distance_to(sprite.global_position) <= 24.0:
 			Global.mouse.text = "Drag origin"
 
-	animation()
+	if !blinkAnimation():
+		animation()
 
 func animation():
 	
@@ -284,9 +292,44 @@ func setZIndex():
 
 func talkBlink():
 	var faded = 0.2 * int(Global.main.editMode)
-	var value = (showOnTalk + (showOnBlink*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
+	var blinkVal = showOnBlink if showOnBlink != 3 else 0
+	var value = (showOnTalk + (blinkVal*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
 	var yes = [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value))
 	sprite.self_modulate.a = max(int(yes),faded)
+
+func blinkAnimation():
+	if showOnBlink != 3 or frames <= 1:
+		return false
+
+	if Global.blink and !_prevBlink:
+		if _blinkAnimPlaying:
+			_blinkQueue += 1
+		else:
+			_blinkAnimPlaying = true
+			_blinkAnimTick = 0
+			sprite.frame = 0
+	_prevBlink = Global.blink
+
+	if !_blinkAnimPlaying:
+		sprite.frame = 0
+		return true
+
+	_blinkAnimTick += 1
+	var speed = max(float(animSpeed), Engine.max_fps * 6.0)
+	if animSpeed > 0:
+		if _blinkAnimTick % max(int(speed / float(animSpeed)), 1) == 0:
+			if sprite.frame >= frames - 1:
+				if _blinkQueue > 0:
+					_blinkQueue -= 1
+					_blinkAnimTick = 0
+					sprite.frame = 0
+				else:
+					_blinkAnimPlaying = false
+					sprite.frame = 0
+			else:
+				sprite.frame += 1
+
+	return true
 
 func delete():
 	queue_free()
@@ -401,6 +444,8 @@ func wobble():
 		var cursor_pos = Global.cursorWorldPos
 		var rest_pos = global_position
 		var direction = cursor_pos - rest_pos
+		if eyeTrackInvert:
+			direction = -direction
 		var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)
 		_eyeTrackOffset = _eyeTrackOffset.lerp(target_offset, eyeTrackSpeed)
 		wob.position += _eyeTrackOffset

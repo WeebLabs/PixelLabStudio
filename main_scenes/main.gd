@@ -169,6 +169,7 @@ func _process(delta):
 	fileSystemOpen = isFileSystemOpen()
 
 	_process_psd_thread(delta)
+	_process_anim_thread(delta)
 	panCamera()
 	followShadow()
 
@@ -237,7 +238,7 @@ func onWindowSizeChange():
 	tutorial.position = controlPanel.position
 	editControls.position = camera.position - (s/(camera.zoom*2.0))
 	viewerArrows.position = editControls.position
-	spriteList.position.x = s.x - 233
+	spriteList.position.x = s.x - (spriteList.panel_width + 3)
 	pushUpdates.position.y = controlPanel.position.y
 	pushUpdates.position.x = editControls.position.x
 
@@ -338,6 +339,12 @@ var _psd_thread: Thread = null
 var _psd_result = null
 var _psd_progress_dialog: Node2D = null
 
+var _anim_parser = null        # GIFParser or APNGParser
+var _anim_thread: Thread = null
+var _anim_result = null
+var _anim_progress_dialog: Node2D = null
+var _anim_replace_mode: bool = false
+
 func _on_psd_dialog_file_selected(path):
 	_psd_parser = PSDParser.new()
 	_psd_result = null
@@ -354,12 +361,6 @@ func _create_psd_progress_dialog() -> Node2D:
 	var dialog = Node2D.new()
 	dialog.z_index = 4095
 	dialog.position = camera.position
-
-	var overlay = ColorRect.new()
-	overlay.position = Vector2(-960, -540)
-	overlay.size = Vector2(1920, 1080)
-	overlay.color = Color(0, 0, 0, 0.5)
-	dialog.add_child(overlay)
 
 	var bg = ColorRect.new()
 	bg.position = Vector2(-160, -50)
@@ -427,7 +428,7 @@ func _process_psd_thread(_delta):
 		psdImportDialog.setup(result)
 		psdImportDialog.visible = true
 
-func _on_psd_import_confirmed(selected_layers: Array, preserve_hierarchy: bool, canvas_size: Vector2):
+func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
 	UndoManager.save_state()
 	var canvas_center = canvas_size * 0.5
 	var sprites_added = []
@@ -441,18 +442,171 @@ func _on_psd_import_confirmed(selected_layers: Array, preserve_hierarchy: bool, 
 		var sprite = add_image_from_data(layer.image, layer.name, pos)
 		sprites_added.append(sprite)
 
-	if preserve_hierarchy and sprites_added.size() > 1:
-		# Wait for sprites to initialize before linking
-		await get_tree().create_timer(0.2).timeout
-		for i in range(1, sprites_added.size()):
-			if is_instance_valid(sprites_added[i]) and is_instance_valid(sprites_added[0]):
-				Global.linkSprite(sprites_added[i], sprites_added[0])
-
-	Global.spriteList.updateData()
+	Global.spriteList.updateData(true)
 	Global.pushUpdate("Imported " + str(sprites_added.size()) + " layers from PSD.")
 
 func _on_psd_import_cancelled():
 	Global.pushUpdate("PSD import cancelled.")
+
+# --- Animated GIF/APNG Import ---
+
+func _start_animated_import(path: String, is_replace: bool):
+	_anim_replace_mode = is_replace
+	_anim_result = null
+
+	_anim_parser = APNGParser.new()
+
+	_anim_progress_dialog = _create_anim_progress_dialog()
+	add_child(_anim_progress_dialog)
+
+	_anim_thread = Thread.new()
+	_anim_thread.start(func(): return _anim_parser.parse(path))
+
+func _create_anim_progress_dialog() -> Node2D:
+	var dialog = Node2D.new()
+	dialog.z_index = 4095
+	dialog.position = camera.position
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-160, -50)
+	bg.size = Vector2(320, 100)
+	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	dialog.add_child(bg)
+
+	var label = Label.new()
+	label.name = "StatusLabel"
+	label.position = Vector2(-150, -40)
+	label.size = Vector2(300, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.text = "Loading animated image..."
+	dialog.add_child(label)
+
+	var bar = ProgressBar.new()
+	bar.name = "ProgressBar"
+	bar.position = Vector2(-140, 0)
+	bar.size = Vector2(280, 24)
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	dialog.add_child(bar)
+
+	var blocker = Area2D.new()
+	blocker.add_to_group("penis")
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(3840, 2160)
+	col.shape = shape
+	blocker.add_child(col)
+	dialog.add_child(blocker)
+
+	dialog.set_process(true)
+	return dialog
+
+func _process_anim_thread(_delta):
+	if _anim_thread == null or _anim_parser == null:
+		return
+	if _anim_progress_dialog == null:
+		return
+
+	_anim_progress_dialog.get_node("ProgressBar").value = _anim_parser.progress
+	_anim_progress_dialog.get_node("StatusLabel").text = _anim_parser.status_text
+
+	if !_anim_thread.is_alive():
+		_anim_result = _anim_thread.wait_to_finish()
+		_anim_thread = null
+
+		_anim_progress_dialog.queue_free()
+		_anim_progress_dialog = null
+
+		var result = _anim_result
+		_anim_result = null
+		_anim_parser = null
+
+		if result.error != "":
+			Global.pushUpdate("Import Error: " + result.error)
+			Global.epicFail(ERR_INVALID_DATA)
+			return
+
+		_finish_animated_import(result)
+
+func _finish_animated_import(result):
+	var frame_count = result.frames.size()
+	var w = result.width
+	var h = result.height
+
+	# Cap frame count if sprite sheet would exceed max texture size
+	var max_width = 16384
+	if w * frame_count > max_width:
+		frame_count = max_width / w
+		Global.pushUpdate("Warning: Capped to " + str(frame_count) + " frames (texture size limit)")
+
+	# Single-frame: import as static sprite
+	if frame_count <= 1:
+		if _anim_replace_mode:
+			_replace_with_animated(result.frames[0].image, 1, 0)
+		else:
+			_add_animated_sprite(result.frames[0].image, 1, 0)
+		return
+
+	# Build horizontal sprite sheet
+	var sheet = Image.create(w * frame_count, h, false, Image.FORMAT_RGBA8)
+	sheet.fill(Color(0, 0, 0, 0))
+	for i in range(frame_count):
+		sheet.blit_rect(result.frames[i].image, Rect2i(0, 0, w, h), Vector2i(w * i, 0))
+
+	# Calculate animation speed from average delay
+	var total_delay: float = 0.0
+	for i in range(frame_count):
+		total_delay += result.frames[i].delay_ms
+	var avg_delay_ms = total_delay / float(frame_count)
+	var fps = 1000.0 / avg_delay_ms
+	var anim_speed = int(round(fps * 6.0))
+	if anim_speed <= 0:
+		anim_speed = 60
+
+	if _anim_replace_mode:
+		_replace_with_animated(sheet, frame_count, anim_speed)
+	else:
+		_add_animated_sprite(sheet, frame_count, anim_speed)
+
+func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
+	UndoManager.save_state()
+
+	var rand = RandomNumberGenerator.new()
+	var id = rand.randi()
+
+	var sprite = spriteObject.instantiate()
+	sprite.loadedImage = sheet
+	sprite.path = "animated://import"
+	sprite.id = id
+	sprite.frames = frame_count
+	sprite.animSpeed = anim_speed
+	origin.add_child(sprite)
+	sprite.position = Vector2.ZERO
+
+	Global.spriteList.updateData()
+	Global.pushUpdate("Imported animated sprite (" + str(frame_count) + " frames)")
+
+func _replace_with_animated(sheet: Image, frame_count: int, anim_speed: int):
+	if Global.heldSprite == null:
+		return
+
+	UndoManager.save_state()
+
+	var texture = ImageTexture.create_from_image(sheet)
+	Global.heldSprite.tex = texture
+	Global.heldSprite.imageData = sheet
+	Global.heldSprite.sprite.texture = texture
+	Global.heldSprite.path = "animated://import"
+	Global.heldSprite.frames = frame_count
+	Global.heldSprite.animSpeed = anim_speed
+	Global.heldSprite.changeFrames()
+	Global.heldSprite.remadePolygon = false
+	Global.heldSprite.remakePolygon()
+
+	UndoManager.invalidate_image(Global.heldSprite.id)
+	Global.spriteList.updateData()
+	Global.pushUpdate("Replaced with animated sprite (" + str(frame_count) + " frames)")
 
 #Opens File Dialog
 func _on_add_button_pressed():
@@ -460,7 +614,10 @@ func _on_add_button_pressed():
 
 #Runs when selecting image in File Dialog
 func _on_file_dialog_file_selected(path):
-	add_image(path)
+	if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
+		_start_animated_import(path, false)
+	else:
+		add_image(path)
 
 func _on_save_button_pressed():
 	$SaveDialog.visible = true
@@ -535,6 +692,8 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackDistance = data[item]["eyeTrackDistance"]
 		if data[item].has("eyeTrackSpeed"):
 			sprite.eyeTrackSpeed = data[item]["eyeTrackSpeed"]
+		if data[item].has("eyeTrackInvert"):
+			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
 
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
@@ -597,6 +756,7 @@ func _on_save_dialog_file_selected(path):
 			data[id]["eyeTrack"] = child.eyeTrack
 			data[id]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[id]["eyeTrackSpeed"] = child.eyeTrackSpeed
+			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
 
 		id += 1
 	
@@ -630,11 +790,14 @@ func _on_replace_button_pressed():
 	$ReplaceDialog.visible = true
 
 func _on_replace_dialog_file_selected(path):
-	UndoManager.save_state()
-	Global.heldSprite.replaceSprite(path)
-	UndoManager.invalidate_image(Global.heldSprite.id)
-	Global.spriteList.updateData()
-	Global.pushUpdate("Replacing sprite with: " + path)
+	if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
+		_start_animated_import(path, true)
+	else:
+		UndoManager.save_state()
+		Global.heldSprite.replaceSprite(path)
+		UndoManager.invalidate_image(Global.heldSprite.id)
+		Global.spriteList.updateData()
+		Global.pushUpdate("Replacing sprite with: " + path)
 
 func _on_replace_dialog_visibility_changed():
 	$EditControls/ScreenCover/CollisionShape2D.disabled = !$ReplaceDialog.visible
@@ -677,6 +840,7 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrack = Global.heldSprite.eyeTrack
 	sprite.eyeTrackDistance = Global.heldSprite.eyeTrackDistance
 	sprite.eyeTrackSpeed = Global.heldSprite.eyeTrackSpeed
+	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
 
 	origin.add_child(sprite)
 	sprite.position = Global.heldSprite.position + Vector2(16,16)

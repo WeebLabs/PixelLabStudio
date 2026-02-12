@@ -74,6 +74,7 @@ func setImage():
 	$EyeTracking/eyeTrackDist.set_value_no_signal(Global.heldSprite.eyeTrackDistance)
 	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
 	$EyeTracking/eyeTrackSpeed.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
+	$EyeTracking/EyeTrackInvert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
 
 	changeRotLimit()
 
@@ -168,8 +169,8 @@ func _on_speaking_pressed():
 func _on_blinking_pressed():
 	UndoManager.save_state()
 	var f = $Buttons/Blinking.frame
-	f = (f+1) % 3
-	
+	f = (f+1) % 4
+
 	$Buttons/Blinking.frame = f
 	Global.heldSprite.showOnBlink = f
 
@@ -403,3 +404,7 @@ func _on_eye_track_speed_value_changed(value):
 	UndoManager.save_state_continuous()
 	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(value)
 	Global.heldSprite.eyeTrackSpeed = value
+
+func _on_eye_track_invert_toggled(button_pressed):
+	UndoManager.save_state()
+	Global.heldSprite.eyeTrackInvert = button_pressed

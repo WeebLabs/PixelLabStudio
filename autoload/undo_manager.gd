@@ -56,6 +56,7 @@ func _snapshot() -> Dictionary:
 			data[idx]["eyeTrack"] = child.eyeTrack
 			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
+			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
 		idx += 1
 	return data
 
@@ -167,6 +168,8 @@ func _restore(data: Dictionary):
 			sprite.eyeTrackDistance = d["eyeTrackDistance"]
 		if d.has("eyeTrackSpeed"):
 			sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
+		if d.has("eyeTrackInvert"):
+			sprite.eyeTrackInvert = d["eyeTrackInvert"]
 
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
@@ -218,6 +221,7 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("eyeTrack"): sprite.eyeTrack = d["eyeTrack"]
 	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
 	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
+	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
 	Global.main.origin.add_child(sprite)
 	sprite.position = str_to_var(d["pos"])
 

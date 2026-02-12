@@ -23,6 +23,7 @@ var reparentMode = false
 var originMode = false
 var _origin_press_time = 0
 var scrollSelection = 0
+var _scroll_input = 0
 
 var backgroundColor = Color(0.0,0.0,0.0,0.0) 
 
@@ -190,6 +191,13 @@ func _process(delta):
 				UndoManager.redo()
 	
 	
+func _input(event):
+	if !Input.is_action_pressed("control"):
+		if event.is_action_pressed("scrollUp"):
+			_scroll_input -= 1
+		if event.is_action_pressed("scrollDown"):
+			_scroll_input += 1
+
 func select(areas):
 	
 	if main.fileSystemOpen:
@@ -242,19 +250,19 @@ func select(areas):
 func linkSprite(sprite,newParent):
 	if sprite == newParent:
 		reparentMode = false
-		
+
 		return
 	if newParent.parentId == sprite.id:
 		reparentMode = false
 		return
-	
+
 	if sprite.is_ancestor_of(newParent):
 		pushUpdate("Can't link to own child sprite!")
 		reparentMode = false
 		return
-	
+
 	sprite.reparent(newParent.sprite,true)
-	
+
 	sprite.parentId = newParent.id
 	sprite.parentSprite = newParent
 	
@@ -272,33 +280,27 @@ func linkSprite(sprite,newParent):
 	newParent.set_physics_process(true)
 
 func scrollSprites():
+	var scroll = _scroll_input
+	_scroll_input = 0
 
 	if originMode:
 		return
 
 	if Input.is_action_pressed("control"):
 		return
-	
+
 	if !main.editMode:
 		return
-	
+
 	if main.fileSystemOpen:
 		return
-	
-	for area in mouse.area.get_overlapping_areas():
-		if area.is_in_group("penis"):
-			return
-	
-	var scroll = 0
-	
+
+	if get_viewport().gui_get_hovered_control() != null:
+		return
+
 	if heldSprite == null:
 		scrollSelection = 0
-	
-	if Input.is_action_just_pressed("scrollUp"):
-		scroll-=1
-	if Input.is_action_just_pressed("scrollDown"):
-		scroll+=1
-	
+
 	if scroll == 0:
 		return
 	
