@@ -7,16 +7,21 @@ var speaking_tex = preload("res://ui_scenes/spriteEditMenu/speaking.png")
 var blink_tex = preload("res://ui_scenes/spriteEditMenu/blink.png")
 var trash_tex = preload("res://ui_scenes/spriteEditMenu/trash.png")
 var unlink_tex = preload("res://ui_scenes/spriteEditMenu/unlink.png")
+var select_tex = preload("res://ui_scenes/spriteEditMenu/layerButtons/select.png")
+
+var layer_textures: Array = []
 
 var panel_width: float = 310
 var panel_height: float = 630
 const MIN_WIDTH = 200
 const GRAB_MARGIN = 6
-const CONTROLS_HEIGHT = 44
 const DIVIDER_MARGIN = 6
+const CONTROLS_ROW_HEIGHT = 32
 
 var _bg: ColorRect
-var _divider: ColorRect
+var _divider1: ColorRect
+var _divider2: ColorRect
+var _divider3: ColorRect
 var _controls: Node2D
 var _speaking_spr: Sprite2D
 var _blinking_spr: Sprite2D
@@ -24,11 +29,23 @@ var _unlink_spr: Sprite2D
 var _trash_spr: Sprite2D
 var _link_btn: Button
 
+var _costume_section: Node2D
+var _costume_btns: Array = []
+var _costume_select: Sprite2D
+
+var _eye_section: Node2D
+var _eye_toggle: CheckBox
+var _eye_dist_label: Label
+var _eye_dist_slider: HSlider
+var _eye_speed_label: Label
+var _eye_speed_slider: HSlider
+var _eye_invert: CheckBox
+
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
 var _hover_left = false
-var _divider_ratio: float = 0.67
+var _divider_ratio: float = 0.50
 var _divider_dragging = false
 var _hover_divider = false
 
@@ -42,14 +59,30 @@ func _ready():
 	_bg.z_index = -1
 	add_child(_bg)
 	move_child(_bg, 0)
+
+	for i in range(1, 11):
+		layer_textures.append(load("res://ui_scenes/spriteEditMenu/layerButtons/" + str(i) + ".png"))
+
 	_create_controls()
+	_create_costume_buttons()
+	_create_eye_tracking()
 	_apply_size()
 
 func _create_controls():
-	_divider = ColorRect.new()
-	_divider.color = Color(0.3, 0.3, 0.35)
-	_divider.size = Vector2(panel_width - 16, 1)
-	add_child(_divider)
+	_divider1 = ColorRect.new()
+	_divider1.color = Color(0.3, 0.3, 0.35)
+	_divider1.size = Vector2(panel_width - 16, 1)
+	add_child(_divider1)
+
+	_divider2 = ColorRect.new()
+	_divider2.color = Color(0.3, 0.3, 0.35)
+	_divider2.size = Vector2(panel_width - 16, 1)
+	add_child(_divider2)
+
+	_divider3 = ColorRect.new()
+	_divider3.color = Color(0.3, 0.3, 0.35)
+	_divider3.size = Vector2(panel_width - 16, 1)
+	add_child(_divider3)
 
 	_controls = Node2D.new()
 	add_child(_controls)
@@ -131,22 +164,145 @@ func _create_controls():
 	trash_btn.pressed.connect(_on_trash_pressed)
 	_trash_spr.add_child(trash_btn)
 
+func _create_costume_buttons():
+	_costume_section = Node2D.new()
+	add_child(_costume_section)
+
+	var icon_scale = Vector2(0.55, 0.55)
+	var spacing_x = 42
+	var spacing_y = 28
+
+	for i in range(10):
+		var spr = Sprite2D.new()
+		spr.texture = layer_textures[i]
+		spr.hframes = 2
+		spr.scale = icon_scale
+		var row = i / 5
+		var col = i % 5
+		spr.position = Vector2(col * spacing_x, row * spacing_y + 14)
+		_costume_section.add_child(spr)
+
+		var btn = Button.new()
+		btn.flat = true
+		btn.offset_left = -14
+		btn.offset_top = -14
+		btn.offset_right = 14
+		btn.offset_bottom = 14
+		btn.pressed.connect(_on_costume_btn_pressed.bind(i))
+		spr.add_child(btn)
+		_costume_btns.append(spr)
+
+	_costume_select = Sprite2D.new()
+	_costume_select.texture = select_tex
+	_costume_select.scale = icon_scale
+	_costume_select.visible = false
+	_costume_section.add_child(_costume_select)
+
+func _create_eye_tracking():
+	_eye_section = Node2D.new()
+	add_child(_eye_section)
+
+	var ctrl_left = 10
+	var ctrl_width = 200
+	var y = 0
+	var label_color = Color(0.75, 0.75, 0.8)
+
+	_eye_toggle = CheckBox.new()
+	_eye_toggle.text = "Eye tracking"
+	_eye_toggle.add_theme_font_size_override("font_size", 12)
+	_eye_toggle.add_theme_color_override("font_color", label_color)
+	_eye_toggle.position = Vector2(ctrl_left, y)
+	_eye_toggle.size = Vector2(ctrl_width, 20)
+	_eye_toggle.toggled.connect(_on_eye_track_toggled)
+	_eye_section.add_child(_eye_toggle)
+	y += 24
+
+	_eye_dist_label = Label.new()
+	_eye_dist_label.text = "tracking distance: 20.0"
+	_eye_dist_label.add_theme_font_size_override("font_size", 12)
+	_eye_dist_label.add_theme_color_override("font_color", label_color)
+	_eye_dist_label.position = Vector2(ctrl_left, y)
+	_eye_section.add_child(_eye_dist_label)
+	y += 16
+
+	_eye_dist_slider = HSlider.new()
+	_eye_dist_slider.min_value = 1.0
+	_eye_dist_slider.max_value = 200.0
+	_eye_dist_slider.step = 1.0
+	_eye_dist_slider.value = 20.0
+	_eye_dist_slider.position = Vector2(ctrl_left, y)
+	_eye_dist_slider.size = Vector2(ctrl_width, 16)
+	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
+	_eye_section.add_child(_eye_dist_slider)
+	y += 22
+
+	_eye_speed_label = Label.new()
+	_eye_speed_label.text = "tracking speed: 0.15"
+	_eye_speed_label.add_theme_font_size_override("font_size", 12)
+	_eye_speed_label.add_theme_color_override("font_color", label_color)
+	_eye_speed_label.position = Vector2(ctrl_left, y)
+	_eye_section.add_child(_eye_speed_label)
+	y += 16
+
+	_eye_speed_slider = HSlider.new()
+	_eye_speed_slider.min_value = 0.01
+	_eye_speed_slider.max_value = 1.0
+	_eye_speed_slider.step = 0.01
+	_eye_speed_slider.value = 0.15
+	_eye_speed_slider.position = Vector2(ctrl_left, y)
+	_eye_speed_slider.size = Vector2(ctrl_width, 16)
+	_eye_speed_slider.value_changed.connect(_on_eye_track_speed_changed)
+	_eye_section.add_child(_eye_speed_slider)
+	y += 22
+
+	_eye_invert = CheckBox.new()
+	_eye_invert.text = "Invert direction"
+	_eye_invert.add_theme_font_size_override("font_size", 12)
+	_eye_invert.add_theme_color_override("font_color", label_color)
+	_eye_invert.position = Vector2(ctrl_left, y)
+	_eye_invert.size = Vector2(ctrl_width, 20)
+	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
+	_eye_section.add_child(_eye_invert)
+
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
 	panel_height = s.y
 	_bg.position = Vector2(-4, -4)
 	_bg.size = Vector2(panel_width + 8, panel_height + 8)
 
+	# Top controls
+	var controls_center_x = (panel_width - 200.0) / 2.0
+	_controls.position = Vector2(controls_center_x, 0)
+	_divider1.position = Vector2(8, CONTROLS_ROW_HEIGHT + 4)
+	_divider1.size.x = panel_width - 16
+
+	# Layer list scroll area
+	var scroll_top = CONTROLS_ROW_HEIGHT + 10
 	var scroll_bottom = panel_height * _divider_ratio
+	$ScrollContainer.offset_top = scroll_top
 	$ScrollContainer.offset_right = panel_width - 10
 	$ScrollContainer.offset_bottom = scroll_bottom
 	container.custom_minimum_size.x = panel_width - 20
 
-	_divider.position = Vector2(8, scroll_bottom + DIVIDER_MARGIN)
-	_divider.size.x = panel_width - 16
-	var controls_center_x = (panel_width - 200.0) / 2.0
-	_controls.position = Vector2(controls_center_x, scroll_bottom + DIVIDER_MARGIN + 6)
+	# Draggable divider (between list and costume)
+	_divider2.position = Vector2(8, scroll_bottom + DIVIDER_MARGIN)
+	_divider2.size.x = panel_width - 16
 
+	# Costume buttons
+	var costume_y = scroll_bottom + DIVIDER_MARGIN * 2 + 4
+	var costume_span_x = 42.0 * 4  # 168px from first to last center
+	var costume_center_x = (panel_width - costume_span_x) / 2.0
+	_costume_section.position = Vector2(costume_center_x, costume_y)
+
+	# Divider between costume and eye tracking
+	var costume_bottom = costume_y + 62
+	_divider3.position = Vector2(8, costume_bottom + 4)
+	_divider3.size.x = panel_width - 16
+
+	# Eye tracking section
+	_eye_section.position = Vector2(0, costume_bottom + 14)
+
+	# Collision area
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
 	$Area2D2/CollisionShape2D.position = Vector2(panel_width / 2.0, panel_height / 2.0)
 	position.x = s.x - (panel_width + 3)
@@ -155,6 +311,8 @@ func _process(_delta):
 	var no_sprite = Global.heldSprite == null
 	var dim = Color(0.3, 0.3, 0.35)
 	var normal = Color(1, 1, 1)
+
+	# Top controls
 	_speaking_spr.modulate = dim if no_sprite else normal
 	_blinking_spr.modulate = dim if no_sprite else normal
 	_unlink_spr.modulate = dim if no_sprite else normal
@@ -165,9 +323,41 @@ func _process(_delta):
 	else:
 		_link_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 
+	# Costume buttons
+	for btn in _costume_btns:
+		btn.modulate = dim if no_sprite else normal
+	_costume_select.visible = !no_sprite
+
+	# Eye tracking
+	_eye_toggle.disabled = no_sprite
+	_eye_dist_slider.editable = !no_sprite
+	_eye_speed_slider.editable = !no_sprite
+	_eye_invert.disabled = no_sprite
+
 	if !no_sprite:
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
 		_blinking_spr.frame = Global.heldSprite.showOnBlink
+
+		# Costume button frames
+		for i in range(10):
+			_costume_btns[i].frame = 1 - Global.heldSprite.costumeLayers[i]
+
+		# Costume select position
+		var costume_idx = Global.main.costume - 1
+		if costume_idx >= 0 and costume_idx < 10:
+			_costume_select.position = _costume_btns[costume_idx].position
+
+func updateControls():
+	if Global.heldSprite == null:
+		return
+	_eye_toggle.set_pressed_no_signal(Global.heldSprite.eyeTrack)
+	_eye_dist_label.text = "tracking distance: " + str(Global.heldSprite.eyeTrackDistance)
+	_eye_dist_slider.set_value_no_signal(Global.heldSprite.eyeTrackDistance)
+	_eye_speed_label.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
+	_eye_speed_slider.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
+	_eye_invert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
+
+# --- Top control handlers ---
 
 func _on_speaking_pressed():
 	if Global.heldSprite == null:
@@ -208,6 +398,48 @@ func _on_trash_pressed():
 	Global.heldSprite.queue_free()
 	Global.heldSprite = null
 	Global.spriteList.updateData()
+
+# --- Costume button handlers ---
+
+func _on_costume_btn_pressed(index: int):
+	if Global.heldSprite == null:
+		return
+	UndoManager.save_state()
+	if Global.heldSprite.costumeLayers[index] == 0:
+		Global.heldSprite.costumeLayers[index] = 1
+	else:
+		Global.heldSprite.costumeLayers[index] = 0
+	Global.spriteEdit.setLayerButtons()
+
+# --- Eye tracking handlers ---
+
+func _on_eye_track_toggled(pressed):
+	if Global.heldSprite == null:
+		return
+	UndoManager.save_state()
+	Global.heldSprite.eyeTrack = pressed
+
+func _on_eye_track_dist_changed(value):
+	if Global.heldSprite == null:
+		return
+	UndoManager.save_state_continuous()
+	_eye_dist_label.text = "tracking distance: " + str(value)
+	Global.heldSprite.eyeTrackDistance = value
+
+func _on_eye_track_speed_changed(value):
+	if Global.heldSprite == null:
+		return
+	UndoManager.save_state_continuous()
+	_eye_speed_label.text = "tracking speed: " + str(value)
+	Global.heldSprite.eyeTrackSpeed = value
+
+func _on_eye_track_invert_toggled(pressed):
+	if Global.heldSprite == null:
+		return
+	UndoManager.save_state()
+	Global.heldSprite.eyeTrackInvert = pressed
+
+# --- Resize and drag ---
 
 func _is_on_left_edge(local: Vector2) -> bool:
 	var left = -4.0
@@ -255,7 +487,9 @@ func _input(event):
 			get_viewport().set_input_as_handled()
 		elif _divider_dragging:
 			var local = get_local_mouse_position()
-			_divider_ratio = clamp(local.y / panel_height, 0.2, 0.9)
+			var min_y = (CONTROLS_ROW_HEIGHT + 60.0) / panel_height
+			var max_y = (panel_height - 230.0) / panel_height
+			_divider_ratio = clamp(local.y / panel_height, min_y, max_y)
 			_apply_size()
 			get_viewport().set_input_as_handled()
 		else:
@@ -271,6 +505,8 @@ func _input(event):
 					Input.set_default_cursor_shape(Input.CURSOR_VSIZE)
 				else:
 					Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+# --- Layer list data ---
 
 func updateData(sort_by_z: bool = false):
 	clearContainer()

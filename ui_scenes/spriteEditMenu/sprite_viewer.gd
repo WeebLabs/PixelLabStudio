@@ -10,6 +10,9 @@ extends Node2D
 
 @onready var coverCollider = $Area2D/CollisionShape2D
 
+var _bg: ColorRect
+var panel_width: float = 265
+var panel_height: float = 630
 
 func _ready():
 	Global.spriteEdit = self
@@ -17,6 +20,24 @@ func _ready():
 	$Buttons/Blinking.visible = false
 	$Buttons/Trash.visible = false
 	$Buttons/Unlink.visible = false
+
+	# Hide individual panel backgrounds to integrate into unified sidebar
+	$Border.visible = false
+	$WobbleControl/animationBox.visible = false
+	$RotationalLimits/RotBorder.visible = false
+	$VisToggle/setToggle/rect.visible = false
+
+	# Hide sections moved to right sidebar
+	$Layers.visible = false
+	$EyeTracking.visible = false
+
+	# Create dark gray background panel
+	_bg = ColorRect.new()
+	_bg.color = Color(0.15, 0.15, 0.15)
+	_bg.z_index = -1
+	add_child(_bg)
+	move_child(_bg, 0)
+	_apply_size()
 	
 func setImage():
 	if Global.heldSprite == null:
@@ -84,6 +105,9 @@ func setImage():
 
 	setLayerButtons()
 
+	if Global.spriteList:
+		Global.spriteList.updateControls()
+
 	if Global.heldSprite.parentId == null:
 		parentSpin.visible = false
 	else:
@@ -97,7 +121,15 @@ func setImage():
 		parentSpin.hframes = nodes[0].frames
 		parentSpin.visible = true
 	
+func _apply_size():
+	var s = get_viewport().get_visible_rect().size
+	panel_height = s.y
+	# SpriteViewer is at (19, 30) in EditControls, so offset to reach left edge and menu bar bottom
+	_bg.position = Vector2(-19, -2)
+	_bg.size = Vector2(panel_width + 19, panel_height)
+
 func _process(delta):
+	_apply_size()
 
 	coverCollider.disabled = Global.heldSprite == null
 
