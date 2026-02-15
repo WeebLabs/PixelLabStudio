@@ -62,9 +62,14 @@ func _ready():
 	_thumbnail.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_thumbnail.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 	_thumbnail.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var used = sprite.imageData.get_used_rect()
+	var src_image = sprite.imageData
+	if sprite.frames > 1 and sprite.frames <= src_image.get_width():
+		var frame_w = src_image.get_width() / sprite.frames
+		var frame_h = src_image.get_height()
+		src_image = src_image.get_region(Rect2i(0, 0, frame_w, frame_h))
+	var used = src_image.get_used_rect()
 	if used.size.x > 0 and used.size.y > 0:
-		var cropped = sprite.imageData.get_region(used)
+		var cropped = src_image.get_region(used)
 		_thumbnail.texture = ImageTexture.create_from_image(cropped)
 	else:
 		_thumbnail.texture = sprite.sprite.texture
