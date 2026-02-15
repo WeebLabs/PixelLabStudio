@@ -57,6 +57,7 @@ func _ready():
 	_bg = ColorRect.new()
 	_bg.color = Color(0.15, 0.15, 0.15)
 	_bg.z_index = -1
+	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 	move_child(_bg, 0)
 

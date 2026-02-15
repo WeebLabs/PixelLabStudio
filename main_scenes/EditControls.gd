@@ -16,6 +16,7 @@ func _ready():
 	menu_bar_bg = ColorRect.new()
 	menu_bar_bg.color = Color(0.15, 0.15, 0.15)
 	menu_bar_bg.size = Vector2(get_viewport().get_visible_rect().size.x, MENU_BAR_HEIGHT)
+	menu_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(menu_bar_bg)
 
 	var hbox = HBoxContainer.new()
