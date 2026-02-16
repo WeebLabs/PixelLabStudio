@@ -108,6 +108,7 @@ func setImage():
 
 	if Global.spriteList:
 		Global.spriteList.updateControls()
+		Global.spriteList.scroll_to_selected()
 
 	if Global.heldSprite.parentId == null:
 		parentSpin.visible = false

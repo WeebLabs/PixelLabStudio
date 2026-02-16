@@ -348,6 +348,14 @@ func _process(_delta):
 		if costume_idx >= 0 and costume_idx < 10:
 			_costume_select.position = _costume_btns[costume_idx].position
 
+func scroll_to_selected():
+	if Global.heldSprite == null:
+		return
+	for child in container.get_children():
+		if child.sprite == Global.heldSprite:
+			$ScrollContainer.ensure_control_visible(child)
+			return
+
 func updateControls():
 	if Global.heldSprite == null:
 		return
