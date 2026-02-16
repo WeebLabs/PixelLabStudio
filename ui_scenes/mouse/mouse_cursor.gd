@@ -27,16 +27,12 @@ func _process(delta):
 				var areas = _query_areas_at_mouse()
 				var mouse_pos = get_global_mouse_position()
 				var opaque = []
-				var has_blocker = false
 				for a in areas:
-					if a.is_in_group("penis"):
-						has_blocker = true
-					elif _is_pixel_opaque(a, mouse_pos):
+					if !a.is_in_group("penis") and _is_pixel_opaque(a, mouse_pos):
 						opaque.append(a)
-				# Sort frontmost (highest z_index) first
 				opaque.sort_custom(_compare_z_descending)
-				# Only block click if on UI panel with no visible sprite
-				if !opaque.is_empty() or !has_blocker:
+				# Block click only when over a UI panel with no visible sprite
+				if !opaque.is_empty() or !_is_over_panel():
 					Global.select(opaque)
 	else:
 		_click_pending = false
@@ -87,6 +83,22 @@ func _is_pixel_opaque(hit_area: Area2D, world_pos: Vector2) -> bool:
 		return false
 
 	return img.get_pixel(img_x, img_y).a > 0.1
+
+func _is_over_panel() -> bool:
+	var screen_pos = get_viewport().get_mouse_position()
+	var viewport_size = get_viewport().get_visible_rect().size
+	# Menu bar
+	if screen_pos.y < 28:
+		return true
+	# Left panel (SpriteViewer)
+	if Global.spriteEdit != null:
+		if screen_pos.x < Global.spriteEdit.panel_width + 19:
+			return true
+	# Right panel (SpriteList)
+	if Global.spriteList != null:
+		if screen_pos.x > viewport_size.x - Global.spriteList.panel_width - 7:
+			return true
+	return false
 
 func _query_areas_at_mouse() -> Array:
 	var space = get_world_2d().direct_space_state
