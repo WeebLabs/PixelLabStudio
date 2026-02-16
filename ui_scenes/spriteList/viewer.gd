@@ -13,7 +13,8 @@ var layer_textures: Array = []
 
 var panel_width: float = 310
 var panel_height: float = 630
-const MIN_WIDTH = 200
+const MIN_WIDTH = 310
+const MAX_WIDTH_RATIO = 0.25
 const GRAB_MARGIN = 6
 const DIVIDER_MARGIN = 6
 const CONTROLS_ROW_HEIGHT = 32
@@ -491,7 +492,9 @@ func _input(event):
 	elif event is InputEventMouseMotion:
 		if _dragging:
 			var delta = get_global_mouse_position() - _drag_start
-			panel_width = max(MIN_WIDTH, _drag_start_width - delta.x)
+			var viewport_width = get_viewport().get_visible_rect().size.x
+			var max_width = viewport_width * MAX_WIDTH_RATIO
+			panel_width = clamp(_drag_start_width - delta.x, MIN_WIDTH, max_width)
 			_apply_size()
 			get_viewport().set_input_as_handled()
 		elif _divider_dragging:

@@ -58,9 +58,10 @@ func _ready():
 	# Thumbnail — cropped to opaque bounding box
 	_thumbnail = TextureRect.new()
 	_thumbnail.custom_minimum_size = Vector2(32, 32)
+	_thumbnail.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_thumbnail.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_thumbnail.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_thumbnail.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	_thumbnail.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_thumbnail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var src_image = sprite.imageData
 	if sprite.frames > 1 and sprite.frames <= src_image.get_width():
@@ -81,6 +82,7 @@ func _ready():
 	_name_label.text = spritePath.get_slice("/", count)
 	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_name_label.clip_text = true
+	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_name_label.add_theme_font_size_override("font_size", 15)
 	_name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
