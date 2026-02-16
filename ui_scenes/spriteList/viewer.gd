@@ -42,6 +42,12 @@ var _eye_speed_label: Label
 var _eye_speed_slider: HSlider
 var _eye_invert: CheckBox
 
+var _slider_fill_enabled: StyleBoxFlat
+var _slider_fill_disabled: StyleBoxFlat
+var _slider_grabber_enabled: ImageTexture
+var _slider_grabber_disabled: ImageTexture
+var _slider_enabled_state: bool = true
+
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -170,18 +176,15 @@ func _create_costume_buttons():
 	_costume_section = Node2D.new()
 	add_child(_costume_section)
 
-	var icon_scale = Vector2(0.55, 0.55)
-	var spacing_x = 42
-	var spacing_y = 28
+	var icon_scale = Vector2(0.53, 0.53)
+	var spacing_x = 29
 
 	for i in range(10):
 		var spr = Sprite2D.new()
 		spr.texture = layer_textures[i]
 		spr.hframes = 2
 		spr.scale = icon_scale
-		var row = i / 5
-		var col = i % 5
-		spr.position = Vector2(col * spacing_x, row * spacing_y + 14)
+		spr.position = Vector2(i * spacing_x, 14)
 		_costume_section.add_child(spr)
 
 		var btn = Button.new()
@@ -204,7 +207,7 @@ func _create_eye_tracking():
 	_eye_section = Node2D.new()
 	add_child(_eye_section)
 
-	var ctrl_left = 10
+	var ctrl_left = 0
 	var ctrl_width = 200
 	var y = 0
 	var label_color = Color(0.75, 0.75, 0.8)
@@ -214,10 +217,21 @@ func _create_eye_tracking():
 	_eye_toggle.add_theme_font_size_override("font_size", 12)
 	_eye_toggle.add_theme_color_override("font_color", label_color)
 	_eye_toggle.position = Vector2(ctrl_left, y)
-	_eye_toggle.size = Vector2(ctrl_width, 20)
+	_eye_toggle.size = Vector2(ctrl_width / 2, 20)
 	_eye_toggle.toggled.connect(_on_eye_track_toggled)
 	_eye_section.add_child(_eye_toggle)
-	y += 24
+
+	# Invert checkbox - positioned on the right, same row as eye tracking
+	_eye_invert = CheckBox.new()
+	_eye_invert.text = "Invert direction"
+	_eye_invert.add_theme_font_size_override("font_size", 12)
+	_eye_invert.add_theme_color_override("font_color", label_color)
+	_eye_invert.position = Vector2(ctrl_width / 2, y)
+	_eye_invert.size = Vector2(ctrl_width / 2, 20)
+	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
+	_eye_section.add_child(_eye_invert)
+
+	y += 32
 
 	_eye_dist_label = Label.new()
 	_eye_dist_label.text = "tracking distance: 20.0"
@@ -235,6 +249,34 @@ func _create_eye_tracking():
 	_eye_dist_slider.position = Vector2(ctrl_left, y)
 	_eye_dist_slider.size = Vector2(ctrl_width, 16)
 	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
+
+	# Build shared slider style resources (once)
+	_slider_fill_enabled = StyleBoxFlat.new()
+	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
+	_slider_fill_disabled = StyleBoxFlat.new()
+	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
+
+	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_on.fill(Color(0, 0, 0, 0))
+	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_off.fill(Color(0, 0, 0, 0))
+	for px in range(16):
+		for py in range(16):
+			var dx = px - 8
+			var dy = py - 8
+			if dx * dx + dy * dy <= 36:  # Circle radius ~6
+				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
+				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
+	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
+	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
+
+	_eye_dist_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
+	_eye_dist_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
+	_eye_dist_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
+	_eye_dist_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
+	_eye_dist_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+	_eye_dist_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
+
 	_eye_section.add_child(_eye_dist_slider)
 	y += 22
 
@@ -254,17 +296,15 @@ func _create_eye_tracking():
 	_eye_speed_slider.position = Vector2(ctrl_left, y)
 	_eye_speed_slider.size = Vector2(ctrl_width, 16)
 	_eye_speed_slider.value_changed.connect(_on_eye_track_speed_changed)
-	_eye_section.add_child(_eye_speed_slider)
-	y += 22
 
-	_eye_invert = CheckBox.new()
-	_eye_invert.text = "Invert direction"
-	_eye_invert.add_theme_font_size_override("font_size", 12)
-	_eye_invert.add_theme_color_override("font_color", label_color)
-	_eye_invert.position = Vector2(ctrl_left, y)
-	_eye_invert.size = Vector2(ctrl_width, 20)
-	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
-	_eye_section.add_child(_eye_invert)
+	_eye_speed_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
+	_eye_speed_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
+	_eye_speed_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
+	_eye_speed_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
+	_eye_speed_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+	_eye_speed_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
+
+	_eye_section.add_child(_eye_speed_slider)
 
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
@@ -292,17 +332,26 @@ func _apply_size():
 
 	# Costume buttons
 	var costume_y = scroll_bottom + DIVIDER_MARGIN * 2 + 4
-	var costume_span_x = 42.0 * 4  # 168px from first to last center
+	var costume_span_x = 29.0 * 9  # 261px span for 10 buttons in one row
 	var costume_center_x = (panel_width - costume_span_x) / 2.0
 	_costume_section.position = Vector2(costume_center_x, costume_y)
 
 	# Divider between costume and eye tracking
-	var costume_bottom = costume_y + 62
+	var costume_bottom = costume_y + 36
 	_divider3.position = Vector2(8, costume_bottom + 4)
 	_divider3.size.x = panel_width - 16
 
-	# Eye tracking section
-	_eye_section.position = Vector2(0, costume_bottom + 14)
+	# Eye tracking section (centered)
+	var eye_ctrl_width = panel_width - 20
+	var eye_center_x = (panel_width - eye_ctrl_width) / 2.0
+	_eye_section.position = Vector2(eye_center_x, costume_bottom + 14)
+
+	# Update slider and checkbox widths to fill available space
+	_eye_dist_slider.size.x = eye_ctrl_width
+	_eye_speed_slider.size.x = eye_ctrl_width
+	_eye_toggle.size.x = eye_ctrl_width / 2
+	_eye_invert.position.x = eye_ctrl_width / 2
+	_eye_invert.size.x = eye_ctrl_width / 2
 
 	# Collision area
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
@@ -335,6 +384,18 @@ func _process(_delta):
 	_eye_dist_slider.editable = !no_sprite
 	_eye_speed_slider.editable = !no_sprite
 	_eye_invert.disabled = no_sprite
+
+	# Swap slider styles when enabled state changes
+	var slider_should_enable = !no_sprite
+	if slider_should_enable != _slider_enabled_state:
+		_slider_enabled_state = slider_should_enable
+		var fill = _slider_fill_enabled if slider_should_enable else _slider_fill_disabled
+		var grab = _slider_grabber_enabled if slider_should_enable else _slider_grabber_disabled
+		for s in [_eye_dist_slider, _eye_speed_slider]:
+			s.add_theme_stylebox_override("grabber_area", fill)
+			s.add_theme_stylebox_override("grabber_area_highlight", fill)
+			s.add_theme_icon_override("grabber", grab)
+			s.add_theme_icon_override("grabber_highlight", grab)
 
 	if !no_sprite:
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
