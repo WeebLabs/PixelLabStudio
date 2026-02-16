@@ -523,6 +523,7 @@ func getAllLinkedSprites():
 	return linkedSprites
 
 func visToggle(keys):
+	if Global.awaitingToggleBind: return
 	if keys.has(toggle):
 		$WobbleOrigin/DragOrigin.visible = !$WobbleOrigin/DragOrigin.visible
 

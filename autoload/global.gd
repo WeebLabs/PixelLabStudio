@@ -21,6 +21,7 @@ var i = 0
 
 var reparentMode = false
 var originMode = false
+var awaitingToggleBind = false
 var _origin_press_time = 0
 var scrollSelection = 0
 var _scroll_input = 0

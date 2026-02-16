@@ -479,9 +479,11 @@ func _on_set_toggle_pressed():
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
+	Global.awaitingToggleBind = true
 	await Global.main.fatfuckingballs
 
 	var keys = await Global.main.spriteVisToggles
+	Global.awaitingToggleBind = false
 	var key = keys[0]
 	if Global.heldSprite == null: return
 	Global.heldSprite.toggle = key
