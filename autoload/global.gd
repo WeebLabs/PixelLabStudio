@@ -192,6 +192,13 @@ func _process(delta):
 	
 	
 func _input(event):
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		if reparentMode:
+			reparentMode = false
+			chain.enable(false)
+			pushUpdate("Linking cancelled.")
+			get_viewport().set_input_as_handled()
+			return
 	if !Input.is_action_pressed("control"):
 		if event.is_action_pressed("scrollUp"):
 			_scroll_input -= 1
