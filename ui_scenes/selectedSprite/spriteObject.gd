@@ -440,7 +440,7 @@ func wobble():
 	wob.position.x = sin(tick*xFrq)*xAmp
 	wob.position.y = sin(tick*yFrq)*yAmp
 
-	if eyeTrack and !Global.main.editMode:
+	if eyeTrack and not (Global.main.editMode and Global.heldSprite == self):
 		var cursor_pos = Global.cursorWorldPos
 		var rest_pos = global_position
 		var direction = cursor_pos - rest_pos
