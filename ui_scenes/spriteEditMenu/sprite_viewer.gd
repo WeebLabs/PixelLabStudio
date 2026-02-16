@@ -13,6 +13,10 @@ extends Node2D
 var _bg: ColorRect
 var panel_width: float = 265
 var panel_height: float = 630
+var _controls_enabled: bool = false
+var _sliders: Array = []
+var _buttons: Array = []
+var _sections: Array = []
 
 func _ready():
 	Global.spriteEdit = self
@@ -31,6 +35,29 @@ func _ready():
 	$Layers.visible = false
 	$EyeTracking.visible = false
 
+	# Collect interactive controls for enable/disable toggling
+	_sliders = [
+		$Slider/DragSlider,
+		$WobbleControl/xFrq, $WobbleControl/xAmp,
+		$WobbleControl/yFrq, $WobbleControl/yAmp,
+		$Rotation/rDrag, $Rotation/squash,
+		$RotationalLimits/rotLimitMin, $RotationalLimits/rotLimitMax,
+		$Animation/animSpeed, $Animation/animFrames,
+	]
+	_buttons = [
+		$Buttons/Speaking/speaking, $Buttons/Blinking/blinking,
+		$Buttons/Trash/trash, $Buttons/Unlink/unlink,
+		$Buttons/CheckBox, $Buttons/ClipLinked,
+		$VisToggle/setToggle, $VisToggle/setToggle/delete,
+	]
+	# Sections to dim when no sprite is selected
+	_sections = [
+		$SubViewportContainer, $SubViewportContainer2,
+		$Position, $Buttons, $Slider, $WobbleControl,
+		$Rotation, $RotationalLimits, $Animation, $VisToggle,
+	]
+	_set_controls_enabled(false)
+
 	# Create dark gray background panel
 	_bg = ColorRect.new()
 	_bg.color = Color(0.15, 0.15, 0.15)
@@ -39,6 +66,16 @@ func _ready():
 	add_child(_bg)
 	move_child(_bg, 0)
 	_apply_size()
+
+func _set_controls_enabled(enabled: bool):
+	_controls_enabled = enabled
+	var dim = Color(1, 1, 1, 1) if enabled else Color(1, 1, 1, 0.35)
+	for section in _sections:
+		section.modulate = dim
+	for slider in _sliders:
+		slider.editable = enabled
+	for button in _buttons:
+		button.disabled = !enabled
 	
 func setImage():
 	if Global.heldSprite == null:
@@ -135,6 +172,10 @@ func _process(delta):
 
 	coverCollider.disabled = Global.heldSprite == null
 
+	var should_enable = Global.heldSprite != null
+	if should_enable != _controls_enabled:
+		_set_controls_enabled(should_enable)
+
 	if Global.heldSprite == null:
 		return
 
@@ -156,51 +197,58 @@ func _process(delta):
 
 
 func _on_drag_slider_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	if Global.heldSprite != null:
-		$Slider/Label.text = "drag: " + str(value)
-		Global.heldSprite.dragSpeed = value
+	$Slider/Label.text = "drag: " + str(value)
+	Global.heldSprite.dragSpeed = value
 
 
 func _on_x_frq_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$WobbleControl/xFrqLabel.text = "x frequency: " + str(value)
 	Global.heldSprite.xFrq = value
-	
+
 
 func _on_x_amp_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(value)
 	Global.heldSprite.xAmp = value
 
 
 func _on_y_frq_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$WobbleControl/yFrqLabel.text = "y frequency: " + str(value)
 	Global.heldSprite.yFrq = value
 
 func _on_y_amp_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(value)
 	Global.heldSprite.yAmp = value
 
 
 func _on_r_drag_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$Rotation/rDragLabel.text = "rotational drag: " + str(value)
 	Global.heldSprite.rdragStr = value
 
 
 func _on_speaking_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	var f = $Buttons/Speaking.frame
 	f = (f+1) % 3
-	
+
 	$Buttons/Speaking.frame = f
 	Global.heldSprite.showOnTalk = f
 
 
 func _on_blinking_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	var f = $Buttons/Blinking.frame
 	f = (f+1) % 4
@@ -210,42 +258,48 @@ func _on_blinking_pressed():
 
 
 func _on_trash_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.queue_free()
 	Global.heldSprite = null
-	
+
 	Global.spriteList.updateData()
 
 func _on_unlink_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	if Global.heldSprite.parentId == null:
 		return
 	Global.unlinkSprite()
 	setImage()
-	
+
 
 func _on_rot_limit_min_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(value)
 	Global.heldSprite.rLimitMin = value
-	
+
 	changeRotLimit()
 
 func _on_rot_limit_max_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(value)
 	Global.heldSprite.rLimitMax = value
-	
+
 	changeRotLimit()
 
 func changeRotLimit():
+	if Global.heldSprite == null: return
 	$RotationalLimits/RotBack/rotLimitBar.value = Global.heldSprite.rLimitMax - Global.heldSprite.rLimitMin
 	$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = Global.heldSprite.rLimitMin + 90
-	
+
 	$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = Global.heldSprite.rLimitMin
 	$RotationalLimits/RotBack/RotLineDisplay2.rotation_degrees = Global.heldSprite.rLimitMax
 
 func setLayerButtons():
+	if Global.heldSprite == null: return
 	var a = Global.heldSprite.costumeLayers.duplicate()
 	
 	$Layers/Layer1.frame = 1-a[0]
@@ -381,22 +435,26 @@ func layerSelected():
 
 
 func _on_squash_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$Rotation/squashlabel.text = "squash: " + str(value)
 	Global.heldSprite.stretchAmount = value
 
 
 func _on_check_box_toggled(button_pressed):
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.ignoreBounce = button_pressed
 
 
 func _on_anim_speed_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$Animation/animSpeedLabel.text = "animation speed: " + str(value)
 	Global.heldSprite.animSpeed = value
 
 func _on_anim_frames_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$Animation/animFramesLabel.text = "sprite frames: " + str(value)
 	Global.heldSprite.frames = value
@@ -405,40 +463,48 @@ func _on_anim_frames_value_changed(value):
 
 
 func _on_clip_linked_toggled(button_pressed):
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.setClip(button_pressed)
 
 
 func _on_delete_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.toggle = "null"
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 	Global.heldSprite.makeVis()
 
 func _on_set_toggle_pressed():
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
 	await Global.main.fatfuckingballs
 
 	var keys = await Global.main.spriteVisToggles
 	var key = keys[0]
+	if Global.heldSprite == null: return
 	Global.heldSprite.toggle = key
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 
 func _on_eye_track_toggled(button_pressed):
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.eyeTrack = button_pressed
 
 func _on_eye_track_dist_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(value)
 	Global.heldSprite.eyeTrackDistance = value
 
 func _on_eye_track_speed_value_changed(value):
+	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(value)
 	Global.heldSprite.eyeTrackSpeed = value
 
 func _on_eye_track_invert_toggled(button_pressed):
+	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.eyeTrackInvert = button_pressed

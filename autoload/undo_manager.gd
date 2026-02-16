@@ -9,9 +9,10 @@ var suppressed: bool = false
 
 var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 
-# Cache of sprite id -> base64 PNG string. Image data for a given sprite id
+# Cache of sprite id -> Image reference. Image data for a given sprite id
 # never changes during normal property edits (position, drag, layers, etc.),
-# so we only need to encode once and reuse across snapshots.
+# so we store a reference once and reuse across snapshots. No PNG encoding
+# needed — that only happens at file-save time in main.gd.
 var _image_cache: Dictionary = {}
 
 func _snapshot() -> Dictionary:
@@ -24,12 +25,9 @@ func _snapshot() -> Dictionary:
 			data[idx]["type"] = "sprite"
 			data[idx]["path"] = child.path
 
-			if _image_cache.has(child.id):
-				data[idx]["imageData"] = _image_cache[child.id]
-			else:
-				var encoded = Marshalls.raw_to_base64(child.imageData.save_png_to_buffer())
-				_image_cache[child.id] = encoded
-				data[idx]["imageData"] = encoded
+			if !_image_cache.has(child.id):
+				_image_cache[child.id] = child.imageData
+			data[idx]["imageData"] = _image_cache[child.id]
 
 			data[idx]["identification"] = child.id
 			data[idx]["parentId"] = child.parentId
@@ -215,7 +213,7 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("ignoreBounce"): sprite.ignoreBounce = d["ignoreBounce"]
 	if d.has("frames"): sprite.frames = d["frames"]
 	if d.has("animSpeed"): sprite.animSpeed = d["animSpeed"]
-	if d.has("imageData"): sprite.loadedImageData = d["imageData"]
+	if d.has("imageData"): sprite.loadedImage = d["imageData"]
 	if d.has("clipped"): sprite.clipped = d["clipped"]
 	if d.has("toggle"): sprite.toggle = d["toggle"]
 	if d.has("eyeTrack"): sprite.eyeTrack = d["eyeTrack"]

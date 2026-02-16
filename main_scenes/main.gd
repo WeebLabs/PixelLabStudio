@@ -27,6 +27,8 @@ var editMode = true
 
 @onready var shadow = $shadowSprite
 
+var _save_thread: Thread = null
+
 
 #Scene Reference
 @onready var spriteObject = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
@@ -220,6 +222,10 @@ func _notification(what):
 			if !editMode:
 				controlPanel.visible = true
 			pushUpdates.visible = true
+		NOTIFICATION_WM_CLOSE_REQUEST:
+			if _save_thread != null:
+				_save_thread.wait_to_finish()
+				_save_thread = null
 		30:
 			onWindowSizeChange()
 
@@ -632,10 +638,11 @@ func _on_load_button_pressed():
 func _on_load_dialog_file_selected(path):
 	UndoManager.save_state()
 	var data = Saving.read_save(path)
-	
+
 	if data == null:
 		return
-	
+
+	Global.heldSprite = null
 	origin.queue_free()
 	var new = Node2D.new()
 	$OriginMotion.add_child(new)
@@ -710,49 +717,53 @@ func _on_load_dialog_file_selected(path):
 	
 #SAVE AVATAR
 func _on_save_dialog_file_selected(path):
+	if _save_thread != null:
+		_save_thread.wait_to_finish()
+		_save_thread = null
+
 	var data = {}
 	var nodes = get_tree().get_nodes_in_group("saved")
 	var id = 0
 	for child in nodes:
-		
+
 		if child.type == "sprite":
 			data[id] = {}
 			data[id]["type"] = "sprite"
 			data[id]["path"] = child.path
-			data[id]["imageData"] = Marshalls.raw_to_base64(child.imageData.save_png_to_buffer())
+			data[id]["_image_ref"] = child.imageData
 			data[id]["identification"] = child.id
 			data[id]["parentId"] = child.parentId
-			
+
 			data[id]["pos"] = var_to_str(child.position)
 			data[id]["offset"] = var_to_str(child.offset)
 			data[id]["zindex"] = child.z
-			
+
 			data[id]["drag"] = child.dragSpeed
-			
+
 			data[id]["xFrq"] = child.xFrq
 			data[id]["xAmp"] = child.xAmp
 			data[id]["yFrq"] = child.yFrq
 			data[id]["yAmp"] = child.yAmp
-			
+
 			data[id]["rotDrag"] = child.rdragStr
-			
+
 			data[id]["showTalk"] = child.showOnTalk
 			data[id]["showBlink"] = child.showOnBlink
-			
+
 			data[id]["rLimitMin"] = child.rLimitMin
 			data[id]["rLimitMax"] = child.rLimitMax
-			
+
 			data[id]["costumeLayers"] = var_to_str(child.costumeLayers)
-			
+
 			data[id]["stretchAmount"] = child.stretchAmount
-			
+
 			data[id]["ignoreBounce"] = child.ignoreBounce
-			
+
 			data[id]["frames"] = child.frames
 			data[id]["animSpeed"] = child.animSpeed
-			
+
 			data[id]["clipped"] = child.clipped
-			
+
 			data[id]["toggle"] = child.toggle
 
 			data[id]["eyeTrack"] = child.eyeTrack
@@ -761,12 +772,29 @@ func _on_save_dialog_file_selected(path):
 			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
 
 		id += 1
-	
+
 	Saving.settings["lastAvatar"] = path
-	
-	Saving.data = data.duplicate()
-	Saving.write_save(path)
-	
+	Global.pushUpdate("Saving avatar...")
+
+	_save_thread = Thread.new()
+	_save_thread.start(_save_worker.bind(data, path))
+
+func _save_worker(data: Dictionary, path: String):
+	for id in data:
+		if data[id].has("_image_ref"):
+			var img: Image = data[id]["_image_ref"]
+			data[id]["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
+			data[id].erase("_image_ref")
+	var file = FileAccess.open(path, FileAccess.WRITE)
+	file.store_line(JSON.stringify(data))
+	file.close()
+	call_deferred("_on_save_finished", path, data)
+
+func _on_save_finished(path: String, data: Dictionary):
+	Saving.data = data
+	if _save_thread != null:
+		_save_thread.wait_to_finish()
+		_save_thread = null
 	Global.pushUpdate("Saved avatar at: " + path)
 
 func _on_link_button_pressed():
