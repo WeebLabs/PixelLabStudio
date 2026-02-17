@@ -18,6 +18,11 @@ var _sliders: Array = []
 var _buttons: Array = []
 var _sections: Array = []
 
+var _slider_fill_enabled: StyleBoxFlat
+var _slider_fill_disabled: StyleBoxFlat
+var _slider_grabber_enabled: ImageTexture
+var _slider_grabber_disabled: ImageTexture
+
 func _ready():
 	Global.spriteEdit = self
 	$Buttons/Speaking.visible = false
@@ -34,6 +39,7 @@ func _ready():
 	# Hide sections moved to right sidebar
 	$Layers.visible = false
 	$EyeTracking.visible = false
+	$VisToggle.visible = false
 
 	# Collect interactive controls for enable/disable toggling
 	_sliders = [
@@ -48,15 +54,71 @@ func _ready():
 		$Buttons/Speaking/speaking, $Buttons/Blinking/blinking,
 		$Buttons/Trash/trash, $Buttons/Unlink/unlink,
 		$Buttons/CheckBox, $Buttons/ClipLinked,
-		$VisToggle/setToggle, $VisToggle/setToggle/delete,
 	]
 	# Sections to dim when no sprite is selected
 	_sections = [
 		$SubViewportContainer, $SubViewportContainer2,
 		$Position, $Buttons, $Slider, $WobbleControl,
-		$Rotation, $RotationalLimits, $Animation, $VisToggle,
+		$Rotation, $RotationalLimits, $Animation,
 	]
 	_set_controls_enabled(false)
+
+	# Build slider style resources (matching right sidebar)
+	_slider_fill_enabled = StyleBoxFlat.new()
+	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
+	_slider_fill_disabled = StyleBoxFlat.new()
+	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
+
+	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_on.fill(Color(0, 0, 0, 0))
+	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_off.fill(Color(0, 0, 0, 0))
+	for px in range(16):
+		for py in range(16):
+			var dx = px - 8
+			var dy = py - 8
+			if dx * dx + dy * dy <= 36:
+				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
+				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
+	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
+	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
+
+	for slider in _sliders:
+		slider.theme = null
+		slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
+		slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
+		slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
+		slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
+		slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+
+	# Restyle labels to match right sidebar
+	var _labels = [
+		$Slider/Label,
+		$WobbleControl/xFrqLabel, $WobbleControl/xAmpLabel,
+		$WobbleControl/yFrqLabel, $WobbleControl/yAmpLabel,
+		$Rotation/rDragLabel, $Rotation/squashlabel,
+		$RotationalLimits/RotLimitMin, $RotationalLimits/RotLimitMax,
+		$Animation/animFramesLabel, $Animation/animSpeedLabel,
+		$Position/Label, $Position/Label2, $Position/Label3,
+	]
+	for label in _labels:
+		label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+		label.add_theme_font_size_override("font_size", 12)
+
+	$Position/fileTitle.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	$Position/fileTitle.add_theme_font_size_override("font_size", 12)
+
+	# Restyle checkboxes
+	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked]:
+		cb.add_theme_font_size_override("font_size", 12)
+		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+
+	# Add section dividers
+	_create_divider(141)   # between 3D Preview and Position Info
+	_create_divider(250)   # between Position Info and Animation
+	_create_divider(462)   # between Rotation and Buttons row
+	_create_divider(615)   # between Buttons/Checkboxes and Wobble
+	_create_divider(955)   # between Wobble and Rotational Limits
 
 	# Create dark gray background panel
 	_bg = ColorRect.new()
@@ -76,6 +138,13 @@ func _set_controls_enabled(enabled: bool):
 		slider.editable = enabled
 	for button in _buttons:
 		button.disabled = !enabled
+	var fill = _slider_fill_enabled if enabled else _slider_fill_disabled
+	var grab = _slider_grabber_enabled if enabled else _slider_grabber_disabled
+	for slider in _sliders:
+		slider.add_theme_stylebox_override("grabber_area", fill)
+		slider.add_theme_stylebox_override("grabber_area_highlight", fill)
+		slider.add_theme_icon_override("grabber", grab)
+		slider.add_theme_icon_override("grabber_highlight", grab)
 	
 func setImage():
 	if Global.heldSprite == null:
@@ -160,6 +229,15 @@ func setImage():
 		parentSpin.hframes = nodes[0].frames
 		parentSpin.visible = true
 	
+func _create_divider(y_pos: float) -> ColorRect:
+	var div = ColorRect.new()
+	div.color = Color(0.3, 0.3, 0.35)
+	div.size = Vector2(panel_width - 16, 1)
+	div.position = Vector2(8, y_pos)
+	div.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(div)
+	return div
+
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
 	panel_height = s.y

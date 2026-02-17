@@ -920,7 +920,7 @@ func moveSpriteMenu(delta):
 	var size = get_viewport().get_visible_rect().size
 	var topY = editControls.MENU_BAR_HEIGHT + 2
 
-	var windowLength = 1400 #1250
+	var windowLength = 1100
 
 	$ViewerArrows/Arrows.position.y =  size.y - 25
 

@@ -48,6 +48,12 @@ var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
 var _slider_enabled_state: bool = true
 
+var _vis_toggle_section: Node2D
+var _vis_toggle_btn: Button
+var _vis_toggle_label: Label
+var _vis_toggle_delete_btn: Button
+var _divider4: ColorRect
+
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -74,6 +80,7 @@ func _ready():
 	_create_controls()
 	_create_costume_buttons()
 	_create_eye_tracking()
+	_create_vis_toggle()
 	_apply_size()
 
 func _create_controls():
@@ -306,6 +313,56 @@ func _create_eye_tracking():
 
 	_eye_section.add_child(_eye_speed_slider)
 
+func _create_vis_toggle():
+	_divider4 = ColorRect.new()
+	_divider4.color = Color(0.3, 0.3, 0.35)
+	_divider4.size = Vector2(panel_width - 16, 1)
+	_divider4.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_divider4)
+
+	_vis_toggle_section = Node2D.new()
+	add_child(_vis_toggle_section)
+
+	var label_color = Color(0.75, 0.75, 0.8)
+
+	# Section header
+	var header = Label.new()
+	header.text = "Visibility Toggle"
+	header.add_theme_font_size_override("font_size", 12)
+	header.add_theme_color_override("font_color", label_color)
+	header.position = Vector2(0, 0)
+	_vis_toggle_section.add_child(header)
+
+	# Set Key button
+	_vis_toggle_btn = Button.new()
+	_vis_toggle_btn.text = "Set Key"
+	_vis_toggle_btn.flat = true
+	_vis_toggle_btn.add_theme_font_size_override("font_size", 12)
+	_vis_toggle_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	_vis_toggle_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_vis_toggle_btn.position = Vector2(0, 20)
+	_vis_toggle_btn.pressed.connect(_on_set_toggle_pressed)
+	_vis_toggle_section.add_child(_vis_toggle_btn)
+
+	# Toggle label
+	_vis_toggle_label = Label.new()
+	_vis_toggle_label.text = "toggle: \"null\""
+	_vis_toggle_label.add_theme_font_size_override("font_size", 12)
+	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	_vis_toggle_label.position = Vector2(70, 24)
+	_vis_toggle_section.add_child(_vis_toggle_label)
+
+	# Delete button
+	_vis_toggle_delete_btn = Button.new()
+	_vis_toggle_delete_btn.text = "x"
+	_vis_toggle_delete_btn.flat = true
+	_vis_toggle_delete_btn.add_theme_font_size_override("font_size", 11)
+	_vis_toggle_delete_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	_vis_toggle_delete_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.45, 0.5))
+	_vis_toggle_delete_btn.position = Vector2(0, 20)
+	_vis_toggle_delete_btn.pressed.connect(_on_vis_toggle_delete_pressed)
+	_vis_toggle_section.add_child(_vis_toggle_delete_btn)
+
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
 	panel_height = s.y
@@ -353,6 +410,13 @@ func _apply_size():
 	_eye_invert.position.x = eye_ctrl_width / 2
 	_eye_invert.size.x = eye_ctrl_width / 2
 
+	# Visibility Toggle section (below eye tracking)
+	var eye_bottom = costume_bottom + 14 + 110
+	_divider4.position = Vector2(8, eye_bottom + 4)
+	_divider4.size.x = panel_width - 16
+	_vis_toggle_section.position = Vector2(eye_center_x, eye_bottom + 14)
+	_vis_toggle_delete_btn.position.x = eye_ctrl_width - 20
+
 	# Collision area
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
 	$Area2D2/CollisionShape2D.position = Vector2(panel_width / 2.0, panel_height / 2.0)
@@ -384,6 +448,14 @@ func _process(_delta):
 	_eye_dist_slider.editable = !no_sprite
 	_eye_speed_slider.editable = !no_sprite
 	_eye_invert.disabled = no_sprite
+
+	# Visibility Toggle
+	_vis_toggle_btn.disabled = no_sprite
+	_vis_toggle_delete_btn.disabled = no_sprite
+	if no_sprite:
+		_vis_toggle_label.add_theme_color_override("font_color", Color(0.35, 0.35, 0.4))
+	elif not Global.awaitingToggleBind:
+		_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 
 	# Swap slider styles when enabled state changes
 	var slider_should_enable = !no_sprite
@@ -427,6 +499,7 @@ func updateControls():
 	_eye_speed_label.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
 	_eye_speed_slider.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
 	_eye_invert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
+	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 
 # --- Top control handlers ---
 
@@ -510,6 +583,30 @@ func _on_eye_track_invert_toggled(pressed):
 	UndoManager.save_state()
 	Global.heldSprite.eyeTrackInvert = pressed
 
+# --- Visibility Toggle handlers ---
+
+func _on_set_toggle_pressed():
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	_vis_toggle_label.text = "toggle: AWAITING INPUT"
+	_vis_toggle_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.8))
+	Global.awaitingToggleBind = true
+	await Global.main.fatfuckingballs
+	var keys = await Global.main.spriteVisToggles
+	Global.awaitingToggleBind = false
+	var key = keys[0]
+	if Global.heldSprite == null: return
+	Global.heldSprite.toggle = key
+	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
+	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+
+func _on_vis_toggle_delete_pressed():
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.toggle = "null"
+	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
+	Global.heldSprite.makeVis()
+
 # --- Resize and drag ---
 
 func _is_on_left_edge(local: Vector2) -> bool:
@@ -561,7 +658,7 @@ func _input(event):
 		elif _divider_dragging:
 			var local = get_local_mouse_position()
 			var min_y = (CONTROLS_ROW_HEIGHT + 60.0) / panel_height
-			var max_y = (panel_height - 230.0) / panel_height
+			var max_y = (panel_height - 280.0) / panel_height
 			_divider_ratio = clamp(local.y / panel_height, min_y, max_y)
 			_apply_size()
 			get_viewport().set_input_as_handled()
