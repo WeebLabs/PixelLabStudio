@@ -56,6 +56,12 @@ var settings = {
 	"blinkSpeed":1.0,
 	"blinkChance":200,
 	"bounceOnCostumeChange":false,
+	"ndiEnabled":false,
+	"ndiWidth":512,
+	"ndiMode":"auto",
+	"ndiManualWidth":800,
+	"ndiManualHeight":1200,
+	"ndiRulerY":200.0,
 }
 
 var settingsPath = "user://settings.pngtp"

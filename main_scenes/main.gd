@@ -27,6 +27,9 @@ var editMode = true
 
 @onready var shadow = $shadowSprite
 
+var ndi_manager: Node = null
+var _ndi_label: Label = null
+
 var _save_thread: Thread = null
 
 
@@ -144,23 +147,55 @@ func _ready():
 			)
 
 	RenderingServer.set_default_clear_color(Global.backgroundColor)
+
+	# NDI output (must be before setvalues so settings UI can reference ndi_manager)
+	_init_ndi()
+
 	swapMode()
 	settingsMenu.setvalues()
 	changeCostume(1)
-	
+
 	var s = get_viewport().get_visible_rect().size
 	origin.position = s*0.5
 	camera.position = origin.position
 	
+func _init_ndi():
+	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
+	ndi_manager = Node.new()
+	ndi_manager.set_script(NDIManagerScript)
+	ndi_manager.name = "NDIManager"
+	add_child(ndi_manager)
+
+	# NDI status label in ControlPanel
+	_ndi_label = Label.new()
+	_ndi_label.name = "NDILabel"
+	_ndi_label.text = "NDI"
+	_ndi_label.add_theme_font_size_override("font_size", 12)
+	_ndi_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4))
+	_ndi_label.position = Vector2(-80, -38)
+	_ndi_label.visible = false
+	controlPanel.add_child(_ndi_label)
+
+func ndi_mark_dirty():
+	if ndi_manager != null:
+		ndi_manager.mark_dirty()
+
 func _process(delta):
-	var hold = origin.get_parent().position.y
-	
-	origin.get_parent().position.y += yVel * 0.0166
-	if origin.get_parent().position.y > 0:
+	# Freeze bounce while dragging NDI ruler
+	var ruler_frozen = ndi_manager != null and ndi_manager.ruler_dragging
+	if ruler_frozen:
 		origin.get_parent().position.y = 0
-	bounceChange = hold - origin.get_parent().position.y
-	
-	yVel += bounceGravity*0.0166
+		yVel = 0
+		bounceChange = 0
+	else:
+		var hold = origin.get_parent().position.y
+
+		origin.get_parent().position.y += yVel * 0.0166
+		if origin.get_parent().position.y > 0:
+			origin.get_parent().position.y = 0
+		bounceChange = hold - origin.get_parent().position.y
+
+		yVel += bounceGravity*0.0166
 	
 	if Input.is_action_just_pressed("openFolder"):
 		OS.shell_open(ProjectSettings.globalize_path("user://"))
@@ -174,6 +209,10 @@ func _process(delta):
 	_process_anim_thread(delta)
 	panCamera()
 	followShadow()
+
+	# NDI status indicator
+	if _ndi_label != null and ndi_manager != null:
+		_ndi_label.visible = !editMode and ndi_manager.is_enabled()
 
 func _unhandled_input(event):
 	if event is InputEventMouseButton:
@@ -214,6 +253,8 @@ func isFileSystemOpen():
 
 #Displays control panel whether or not application is focused
 func _notification(what):
+	if controlPanel == null or pushUpdates == null:
+		return
 	match what:
 		SceneTree.NOTIFICATION_APPLICATION_FOCUS_OUT:
 			controlPanel.visible = false
@@ -286,6 +327,20 @@ func onSpeak():
 	if origin.get_parent().position.y > -16:
 		yVel = bounceSlider * -1
 
+func updateWindowTransparency():
+	var ndi_active = ndi_manager != null and ndi_manager.is_enabled()
+	if ndi_active and !editMode:
+		# NDI handles transparency via SubViewport — disable expensive window compositing
+		get_viewport().transparent_bg = false
+		get_window().transparent = false
+		RenderingServer.set_default_clear_color(Global.backgroundColor if Global.backgroundColor.a != 0.0 else Color(0.3, 0.3, 0.3))
+	else:
+		get_viewport().transparent_bg = !editMode
+		if Global.backgroundColor.a != 0.0:
+			get_viewport().transparent_bg = false
+		get_window().transparent = get_viewport().transparent_bg
+		RenderingServer.set_default_clear_color(Global.backgroundColor)
+
 #Swaps between edit mode and view mode
 func swapMode():
 	
@@ -294,10 +349,7 @@ func swapMode():
 	editMode = !editMode
 	Global.pushUpdate("Toggled editing mode.")
 	
-	get_viewport().transparent_bg = !editMode
-	if Global.backgroundColor.a != 0.0:
-		get_viewport().transparent_bg = false
-	RenderingServer.set_default_clear_color(Global.backgroundColor)
+	updateWindowTransparency()
 	#processing
 	editControls.set_process(editMode)
 	controlPanel.set_process(!editMode)
@@ -307,6 +359,8 @@ func swapMode():
 	controlPanel.visible = !editMode
 	lines.visible = editMode
 	spriteList.visible = editMode
+	if ndi_manager != null:
+		ndi_manager.set_ruler_visible(editMode and ndi_manager.is_enabled())
 	onWindowSizeChange()
 
 #Adds sprite object to scene
@@ -323,7 +377,8 @@ func add_image(path):
 	sprite.position = Vector2.ZERO
 	
 	Global.spriteList.updateData()
-	
+	ndi_mark_dirty()
+
 	Global.pushUpdate("Added new sprite.")
 	
 func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector2):
@@ -710,10 +765,11 @@ func _on_load_dialog_file_selected(path):
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
 	Global.spriteList.updateData()
-	
+
 	Global.pushUpdate("Loaded avatar at: " + path)
-	
+
 	onWindowSizeChange()
+	ndi_mark_dirty()
 	
 #SAVE AVATAR
 func _on_save_dialog_file_selected(path):
@@ -910,7 +966,8 @@ func changeCostume(newCostume):
 	
 	if bounceOnCostumeChange:
 		onSpeak()
-	
+
+	ndi_mark_dirty()
 	Global.pushUpdate("Change costume: " + str(newCostume))
 	
 func moveSpriteMenu(delta):
@@ -1037,6 +1094,7 @@ func _on_clear_avatar_pressed():
 	origin = new
 	Global.spriteList.updateData()
 	onWindowSizeChange()
+	ndi_mark_dirty()
 	Global.pushUpdate("Cleared avatar.")
 
 func _on_reset_avatar_pressed():

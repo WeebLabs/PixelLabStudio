@@ -437,6 +437,9 @@ func drag(delta):
 		dragOrigin.global_position = dragger.global_position
 
 func wobble():
+	# Skip wobble while NDI ruler is being dragged (frozen at worst-case-down)
+	if Global.main.ndi_manager != null and Global.main.ndi_manager.ruler_dragging:
+		return
 	wob.position.x = sin(tick*xFrq)*xAmp
 	wob.position.y = sin(tick*yFrq)*yAmp
 

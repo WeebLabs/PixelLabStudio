@@ -8,28 +8,33 @@
 
 config_version=5
 
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
 [application]
 
-config/name="PNGTuberPlus"
+config/name="PixelLab Studio"
 run/main_scene="res://main_scenes/main.tscn"
-config/features=PackedStringArray("4.4", "GL Compatibility")
+config/features=PackedStringArray("4.6", "GL Compatibility")
 run/max_fps=60
 boot_splash/bg_color=Color(0.0313726, 0.0313726, 0.0313726, 1)
-boot_splash/fullsize=false
+boot_splash/stretch_mode=0
 boot_splash/use_filter=false
 boot_splash/image="res://splash.png"
 config/icon="res://icon.png"
 
 [audio]
 
-buses/channel_disable_time=0.0
+buses/default_bus_layout="uid://cg7wt8xagjs7o"
 driver/enable_input=true
+buses/channel_disable_time=0.0
 
 [autoload]
 
 Saving="*res://autoload/saving.gd"
 Global="*res://autoload/global.gd"
-ElgatoStreamDeck="*res://addons/godot-streamdeck-addon/singleton.gd"
+ElgatoStreamDeck="*uid://b6nrub7s3o8e7"
 DefaultAvatarData="*res://autoload/defaultAvatarData.gd"
 UndoManager="*res://autoload/undo_manager.gd"
 
@@ -46,7 +51,7 @@ window/size/window_width_override=1280
 window/size/window_height_override=720
 window/dpi/allow_hidpi=false
 window/per_pixel_transparency/allowed=true
-window/vsync/vsync_mode=0
+window/vsync/vsync_mode=1
 
 [dotnet]
 
@@ -165,6 +170,7 @@ simMic={
 
 textures/canvas_textures/default_texture_filter=0
 textures/canvas_textures/default_texture_repeat=1
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
+rendering_device/driver="metal"
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0.376471, 0.376471, 0.376471, 1)
