@@ -264,8 +264,9 @@ func _build_ndi_section():
 	if _ndi_section != null:
 		return
 
-	# Expand background to fit NDI section
+	# Expand background to fit NDI section and shift menu up so it doesn't cover the settings icon
 	$NinePatchRect.offset_bottom += 160
+	position.y -= 160
 
 	_ndi_section = Node2D.new()
 	_ndi_section.name = "NDISettings"
