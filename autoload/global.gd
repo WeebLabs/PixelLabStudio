@@ -51,8 +51,6 @@ var senseLimit = 0.0
 signal startSpeaking
 signal stopSpeaking
 
-var micResetTime = 180
-
 var updatePusherNode = null
 
 var rand = RandomNumberGenerator.new()
@@ -63,32 +61,22 @@ func _ready():
 	if !Saving.settings.has("useStreamDeck"):
 		Saving.settings["useStreamDeck"] = false
 	
-	if Saving.settings.has("secondsToMicReset"):
-		Global.micResetTime = Saving.settings["secondsToMicReset"]
-	else:
-		Saving.settings["secondsToMicReset"] = 180
-		
 	createMicrophone()
 
 func createMicrophone():
+	deleteAllMics()
 	var playa = AudioStreamPlayer.new()
 	var mic = AudioStreamMicrophone.new()
 	playa.stream = mic
-	playa.autoplay = true
 	playa.bus = "MIC"
 	add_child(playa)
+	playa.play()
 	currentMicrophone = playa
-	await get_tree().create_timer(micResetTime).timeout
-	if currentMicrophone != playa:
-		return
-	deleteAllMics()
-	currentMicrophone = null
-	await get_tree().create_timer(0.25).timeout
-	createMicrophone()
 
 func deleteAllMics():
 	for child in get_children():
 		child.queue_free()
+	currentMicrophone = null
 
 
 func _process(delta):

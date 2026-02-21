@@ -105,8 +105,7 @@ func _ready():
 		label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 		label.add_theme_font_size_override("font_size", 12)
 
-	$Position/fileTitle.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	$Position/fileTitle.add_theme_font_size_override("font_size", 12)
+	$Position/fileTitle.visible = false
 
 	# Restyle checkboxes
 	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked]:
@@ -187,8 +186,6 @@ func setImage():
 
 	$Rotation/squashlabel.text = "squash: " + str(Global.heldSprite.stretchAmount)
 	$Rotation/squash.set_value_no_signal(Global.heldSprite.stretchAmount)
-
-	$Position/fileTitle.text = Global.heldSprite.path
 
 	$Buttons/CheckBox.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
 	$Buttons/ClipLinked.set_pressed_no_signal(Global.heldSprite.clipped)
@@ -380,16 +377,18 @@ func setLayerButtons():
 	if Global.heldSprite == null: return
 	var a = Global.heldSprite.costumeLayers.duplicate()
 	
-	$Layers/Layer1.frame = 1-a[0]
-	$Layers/Layer2.frame = 1-a[1]
-	$Layers/Layer3.frame = 1-a[2]
-	$Layers/Layer4.frame = 1-a[3]
-	$Layers/Layer5.frame = 1-a[4]
-	$Layers/Layer6.frame = 1-a[5]
-	$Layers/Layer7.frame = 1-a[6]
-	$Layers/Layer8.frame = 1-a[7]
-	$Layers/Layer9.frame = 1-a[8]
-	$Layers/Layer10.frame = 1-a[9]
+	var active_mod = Color(1, 1, 1, 1)
+	var inactive_mod = Color(0.5, 0.5, 0.5, 0.7)
+	$Layers/Layer1.self_modulate = active_mod if a[0] == 1 else inactive_mod
+	$Layers/Layer2.self_modulate = active_mod if a[1] == 1 else inactive_mod
+	$Layers/Layer3.self_modulate = active_mod if a[2] == 1 else inactive_mod
+	$Layers/Layer4.self_modulate = active_mod if a[3] == 1 else inactive_mod
+	$Layers/Layer5.self_modulate = active_mod if a[4] == 1 else inactive_mod
+	$Layers/Layer6.self_modulate = active_mod if a[5] == 1 else inactive_mod
+	$Layers/Layer7.self_modulate = active_mod if a[6] == 1 else inactive_mod
+	$Layers/Layer8.self_modulate = active_mod if a[7] == 1 else inactive_mod
+	$Layers/Layer9.self_modulate = active_mod if a[8] == 1 else inactive_mod
+	$Layers/Layer10.self_modulate = active_mod if a[9] == 1 else inactive_mod
 	
 	var nodes = get_tree().get_nodes_in_group("saved")
 	for sprite in nodes:

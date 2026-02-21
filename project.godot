@@ -22,6 +22,7 @@ config/icon="res://icon.png"
 
 [audio]
 
+buses/channel_disable_time=0.0
 driver/enable_input=true
 
 [autoload]

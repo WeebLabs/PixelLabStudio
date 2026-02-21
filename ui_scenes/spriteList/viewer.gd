@@ -75,7 +75,7 @@ func _ready():
 	move_child(_bg, 0)
 
 	for i in range(1, 11):
-		layer_textures.append(load("res://ui_scenes/spriteEditMenu/layerButtons/" + str(i) + ".png"))
+		layer_textures.append(load("res://icons/" + str(i) + ".svg"))
 
 	_create_controls()
 	_create_costume_buttons()
@@ -183,13 +183,12 @@ func _create_costume_buttons():
 	_costume_section = Node2D.new()
 	add_child(_costume_section)
 
-	var icon_scale = Vector2(0.53, 0.53)
+	var icon_scale = Vector2(0.4, 0.4)
 	var spacing_x = 29
 
 	for i in range(10):
 		var spr = Sprite2D.new()
 		spr.texture = layer_textures[i]
-		spr.hframes = 2
 		spr.scale = icon_scale
 		spr.position = Vector2(i * spacing_x, 14)
 		_costume_section.add_child(spr)
@@ -475,7 +474,10 @@ func _process(_delta):
 
 		# Costume button frames
 		for i in range(10):
-			_costume_btns[i].frame = 1 - Global.heldSprite.costumeLayers[i]
+			if Global.heldSprite.costumeLayers[i] == 1:
+				_costume_btns[i].self_modulate = Color(1, 1, 1, 1)
+			else:
+				_costume_btns[i].self_modulate = Color(0.5, 0.5, 0.5, 0.7)
 
 		# Costume select position
 		var costume_idx = Global.main.costume - 1
