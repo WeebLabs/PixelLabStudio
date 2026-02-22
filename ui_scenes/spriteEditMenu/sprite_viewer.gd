@@ -1,11 +1,10 @@
 extends Node2D
 
 #Node Reference
-@onready var spriteSpin = $SubViewportContainer/SubViewport/Node3D/Sprite3D
-
-@onready var parentSpin = $SubViewportContainer2/SubViewport/Node3D/Sprite3D
-
 @onready var spriteRotDisplay = $RotationalLimits/RotBack/SpriteDisplay
+
+var _preview: Sprite2D
+var _parent_label: Label
 
 
 @onready var coverCollider = $Area2D/CollisionShape2D
@@ -36,6 +35,36 @@ func _ready():
 	$RotationalLimits/RotBorder.visible = false
 	$VisToggle/setToggle/rect.visible = false
 
+	# Hide 3D SubViewport previews — replaced by static 2D preview
+	$SubViewportContainer.visible = false
+	$SubViewportContainer2.visible = false
+
+	# Create static 2D sprite preview
+	_preview = Sprite2D.new()
+	_preview.position = Vector2(123, 65)
+	add_child(_preview)
+
+	# Create parent label in the Position section (above position label)
+	_parent_label = Label.new()
+	_parent_label.offset_left = 10.0
+	_parent_label.offset_top = 155.0
+	_parent_label.offset_right = 236.0
+	_parent_label.offset_bottom = 179.0
+	_parent_label.text = "Root Element"
+	$Position.add_child(_parent_label)
+
+	# Shift position/offset/layer labels down for parent label
+	$Position/Label.offset_top = 179.0
+	$Position/Label.offset_bottom = 205.0
+	$Position/Label2.offset_top = 203.0
+	$Position/Label2.offset_bottom = 229.0
+	$Position/Label3.offset_top = 225.0
+	$Position/Label3.offset_bottom = 251.0
+
+	# Shift all sections below Position down to accommodate parent label
+	for node in [$Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
+		node.position.y += 24
+
 	# Hide sections moved to right sidebar
 	$Layers.visible = false
 	$EyeTracking.visible = false
@@ -57,7 +86,7 @@ func _ready():
 	]
 	# Sections to dim when no sprite is selected
 	_sections = [
-		$SubViewportContainer, $SubViewportContainer2,
+		_preview,
 		$Position, $Buttons, $Slider, $WobbleControl,
 		$Rotation, $RotationalLimits, $Animation,
 	]
@@ -100,6 +129,7 @@ func _ready():
 		$RotationalLimits/RotLimitMin, $RotationalLimits/RotLimitMax,
 		$Animation/animFramesLabel, $Animation/animSpeedLabel,
 		$Position/Label, $Position/Label2, $Position/Label3,
+		_parent_label,
 	]
 	for label in _labels:
 		label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
@@ -114,10 +144,10 @@ func _ready():
 
 	# Add section dividers
 	_create_divider(141)   # between 3D Preview and Position Info
-	_create_divider(250)   # between Position Info and Animation
-	_create_divider(462)   # between Rotation and Buttons row
-	_create_divider(615)   # between Buttons/Checkboxes and Wobble
-	_create_divider(955)   # between Wobble and Rotational Limits
+	_create_divider(274)   # between Position Info and Animation
+	_create_divider(486)   # between Rotation and Buttons row
+	_create_divider(639)   # between Buttons/Checkboxes and Wobble
+	_create_divider(979)   # between Wobble and Rotational Limits
 
 	# Create dark gray background panel
 	_bg = ColorRect.new()
@@ -149,9 +179,50 @@ func setImage():
 	if Global.heldSprite == null:
 		return
 
-	spriteSpin.texture = Global.heldSprite.tex
-	spriteSpin.pixel_size = 1.5 / Global.heldSprite.imageData.get_size().y
-	spriteSpin.hframes = Global.heldSprite.frames
+	# Crop to opaque content of the first frame so the sprite fills the preview
+	var img = Global.heldSprite.imageData
+	var img_size = img.get_size()
+	var frame_w = int(img_size.x / Global.heldSprite.frames)
+	var frame_h = int(img_size.y)
+
+	# Find bounding rect of non-transparent pixels in first frame
+	var min_x = frame_w
+	var min_y = frame_h
+	var max_x = 0
+	var max_y = 0
+	for py in range(frame_h):
+		for px in range(frame_w):
+			if img.get_pixel(px, py).a > 0.01:
+				min_x = min(min_x, px)
+				min_y = min(min_y, py)
+				max_x = max(max_x, px)
+				max_y = max(max_y, py)
+
+	if max_x >= min_x and max_y >= min_y:
+		var content_rect = Rect2(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+		var atlas = AtlasTexture.new()
+		atlas.atlas = Global.heldSprite.tex
+		atlas.region = content_rect
+		_preview.texture = atlas
+		_preview.hframes = 1
+		var preview_scale = min(240.0 / content_rect.size.x, 120.0 / content_rect.size.y)
+		_preview.scale = Vector2(preview_scale, preview_scale)
+	else:
+		_preview.texture = Global.heldSprite.tex
+		_preview.hframes = Global.heldSprite.frames
+		var preview_scale = min(240.0 / frame_w, 120.0 / frame_h)
+		_preview.scale = Vector2(preview_scale, preview_scale)
+
+	# Update parent label
+	if Global.heldSprite.parentId != null:
+		var nodes = get_tree().get_nodes_in_group(str(Global.heldSprite.parentId))
+		if nodes.size() > 0:
+			var count = nodes[0].path.get_slice_count("/") - 1
+			_parent_label.text = "Parent: " + nodes[0].path.get_slice("/", count)
+		else:
+			_parent_label.text = "Root Element"
+	else:
+		_parent_label.text = "Root Element"
 
 	spriteRotDisplay.texture = Global.heldSprite.tex
 	spriteRotDisplay.offset = Global.heldSprite.offset
@@ -213,18 +284,6 @@ func setImage():
 		Global.spriteList.updateControls()
 		Global.spriteList.scroll_to_selected()
 
-	if Global.heldSprite.parentId == null:
-		parentSpin.visible = false
-	else:
-		var nodes = get_tree().get_nodes_in_group(str(Global.heldSprite.parentId))
-
-		if nodes.size()<=0:
-			return
-
-		parentSpin.texture = nodes[0].tex
-		parentSpin.pixel_size = 1.5 / nodes[0].imageData.get_size().y
-		parentSpin.hframes = nodes[0].frames
-		parentSpin.visible = true
 	
 func _create_divider(y_pos: float) -> ColorRect:
 	var div = ColorRect.new()
@@ -254,7 +313,7 @@ func _input(event):
 		return
 	# Only scroll when window is short enough to need it
 	var s = get_viewport().get_visible_rect().size
-	if s.y > 1150:
+	if s.y > 1174:
 		return
 	var step = 50
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -265,7 +324,7 @@ func _input(event):
 		return
 	# Clamp to same bounds as moveSpriteMenu()
 	var top_y = 30  # MENU_BAR_HEIGHT + 2
-	var min_y = s.y - 1100
+	var min_y = s.y - 1124
 	position.y = clamp(position.y, min_y, top_y)
 	get_viewport().set_input_as_handled()
 
@@ -282,8 +341,6 @@ func _process(delta):
 		return
 
 	var obj = Global.heldSprite
-	spriteSpin.rotate_y(delta*4.0)
-	parentSpin.rotate_y(delta*4.0)
 	
 	$Position/Label.text = "position     X : "+str(obj.position.x)+"     Y: " + str(obj.position.y)
 	$Position/Label2.text = "offset         X : "+str(obj.offset.x)+"     Y: " + str(obj.offset.y)
@@ -562,8 +619,8 @@ func _on_anim_frames_value_changed(value):
 	UndoManager.save_state_continuous()
 	$Animation/animFramesLabel.text = "sprite frames: " + str(value)
 	Global.heldSprite.frames = value
-	spriteSpin.hframes = Global.heldSprite.frames
 	Global.heldSprite.changeFrames()
+	setImage()
 
 
 func _on_clip_linked_toggled(button_pressed):
