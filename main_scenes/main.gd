@@ -158,7 +158,12 @@ func _ready():
 	var s = get_viewport().get_visible_rect().size
 	origin.position = s*0.5
 	camera.position = origin.position
-	
+
+	# Put HUD elements on visibility layer 2 so they're excluded from NDI output
+	# (NDI SubViewport only renders layer 1)
+	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $MouseCursor]:
+		hud_node.visibility_layer = 2
+
 func _init_ndi():
 	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
 	ndi_manager = Node.new()
@@ -424,6 +429,7 @@ func _on_psd_dialog_file_selected(path):
 func _create_psd_progress_dialog() -> Node2D:
 	var dialog = Node2D.new()
 	dialog.z_index = 4095
+	dialog.visibility_layer = 2
 	dialog.position = camera.position
 
 	var bg = ColorRect.new()
@@ -529,6 +535,7 @@ func _start_animated_import(path: String, is_replace: bool):
 func _create_anim_progress_dialog() -> Node2D:
 	var dialog = Node2D.new()
 	dialog.z_index = 4095
+	dialog.visibility_layer = 2
 	dialog.position = camera.position
 
 	var bg = ColorRect.new()
