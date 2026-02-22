@@ -359,6 +359,7 @@ func swapMode():
 	controlPanel.visible = !editMode
 	lines.visible = editMode
 	spriteList.visible = editMode
+	viewerArrows.visible = editMode
 	if ndi_manager != null:
 		ndi_manager.set_ruler_visible(editMode and ndi_manager.is_enabled())
 	onWindowSizeChange()
