@@ -989,35 +989,15 @@ func moveSpriteMenu(delta):
 
 	var windowLength = 1100
 
-	$ViewerArrows/Arrows.position.y =  size.y - 25
+	$ViewerArrows/Arrows.visible = false
+	$ViewerArrows/Arrows2.visible = false
 
 	if !Global.spriteEdit.visible:
-		$ViewerArrows/Arrows.visible = false
-		$ViewerArrows/Arrows2.visible = false
 		return
 
 	if size.y > windowLength+50:
 		Global.spriteEdit.position.y = topY
-
-		$ViewerArrows/Arrows.visible = false
-		$ViewerArrows/Arrows2.visible = false
-
 		return
-
-	if Global.spriteEdit.position.y < 16:
-		$ViewerArrows/Arrows2.visible = true
-	else:
-		$ViewerArrows/Arrows2.visible = false
-	if Global.spriteEdit.position.y > size.y-windowLength+2:
-		$ViewerArrows/Arrows.visible = true
-	else:
-		$ViewerArrows/Arrows.visible = false
-
-
-	if $EditControls/MoveMenuUp.overlaps_area(Global.mouse.area):
-		Global.spriteEdit.position.y += (delta*432.0)
-	elif $EditControls/MoveMenuDown.overlaps_area(Global.mouse.area):
-		Global.spriteEdit.position.y -= (delta*432.0)
 
 	if Global.spriteEdit.position.y > topY:
 		Global.spriteEdit.position.y = topY

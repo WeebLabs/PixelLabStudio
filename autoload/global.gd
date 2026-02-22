@@ -189,6 +189,11 @@ func _input(event):
 			get_viewport().set_input_as_handled()
 			return
 	if !Input.is_action_pressed("control"):
+		# Skip scroll accumulation when cursor is over the left sidebar
+		if event is InputEventMouseButton:
+			if main != null and main.editMode and spriteEdit != null and spriteEdit.visible:
+				if event.position.x < spriteEdit.panel_width + 19:
+					return
 		if event.is_action_pressed("scrollUp"):
 			_scroll_input -= 1
 		if event.is_action_pressed("scrollDown"):

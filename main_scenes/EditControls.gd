@@ -17,11 +17,13 @@ func _ready():
 	menu_bar_bg.color = Color(0.15, 0.15, 0.15)
 	menu_bar_bg.size = Vector2(get_viewport().get_visible_rect().size.x, MENU_BAR_HEIGHT)
 	menu_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu_bar_bg.z_index = 100
 	add_child(menu_bar_bg)
 
 	var hbox = HBoxContainer.new()
 	hbox.position = Vector2(8, 4)
 	hbox.add_theme_constant_override("separation", 2)
+	hbox.z_index = 100
 	add_child(hbox)
 
 	_add_btn(hbox, "Exit", _on_exit, true)

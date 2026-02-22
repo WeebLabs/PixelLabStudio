@@ -238,9 +238,36 @@ func _create_divider(y_pos: float) -> ColorRect:
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
 	panel_height = s.y
-	# SpriteViewer is at (19, 30) in EditControls, so offset to reach left edge and menu bar bottom
-	_bg.position = Vector2(-19, -2)
-	_bg.size = Vector2(panel_width + 19, panel_height)
+	# Clamp bg top to menu bar bottom so it never overlaps the menu bar
+	var menu_bar_bottom = 28  # MENU_BAR_HEIGHT
+	var bg_top = max(position.y - 2, menu_bar_bottom)
+	_bg.position = Vector2(-19, bg_top - position.y)
+	_bg.size = Vector2(panel_width + 19, s.y - bg_top)
+
+func _input(event):
+	if Global.main == null or !Global.main.editMode or !visible:
+		return
+	if !(event is InputEventMouseButton and event.pressed):
+		return
+	# Only handle when cursor is over the sidebar (use viewport coords)
+	if event.position.x > panel_width + 19:
+		return
+	# Only scroll when window is short enough to need it
+	var s = get_viewport().get_visible_rect().size
+	if s.y > 1150:
+		return
+	var step = 50
+	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		position.y += step
+	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		position.y -= step
+	else:
+		return
+	# Clamp to same bounds as moveSpriteMenu()
+	var top_y = 30  # MENU_BAR_HEIGHT + 2
+	var min_y = s.y - 1100
+	position.y = clamp(position.y, min_y, top_y)
+	get_viewport().set_input_as_handled()
 
 func _process(delta):
 	_apply_size()
