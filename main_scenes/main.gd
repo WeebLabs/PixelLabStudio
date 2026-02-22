@@ -657,9 +657,11 @@ func _replace_with_animated(sheet: Image, frame_count: int, anim_speed: int):
 
 	UndoManager.save_state()
 
-	var texture = ImageTexture.create_from_image(sheet)
-	Global.heldSprite.tex = texture
 	Global.heldSprite.imageData = sheet
+	var pma = sheet.duplicate()
+	pma.premultiply_alpha()
+	var texture = ImageTexture.create_from_image(pma)
+	Global.heldSprite.tex = texture
 	Global.heldSprite.sprite.texture = texture
 	Global.heldSprite.path = "animated://import"
 	Global.heldSprite.frames = frame_count

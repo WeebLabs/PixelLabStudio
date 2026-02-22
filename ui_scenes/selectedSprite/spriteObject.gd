@@ -100,6 +100,11 @@ var tick = 0
 #Vis toggle
 var toggle = "null"
 
+func _make_premultiplied_texture(img: Image) -> ImageTexture:
+	var pma = img.duplicate()
+	pma.premultiply_alpha()
+	return ImageTexture.create_from_image(pma)
+
 func _ready():
 	
 	Global.main.spriteVisToggles.connect(visToggle)
@@ -126,16 +131,16 @@ func _ready():
 					queue_free()
 					return
 		
-	var texture = ImageTexture.new()
-	texture = ImageTexture.create_from_image(img)
-	
-	
-	tex = texture
 	imageData = img
-	
+	tex = _make_premultiplied_texture(img)
+
 	imageSize = img.get_size()
-	
+
 	sprite.texture = tex
+
+	var mat = CanvasItemMaterial.new()
+	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+	sprite.material = mat
 	
 	var bitmap = BitMap.new()
 	bitmap.create_from_image_alpha(imageData)
@@ -195,15 +200,10 @@ func replaceSprite(pathNew):
 		return
 	
 	path = pathNew
-	
-	var texture = ImageTexture.new()
-	texture = ImageTexture.create_from_image(img)
-	
-	
-	tex = texture
+
 	imageData = img
-	
-	
+	tex = _make_premultiplied_texture(img)
+
 	sprite.texture = tex
 	
 	var bitmap = BitMap.new()
@@ -295,7 +295,8 @@ func talkBlink():
 	var blinkVal = showOnBlink if showOnBlink != 3 else 0
 	var value = (showOnTalk + (blinkVal*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
 	var yes = [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value))
-	sprite.self_modulate.a = max(int(yes),faded)
+	var a = max(int(yes),faded)
+	sprite.self_modulate = Color(a, a, a, a)
 
 func blinkAnimation():
 	if showOnBlink != 3 or frames <= 1:
