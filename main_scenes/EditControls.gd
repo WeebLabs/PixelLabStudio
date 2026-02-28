@@ -1,7 +1,6 @@
 extends Node2D
 
 var menu_buttons: Dictionary = {}
-var _replace_btn: Button
 var _duplicate_btn: Button
 var menu_bar_bg: ColorRect
 const MENU_BAR_HEIGHT = 28
@@ -29,10 +28,10 @@ func _ready():
 	_add_btn(hbox, "Exit", _on_exit, true)
 	_add_sep(hbox)
 	_add_btn(hbox, "Add", _on_add)
-	_replace_btn = _add_btn(hbox, "Replace", _on_replace)
 	_duplicate_btn = _add_btn(hbox, "Duplicate", _on_duplicate)
 	_add_sep(hbox)
 	_add_btn(hbox, "Import PSD", _on_import_psd)
+	_add_btn(hbox, "Replace", _on_replace)
 	_add_sep(hbox)
 	_add_btn(hbox, "Save", _on_save)
 	_add_btn(hbox, "Load", _on_load)
@@ -80,14 +79,13 @@ func _add_sep(parent: HBoxContainer):
 
 func _process(_delta):
 	var no_sprite = Global.heldSprite == null
-	for btn in [_replace_btn, _duplicate_btn]:
-		btn.disabled = no_sprite
-		if no_sprite:
-			btn.add_theme_color_override("font_color", COLOR_DISABLED)
-			btn.add_theme_color_override("font_hover_color", COLOR_DISABLED)
-		else:
-			btn.add_theme_color_override("font_color", COLOR_NORMAL)
-			btn.add_theme_color_override("font_hover_color", COLOR_HOVER)
+	_duplicate_btn.disabled = no_sprite
+	if no_sprite:
+		_duplicate_btn.add_theme_color_override("font_color", COLOR_DISABLED)
+		_duplicate_btn.add_theme_color_override("font_hover_color", COLOR_DISABLED)
+	else:
+		_duplicate_btn.add_theme_color_override("font_color", COLOR_NORMAL)
+		_duplicate_btn.add_theme_color_override("font_hover_color", COLOR_HOVER)
 
 func _on_exit(): Global.main.swapMode()
 func _on_add(): Global.main._on_add_button_pressed()

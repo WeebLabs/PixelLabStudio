@@ -44,14 +44,13 @@ gdscript/warnings/unused_parameter=0
 
 [display]
 
-window/size/viewport_width=1280
-window/size/viewport_height=720
+window/size/viewport_width=1920
+window/size/viewport_height=1080
 window/size/transparent=true
 window/size/window_width_override=1280
 window/size/window_height_override=720
-window/dpi/allow_hidpi=false
+window/stretch/scale=1.5
 window/per_pixel_transparency/allowed=true
-window/vsync/vsync_mode=1
 
 [dotnet]
 

@@ -33,6 +33,7 @@
 [ext_resource type="Texture2D" uid="uid://dj1ffgeyacc8g" path="res://ui_scenes/settings/info.png" id="27_og5v1"]
 [ext_resource type="PackedScene" uid="uid://cgto2hfjsb1oe" path="res://ui_scenes/pushUpdates/push_updates.tscn" id="30_q43vl"]
 [ext_resource type="PackedScene" uid="uid://dcjecs1r85i3f" path="res://ui_scenes/psdImport/psd_import_dialog.tscn" id="31_psdim"]
+[ext_resource type="PackedScene" path="res://ui_scenes/psdImport/replace_review_dialog.tscn" id="32_rrdlg"]
 
 [sub_resource type="Image" id="Image_016mx"]
 data = {
@@ -14493,16 +14494,6 @@ access = 1
 filters = PackedStringArray("*.png")
 use_native_dialog = true
 
-[node name="ReplaceDialog" type="FileDialog" parent="." unique_id=502723260]
-title = "Add Image"
-position = Vector2i(180, 160)
-size = Vector2i(360, 360)
-ok_button_text = "Open"
-mode_overrides_title = false
-file_mode = 0
-access = 1
-filters = PackedStringArray("*.png")
-use_native_dialog = true
 
 [node name="SaveDialog" type="FileDialog" parent="." unique_id=372210116]
 title = "Save Avatar"
@@ -14537,6 +14528,8 @@ filters = PackedStringArray("*.psd")
 use_native_dialog = true
 
 [node name="PSDImportDialog" parent="." unique_id=679721683 instance=ExtResource("31_psdim")]
+
+[node name="ReplaceReviewDialog" parent="." instance=ExtResource("32_rrdlg")]
 
 [node name="Chain" parent="." unique_id=984828163 instance=ExtResource("19_mt1os")]
 z_index = 4096
@@ -14601,12 +14594,12 @@ z_index = -4096
 [connection signal="pressed" from="ControlPanel/Links/twitter" to="." method="_on_twitter_pressed"]
 [connection signal="pressed" from="Tutorial/Info/Button" to="Tutorial" method="_on_button_pressed"]
 [connection signal="file_selected" from="FileDialog" to="." method="_on_file_dialog_file_selected"]
-[connection signal="file_selected" from="ReplaceDialog" to="." method="_on_replace_dialog_file_selected"]
-[connection signal="visibility_changed" from="ReplaceDialog" to="." method="_on_replace_dialog_visibility_changed"]
 [connection signal="file_selected" from="SaveDialog" to="." method="_on_save_dialog_file_selected"]
 [connection signal="file_selected" from="LoadDialog" to="." method="_on_load_dialog_file_selected"]
 [connection signal="file_selected" from="PSDFileDialog" to="." method="_on_psd_dialog_file_selected"]
 [connection signal="import_cancelled" from="PSDImportDialog" to="." method="_on_psd_import_cancelled"]
 [connection signal="import_confirmed" from="PSDImportDialog" to="." method="_on_psd_import_confirmed"]
+[connection signal="replace_confirmed" from="ReplaceReviewDialog" to="." method="_on_replace_confirmed"]
+[connection signal="replace_cancelled" from="ReplaceReviewDialog" to="." method="_on_replace_cancelled"]
 [connection signal="bg_key_pressed" from="BackgroundInputCapture" to="." method="bgInputSprite"]
 [connection signal="bg_key_pressed" from="BackgroundInputCapture" to="." method="_on_background_input_capture_bg_key_pressed"]

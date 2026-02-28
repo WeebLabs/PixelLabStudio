@@ -234,6 +234,37 @@ func replaceSprite(pathNew):
 	if !b:
 		remakePolygon()
 
+func replaceSpriteFromData(img: Image, layer_name: String):
+	path = "psd://" + layer_name
+	imageData = img
+	tex = _make_premultiplied_texture(img)
+	sprite.texture = tex
+
+	var bitmap = BitMap.new()
+	bitmap.create_from_image_alpha(imageData)
+	var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()))
+
+	for i in grabArea.get_children():
+		i.queue_free()
+
+	var b = false
+	for polygon in polygons:
+		b = true
+		var collider = CollisionPolygon2D.new()
+		collider.polygon = polygon
+		grabArea.add_child(collider)
+		var outline = outlineScene.instantiate()
+		outline.points = polygon
+		outline.add_point(outline.points[0])
+		grabArea.add_child(outline)
+
+	size = imageData.get_size()
+	sprite.offset = offset
+	grabArea.position = (size * -0.5) + offset
+
+	if !b:
+		remakePolygon()
+
 func _process(delta):
 	tick += 1
 	if Global.heldSprite == self:

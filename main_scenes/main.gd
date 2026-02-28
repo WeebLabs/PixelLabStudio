@@ -13,7 +13,7 @@ var editMode = true
 @onready var spriteList = $EditControls/SpriteList
 
 @onready var fileDialog = $FileDialog
-@onready var replaceDialog = $ReplaceDialog
+@onready var replaceReviewDialog = $ReplaceReviewDialog
 @onready var saveDialog = $SaveDialog
 @onready var loadDialog = $LoadDialog
 @onready var psdDialog = $PSDFileDialog
@@ -245,14 +245,16 @@ func followShadow():
 	
 
 func isFileSystemOpen():
-	for obj in [replaceDialog,fileDialog,saveDialog,loadDialog,psdDialog]:
+	for obj in [fileDialog,saveDialog,loadDialog,psdDialog]:
 		if obj.visible:
-			if obj == replaceDialog:
-				return true
 			Global.heldSprite = null
 			return true
 	if psdImportDialog.visible:
 		Global.heldSprite = null
+		return true
+	if replaceReviewDialog.visible:
+		return true
+	if _replace_dialog != null and _replace_dialog.visible:
 		return true
 	return false
 
@@ -407,6 +409,7 @@ var _psd_parser: PSDParser = null
 var _psd_thread: Thread = null
 var _psd_result = null
 var _psd_progress_dialog: Node2D = null
+var _psd_replace_mode: bool = false
 
 var _anim_parser = null        # GIFParser or APNGParser
 var _anim_thread: Thread = null
@@ -491,12 +494,17 @@ func _process_psd_thread(_delta):
 		_psd_parser = null
 
 		if result.error != "":
+			_psd_replace_mode = false
 			Global.pushUpdate("PSD Error: " + result.error)
 			Global.epicFail(ERR_INVALID_DATA)
 			return
 
-		psdImportDialog.setup(result)
-		psdImportDialog.visible = true
+		if _psd_replace_mode:
+			_psd_replace_mode = false
+			_show_replace_review_from_psd(result)
+		else:
+			psdImportDialog.setup(result)
+			psdImportDialog.visible = true
 
 func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
 	UndoManager.save_state()
@@ -880,23 +888,305 @@ func _on_twitter_pressed():
 	Global.pushUpdate("Follow me on twitter!")
 
 
+# --- Unified Replace Flow ---
+
+var _replace_dialog: FileDialog = null
+
+func _create_replace_dialog():
+	_replace_dialog = FileDialog.new()
+	_replace_dialog.title = "Replace"
+	_replace_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_replace_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_replace_dialog.filters = PackedStringArray(["*.psd;PSD Files", "*.png;PNG Files"])
+	_replace_dialog.use_native_dialog = true
+	_replace_dialog.file_selected.connect(_on_replace_file_selected)
+	add_child(_replace_dialog)
+
 func _on_replace_button_pressed():
+	if _replace_dialog == null:
+		_create_replace_dialog()
+	_replace_dialog.popup_centered(Vector2i(600, 400))
+
+func _on_replace_file_selected(path: String):
+	if path.get_extension().to_lower() == "psd":
+		_handle_replace_from_psd(path)
+	elif path.get_extension().to_lower() == "png":
+		_handle_replace_single_png(path)
+	else:
+		Global.pushUpdate("Unsupported file type: " + path.get_extension())
+
+static func _extract_sprite_name(sprite_path: String) -> String:
+	if sprite_path.begins_with("psd://"):
+		return sprite_path.substr(6)
+	if sprite_path.begins_with("animated://"):
+		return sprite_path.substr(11)
+	var filename = sprite_path.get_file()
+	var ext = filename.get_extension()
+	if ext != "":
+		filename = filename.substr(0, filename.length() - ext.length() - 1)
+	return filename
+
+func _handle_replace_from_psd(path: String):
+	_psd_replace_mode = true
+	_psd_parser = PSDParser.new()
+	_psd_result = null
+
+	_psd_progress_dialog = _create_psd_progress_dialog()
+	add_child(_psd_progress_dialog)
+
+	_psd_thread = Thread.new()
+	_psd_thread.start(func(): return _psd_parser.parse(path))
+
+func _show_replace_review_from_psd(psd_result):
+	var sprites = get_tree().get_nodes_in_group("saved")
+
+	# Build sprite name lookup (case-insensitive) -> array of sprites
+	var sprite_lookup: Dictionary = {}
+	for s in sprites:
+		var sname = _extract_sprite_name(s.path).to_lower()
+		if !sprite_lookup.has(sname):
+			sprite_lookup[sname] = []
+		sprite_lookup[sname].append(s)
+
+	# Build PSD layer lookup (case-insensitive, skip invalid layers)
+	var layer_lookup: Dictionary = {}
+	for layer in psd_result.layers:
+		if layer.width <= 0 or layer.height <= 0:
+			continue
+		if layer.image == null:
+			continue
+		layer_lookup[layer.name.to_lower()] = layer
+
+	# Compute matched, new, orphaned
+	var matched: Array = []
+	var matched_sprite_ids: Dictionary = {}
+	var matched_layer_names: Dictionary = {}
+
+	for lname in layer_lookup:
+		var layer = layer_lookup[lname]
+		if sprite_lookup.has(lname):
+			for s in sprite_lookup[lname]:
+				matched.append({"sprite": s, "name": layer.name, "image": layer.image})
+				matched_sprite_ids[s.get_instance_id()] = true
+			matched_layer_names[lname] = true
+
+	# New items: layers not matched to any sprite
+	var new_items: Array = []
+	var canvas_center = Vector2(psd_result.width, psd_result.height) * 0.5
+	for lname in layer_lookup:
+		if !matched_layer_names.has(lname):
+			var layer = layer_lookup[lname]
+			var layer_center = Vector2(
+				(layer.left + layer.right) * 0.5,
+				(layer.top + layer.bottom) * 0.5
+			)
+			var pos = layer_center - canvas_center
+			new_items.append({"name": layer.name, "image": layer.image, "position": pos})
+
+	# Orphaned sprites: in project but not in source
+	var orphaned: Array = []
+	for s in sprites:
+		if !matched_sprite_ids.has(s.get_instance_id()):
+			orphaned.append(s)
+
+	var canvas_size = Vector2(psd_result.width, psd_result.height)
+	replaceReviewDialog.setup(matched, new_items, orphaned, canvas_size)
+	replaceReviewDialog.visible = true
+
+func _handle_replace_from_folder(folder_path: String):
+	var items: Array = []
+	var dir = DirAccess.open(folder_path)
+	if dir == null:
+		Global.pushUpdate("Cannot open folder: " + folder_path)
+		return
+	dir.list_dir_begin()
+	var file_name = dir.get_next()
+	while file_name != "":
+		if !dir.current_is_dir() and file_name.get_extension().to_lower() == "png":
+			var full_path = folder_path.path_join(file_name)
+			var img = Image.new()
+			if img.load(full_path) == OK:
+				var name = file_name.substr(0, file_name.length() - file_name.get_extension().length() - 1)
+				items.append({"name": name, "image": img, "position": Vector2.ZERO})
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	if items.size() == 0:
+		Global.pushUpdate("No PNG files found in folder.")
+		return
+
+	_show_replace_review_from_items(items, Vector2.ZERO)
+
+func _show_replace_review_from_items(items: Array, canvas_size: Vector2):
+	var sprites = get_tree().get_nodes_in_group("saved")
+
+	# Build sprite name lookup (case-insensitive)
+	var sprite_lookup: Dictionary = {}
+	for s in sprites:
+		var sname = _extract_sprite_name(s.path).to_lower()
+		if !sprite_lookup.has(sname):
+			sprite_lookup[sname] = []
+		sprite_lookup[sname].append(s)
+
+	var matched: Array = []
+	var matched_sprite_ids: Dictionary = {}
+	var matched_item_names: Dictionary = {}
+
+	for item in items:
+		var iname = item["name"].to_lower()
+		if sprite_lookup.has(iname):
+			for s in sprite_lookup[iname]:
+				matched.append({"sprite": s, "name": item["name"], "image": item["image"]})
+				matched_sprite_ids[s.get_instance_id()] = true
+			matched_item_names[iname] = true
+
+	# New items: not matched
+	var new_items: Array = []
+	for item in items:
+		if !matched_item_names.has(item["name"].to_lower()):
+			new_items.append(item)
+
+	# Orphaned sprites
+	var orphaned: Array = []
+	for s in sprites:
+		if !matched_sprite_ids.has(s.get_instance_id()):
+			orphaned.append(s)
+
+	replaceReviewDialog.setup(matched, new_items, orphaned, canvas_size)
+	replaceReviewDialog.visible = true
+
+func _handle_replace_single_png(path: String):
+	if Global.heldSprite == null:
+		Global.pushUpdate("Select a sprite first to replace with a single PNG.")
+		return
+
+	# Check for APNG
+	if APNGParser.is_apng(path):
+		_start_animated_import(path, true)
+		return
+
+	# Show simple confirmation dialog
+	var sprite_name = _extract_sprite_name(Global.heldSprite.path)
+	var file_name = path.get_file()
+	_show_single_replace_confirm(path, sprite_name, file_name)
+
+var _single_replace_dialog: Node2D = null
+var _single_replace_path: String = ""
+
+func _show_single_replace_confirm(path: String, sprite_name: String, file_name: String):
+	_single_replace_path = path
+
+	_single_replace_dialog = Node2D.new()
+	_single_replace_dialog.z_index = 4095
+	_single_replace_dialog.visibility_layer = 2
+	_single_replace_dialog.position = camera.position
+
+	var blocker = Area2D.new()
+	blocker.add_to_group("penis")
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(3840, 2160)
+	col.shape = shape
+	blocker.add_child(col)
+	_single_replace_dialog.add_child(blocker)
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-180, -60)
+	bg.size = Vector2(360, 120)
+	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	_single_replace_dialog.add_child(bg)
+
+	var label = Label.new()
+	label.position = Vector2(-170, -50)
+	label.size = Vector2(340, 48)
+	label.text = "Replace \"" + sprite_name + "\" with \"" + file_name + "\"?"
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 14)
+	_single_replace_dialog.add_child(label)
+
+	var buttons = HBoxContainer.new()
+	buttons.position = Vector2(-100, 10)
+	buttons.size = Vector2(200, 40)
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 16)
+	_single_replace_dialog.add_child(buttons)
+
+	var replaceBtn = Button.new()
+	replaceBtn.text = "Replace"
+	replaceBtn.custom_minimum_size = Vector2(80, 32)
+	replaceBtn.pressed.connect(_on_single_replace_confirmed)
+	buttons.add_child(replaceBtn)
+
+	var cancelBtn = Button.new()
+	cancelBtn.text = "Cancel"
+	cancelBtn.custom_minimum_size = Vector2(80, 32)
+	cancelBtn.pressed.connect(_on_single_replace_cancelled)
+	buttons.add_child(cancelBtn)
+
+	add_child(_single_replace_dialog)
+
+func _on_single_replace_confirmed():
+	if _single_replace_dialog != null:
+		_single_replace_dialog.queue_free()
+		_single_replace_dialog = null
+
 	if Global.heldSprite == null:
 		return
-	$ReplaceDialog.visible = true
 
-func _on_replace_dialog_file_selected(path):
-	if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
-		_start_animated_import(path, true)
-	else:
-		UndoManager.save_state()
-		Global.heldSprite.replaceSprite(path)
-		UndoManager.invalidate_image(Global.heldSprite.id)
-		Global.spriteList.updateData()
-		Global.pushUpdate("Replacing sprite with: " + path)
+	var path = _single_replace_path
+	UndoManager.save_state()
+	Global.heldSprite.replaceSprite(path)
+	UndoManager.invalidate_image(Global.heldSprite.id)
+	Global.spriteList.updateData()
+	Global.pushUpdate("Replaced sprite with: " + path.get_file())
 
-func _on_replace_dialog_visibility_changed():
-	$EditControls/ScreenCover/CollisionShape2D.disabled = !$ReplaceDialog.visible
+func _on_single_replace_cancelled():
+	if _single_replace_dialog != null:
+		_single_replace_dialog.queue_free()
+		_single_replace_dialog = null
+	Global.pushUpdate("Replace cancelled.")
+
+# --- Replace Review Dialog Handlers ---
+
+func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_size: Vector2, remove_orphans: bool):
+	UndoManager.save_state()
+	var replaced = 0
+	var added = 0
+	var removed = 0
+
+	# Replace matched sprites
+	for entry in matched:
+		entry["sprite"].replaceSpriteFromData(entry["image"], entry["name"])
+		UndoManager.invalidate_image(entry["sprite"].id)
+		replaced += 1
+
+	# Add new items (user-selected via checkboxes)
+	for item in new_items:
+		add_image_from_data(item["image"], item["name"], item["position"])
+		added += 1
+
+	# Remove orphans (if opted in)
+	if remove_orphans:
+		for s in orphaned_sprites:
+			if is_instance_valid(s):
+				if Global.heldSprite == s:
+					Global.heldSprite = null
+				s.queue_free()
+				removed += 1
+
+	Global.spriteList.updateData(true)
+	ndi_mark_dirty()
+
+	var msg = "Replaced " + str(replaced) + " layers"
+	if added > 0:
+		msg += ", added " + str(added) + " new"
+	if removed > 0:
+		msg += ", removed " + str(removed) + " orphaned"
+	Global.pushUpdate(msg + ".")
+
+func _on_replace_cancelled():
+	Global.pushUpdate("Replace cancelled.")
 
 
 func _on_duplicate_button_pressed():
