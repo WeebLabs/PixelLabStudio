@@ -1175,7 +1175,7 @@ func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: A
 				s.queue_free()
 				removed += 1
 
-	Global.spriteList.updateData(true)
+	Global.spriteList.updateData()
 	ndi_mark_dirty()
 
 	var msg = "Replaced " + str(replaced) + " layers"
