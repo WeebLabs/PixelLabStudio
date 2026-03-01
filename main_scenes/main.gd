@@ -1198,9 +1198,10 @@ func _on_duplicate_button_pressed():
 	
 	var sprite = spriteObject.instantiate()
 	sprite.path = Global.heldSprite.path
+	sprite.loadedImage = Global.heldSprite.imageData.duplicate()
 	sprite.id = id
 	sprite.parentId = Global.heldSprite.parentId
-	
+
 	sprite.dragSpeed = Global.heldSprite.dragSpeed
 	sprite.showOnTalk = Global.heldSprite.showOnTalk
 	sprite.showOnBlink = Global.heldSprite.showOnBlink
