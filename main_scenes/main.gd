@@ -1281,7 +1281,7 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
 
 	origin.add_child(sprite)
-	sprite.position = Global.heldSprite.position + Vector2(16,16)
+	sprite.position = Global.heldSprite.position
 	
 	Global.heldSprite = sprite
 	
