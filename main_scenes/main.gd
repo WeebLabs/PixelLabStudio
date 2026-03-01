@@ -12,11 +12,9 @@ var editMode = true
 @onready var viewerArrows = $ViewerArrows
 @onready var spriteList = $EditControls/SpriteList
 
-@onready var fileDialog = $FileDialog
 @onready var replaceReviewDialog = $ReplaceReviewDialog
 @onready var saveDialog = $SaveDialog
 @onready var loadDialog = $LoadDialog
-@onready var psdDialog = $PSDFileDialog
 @onready var psdImportDialog = $PSDImportDialog
 
 @onready var lines = $Lines
@@ -245,7 +243,7 @@ func followShadow():
 	
 
 func isFileSystemOpen():
-	for obj in [fileDialog,saveDialog,loadDialog,psdDialog]:
+	for obj in [saveDialog, loadDialog]:
 		if obj.visible:
 			Global.heldSprite = null
 			return true
@@ -253,6 +251,9 @@ func isFileSystemOpen():
 		Global.heldSprite = null
 		return true
 	if replaceReviewDialog.visible:
+		return true
+	if _import_dialog != null and _import_dialog.visible:
+		Global.heldSprite = null
 		return true
 	if _replace_dialog != null and _replace_dialog.visible:
 		return true
@@ -401,9 +402,6 @@ func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector
 	sprite.position = canvas_position
 
 	return sprite
-
-func _on_psd_import_button_pressed():
-	psdDialog.visible = true
 
 var _psd_parser: PSDParser = null
 var _psd_thread: Thread = null
@@ -689,16 +687,69 @@ func _replace_with_animated(sheet: Image, frame_count: int, anim_speed: int):
 	Global.spriteList.updateData()
 	Global.pushUpdate("Replaced with animated sprite (" + str(frame_count) + " frames)")
 
-#Opens File Dialog
-func _on_add_button_pressed():
-	fileDialog.visible = true
+# --- Unified Import Dialog ---
 
-#Runs when selecting image in File Dialog
-func _on_file_dialog_file_selected(path):
-	if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
-		_start_animated_import(path, false)
+var _import_dialog: FileDialog = null
+
+func _create_import_dialog():
+	_import_dialog = FileDialog.new()
+	_import_dialog.title = "Import"
+	_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
+	_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_import_dialog.filters = PackedStringArray(["*.png;PNG Files", "*.psd;PSD Files"])
+	_import_dialog.use_native_dialog = true
+	_import_dialog.files_selected.connect(_on_import_files_selected)
+	add_child(_import_dialog)
+
+func _on_import_button_pressed():
+	if _import_dialog == null:
+		_create_import_dialog()
+	_import_dialog.popup_centered(Vector2i(600, 400))
+
+func _on_import_files_selected(paths: PackedStringArray):
+	if paths.size() == 0:
+		return
+
+	var psd_paths: Array = []
+	var png_paths: Array = []
+	for p in paths:
+		match p.get_extension().to_lower():
+			"psd": psd_paths.append(p)
+			"png": png_paths.append(p)
+
+	if psd_paths.size() > 0 and png_paths.size() > 0:
+		Global.pushUpdate("Cannot mix PSD and PNG files. Select one type.")
+		return
+	if psd_paths.size() > 1:
+		Global.pushUpdate("Select only one PSD file at a time.")
+		return
+
+	if psd_paths.size() == 1:
+		_on_psd_dialog_file_selected(psd_paths[0])
 	else:
-		add_image(path)
+		_import_png_files(png_paths)
+
+func _import_png_files(paths: Array):
+	UndoManager.save_state()
+	var count = 0
+	for path in paths:
+		if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
+			_start_animated_import(path, false)
+		else:
+			var rand = RandomNumberGenerator.new()
+			var id = rand.randi()
+			var sprite = spriteObject.instantiate()
+			sprite.path = path
+			sprite.id = id
+			origin.add_child(sprite)
+			sprite.position = Vector2.ZERO
+		count += 1
+	Global.spriteList.updateData()
+	ndi_mark_dirty()
+	if count == 1:
+		Global.pushUpdate("Added new sprite.")
+	else:
+		Global.pushUpdate("Imported " + str(count) + " sprites.")
 
 func _on_save_button_pressed():
 	$SaveDialog.visible = true

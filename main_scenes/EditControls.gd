@@ -27,10 +27,8 @@ func _ready():
 
 	_add_btn(hbox, "Exit", _on_exit, true)
 	_add_sep(hbox)
-	_add_btn(hbox, "Add", _on_add)
+	_add_btn(hbox, "Import", _on_import)
 	_duplicate_btn = _add_btn(hbox, "Duplicate", _on_duplicate)
-	_add_sep(hbox)
-	_add_btn(hbox, "Import PSD", _on_import_psd)
 	_add_btn(hbox, "Replace", _on_replace)
 	_add_sep(hbox)
 	_add_btn(hbox, "Save", _on_save)
@@ -88,10 +86,9 @@ func _process(_delta):
 		_duplicate_btn.add_theme_color_override("font_hover_color", COLOR_HOVER)
 
 func _on_exit(): Global.main.swapMode()
-func _on_add(): Global.main._on_add_button_pressed()
+func _on_import(): Global.main._on_import_button_pressed()
 func _on_replace(): Global.main._on_replace_button_pressed()
 func _on_duplicate(): Global.main._on_duplicate_button_pressed()
-func _on_import_psd(): Global.main._on_psd_import_button_pressed()
 func _on_save(): Global.main._on_save_button_pressed()
 func _on_load(): Global.main._on_load_button_pressed()
 func _on_clear(): Global.main._on_clear_avatar_pressed()
