@@ -185,21 +185,15 @@ func setImage():
 	var frame_w = int(img_size.x / Global.heldSprite.frames)
 	var frame_h = int(img_size.y)
 
-	# Find bounding rect of non-transparent pixels in first frame
-	var min_x = frame_w
-	var min_y = frame_h
-	var max_x = 0
-	var max_y = 0
-	for py in range(frame_h):
-		for px in range(frame_w):
-			if img.get_pixel(px, py).a > 0.01:
-				min_x = min(min_x, px)
-				min_y = min(min_y, py)
-				max_x = max(max_x, px)
-				max_y = max(max_y, py)
+	# Find bounding rect of non-transparent pixels in first frame (native C++)
+	var used: Rect2i
+	if Global.heldSprite.frames <= 1:
+		used = img.get_used_rect()
+	else:
+		used = img.get_region(Rect2i(0, 0, frame_w, frame_h)).get_used_rect()
 
-	if max_x >= min_x and max_y >= min_y:
-		var content_rect = Rect2(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+	if used.size.x > 0 and used.size.y > 0:
+		var content_rect = Rect2(used)
 		var atlas = AtlasTexture.new()
 		atlas.atlas = Global.heldSprite.tex
 		atlas.region = content_rect
