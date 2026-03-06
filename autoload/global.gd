@@ -13,6 +13,13 @@ var animationTick = 0
 var cursorWorldPos = Vector2.ZERO
 
 var filtering = false
+var _text_field_active: bool = false
+var _z_overlay: Node2D = null
+var _z_input: LineEdit = null
+var _z_style_normal: StyleBoxFlat = null
+var _z_style_focus: StyleBoxFlat = null
+var _z_input_active: bool = false
+var _suppress_keys_frame: int = -1
 
 #Object Selection
 var heldSprite = null
@@ -80,6 +87,7 @@ func deleteAllMics():
 
 
 func _process(delta):
+	_text_field_active = _is_any_field_focused()
 	animationTick += 1
 
 	if main != null:
@@ -110,7 +118,7 @@ func _process(delta):
 		else:
 			emit_signal("stopSpeaking")
 	
-	if main != null and heldSprite != null and !filtering:
+	if main != null and heldSprite != null and !_text_field_active:
 		if Input.is_action_just_pressed("zDown"):
 			UndoManager.save_state()
 			heldSprite.z -= 1
@@ -163,7 +171,7 @@ func _process(delta):
 	scrollSprites()
 	
 	
-	if !main.fileSystemOpen and !filtering:
+	if !main.fileSystemOpen and !_text_field_active:
 
 		if Input.is_action_just_pressed("refresh"):
 			refresh()
@@ -180,7 +188,150 @@ func _process(delta):
 				UndoManager.redo()
 	
 	
+func _is_any_field_focused() -> bool:
+	if _suppress_keys_frame == Engine.get_process_frames():
+		return true
+	var focused = get_viewport().gui_get_focus_owner()
+	return focused is LineEdit or focused is TextEdit
+
+# --- Z-Index input overlay ---
+
+func _build_z_overlay():
+	_z_overlay = Node2D.new()
+	_z_overlay.z_index = 4095
+	_z_overlay.visible = false
+	main.add_child(_z_overlay)
+
+	var panel = Panel.new()
+	var panel_style = StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.13, 0.13, 0.15, 0.97)
+	panel_style.set_corner_radius_all(8)
+	panel_style.border_color = Color(0.3, 0.3, 0.35, 0.6)
+	panel_style.set_border_width_all(1)
+	panel.add_theme_stylebox_override("panel", panel_style)
+	panel.position = Vector2(-110, -40)
+	panel.size = Vector2(220, 80)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_z_overlay.add_child(panel)
+
+	var title = Label.new()
+	title.text = "Set Z-Index"
+	title.position = Vector2(-100, -32)
+	title.size = Vector2(200, 22)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	_z_overlay.add_child(title)
+
+	_z_input = LineEdit.new()
+	_z_input.position = Vector2(-90, -4)
+	_z_input.size = Vector2(180, 32)
+	_z_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_z_input.add_theme_font_size_override("font_size", 16)
+	_z_input.caret_blink = true
+	_z_input.caret_blink_interval = 0.5
+	var fs_normal = StyleBoxFlat.new()
+	fs_normal.bg_color = Color(0.08, 0.08, 0.08)
+	fs_normal.set_corner_radius_all(4)
+	fs_normal.content_margin_left = 8
+	fs_normal.content_margin_right = 8
+	fs_normal.content_margin_top = 4
+	fs_normal.content_margin_bottom = 4
+	var fs_focus = fs_normal.duplicate()
+	fs_focus.border_color = Color(0.45, 0.45, 0.5)
+	fs_focus.set_border_width_all(1)
+	_z_input.add_theme_stylebox_override("normal", fs_normal)
+	_z_input.add_theme_stylebox_override("focus", fs_focus)
+	_z_overlay.add_child(_z_input)
+
+	# Store normal style for flash effect
+	_z_style_normal = fs_normal
+	_z_style_focus = fs_focus
+
+func _show_z_input():
+	if heldSprite == null or main == null:
+		return
+	if _z_overlay == null:
+		_build_z_overlay()
+	var vp_size = get_viewport().get_visible_rect().size / main.camera.zoom
+	_z_overlay.position = main.camera.position + Vector2(0, vp_size.y * 0.5 - 80)
+	_z_overlay.visible = true
+	_z_input.text = str(heldSprite.z)
+	_z_input.select_all()
+	_z_input.grab_focus()
+	_z_input_active = true
+
+func _hide_z_input():
+	if _z_overlay != null:
+		_z_overlay.visible = false
+		_z_input.release_focus()
+	_z_input_active = false
+	_suppress_keys_frame = Engine.get_process_frames()
+
+func _apply_z_input():
+	var text = _z_input.text
+	if heldSprite == null or !text.is_valid_int():
+		return
+	UndoManager.save_state()
+	heldSprite.z = text.to_int()
+	heldSprite.setZIndex()
+	pushUpdate("Set z-index to " + str(heldSprite.z) + ".")
+	spriteList.updateData()
+	_z_input.select_all()
+	_flash_z_confirm()
+
+var _z_flash_tween: Tween = null
+
+func _flash_z_confirm():
+	if _z_flash_tween != null and _z_flash_tween.is_valid():
+		_z_flash_tween.kill()
+	var flash_style = _z_style_focus.duplicate()
+	_z_input.add_theme_stylebox_override("normal", flash_style)
+	_z_input.add_theme_stylebox_override("focus", flash_style)
+	var bg_from = _z_style_focus.bg_color
+	var bg_peak = Color(0.12, 0.22, 0.12)
+	var border_from = _z_style_focus.border_color
+	var border_peak = Color(0.35, 0.65, 0.4)
+	_z_flash_tween = create_tween()
+	_z_flash_tween.tween_method(func(t: float):
+		flash_style.bg_color = bg_from.lerp(bg_peak, t)
+		flash_style.border_color = border_from.lerp(border_peak, t)
+	, 0.0, 1.0, 0.15)
+	_z_flash_tween.tween_method(func(t: float):
+		flash_style.bg_color = bg_peak.lerp(bg_from, t)
+		flash_style.border_color = border_peak.lerp(border_from, t)
+	, 0.0, 1.0, 0.35)
+	_z_flash_tween.tween_callback(_reset_z_style)
+
+func _reset_z_style():
+	if _z_input != null:
+		_z_input.add_theme_stylebox_override("normal", _z_style_normal)
+		_z_input.add_theme_stylebox_override("focus", _z_style_focus)
+
 func _input(event):
+	# Z-index overlay: Escape to cancel, click outside to dismiss, N to open
+	if event is InputEventKey and event.pressed and !event.echo:
+		if _z_input_active:
+			if event.physical_keycode == KEY_ESCAPE or event.keycode == KEY_ESCAPE:
+				_hide_z_input()
+				get_viewport().set_input_as_handled()
+				return
+			if event.physical_keycode == KEY_ENTER or event.keycode == KEY_ENTER or event.physical_keycode == KEY_KP_ENTER or event.keycode == KEY_KP_ENTER:
+				_apply_z_input()
+				get_viewport().set_input_as_handled()
+				return
+		elif main != null and !main.fileSystemOpen and heldSprite != null and main.editMode:
+			if event.physical_keycode == KEY_N and !_is_any_field_focused():
+				_show_z_input()
+				get_viewport().set_input_as_handled()
+				return
+	if _z_input_active and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var local = _z_overlay.to_local(main.get_global_mouse_position())
+		if abs(local.x) > 110 or abs(local.y) > 40:
+			_hide_z_input()
+			get_viewport().set_input_as_handled()
+			return
+
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if reparentMode:
 			reparentMode = false
@@ -296,7 +447,7 @@ func scrollSprites():
 	if main.fileSystemOpen:
 		return
 
-	if get_viewport().gui_get_hovered_control() != null:
+	if get_viewport().gui_get_hovered_control() != null and !_z_input_active:
 		return
 
 	if heldSprite == null:
@@ -324,8 +475,13 @@ func scrollSprites():
 	pushUpdate("Selected sprite \"" + i1 + "\"" + ".")
 	
 	heldSprite.set_physics_process(true)
-	
+
 	spriteEdit.setImage()
+
+	if _z_input_active and heldSprite != null:
+		_z_input.text = str(heldSprite.z)
+		_z_input.grab_focus()
+		_z_input.select_all()
 
 func blinking():
 	blinkTick += 1

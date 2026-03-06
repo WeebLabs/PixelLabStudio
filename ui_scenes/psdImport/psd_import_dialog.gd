@@ -58,8 +58,6 @@ func _build_ui():
 	_filter_field.clear_button_enabled = true
 	_filter_field.caret_blink = true
 	_filter_field.caret_blink_interval = 0.5
-	_filter_field.focus_entered.connect(func(): Global.filtering = true)
-	_filter_field.focus_exited.connect(func(): Global.filtering = false)
 	_filter_field.text_changed.connect(_on_filter_changed)
 	var fs_normal = StyleBoxFlat.new()
 	fs_normal.bg_color = Color(0.1, 0.1, 0.1)

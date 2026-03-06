@@ -200,7 +200,7 @@ func _process(delta):
 
 		yVel += bounceGravity*0.0166
 	
-	if Input.is_action_just_pressed("openFolder"):
+	if Input.is_action_just_pressed("openFolder") and !Global._text_field_active:
 		OS.shell_open(ProjectSettings.globalize_path("user://"))
 	
 	moveSpriteMenu(delta)
@@ -1358,9 +1358,9 @@ func moveSpriteMenu(delta):
 		return
 
 	if Global.spriteEdit.position.y > topY:
-		Global.spriteEdit.position.y = topY
+		Global.spriteEdit.position.y = round(topY)
 	elif Global.spriteEdit.position.y < size.y-windowLength:
-		Global.spriteEdit.position.y = size.y-windowLength
+		Global.spriteEdit.position.y = round(size.y-windowLength)
 	
 
 	
