@@ -680,7 +680,7 @@ func _input(event):
 
 # --- Layer list data ---
 
-func updateData(sort_by_z: bool = false):
+func updateData(sort_by_z: bool = true):
 	clearContainer()
 	await get_tree().create_timer(0.15).timeout
 	var spritesAll = get_tree().get_nodes_in_group("saved")

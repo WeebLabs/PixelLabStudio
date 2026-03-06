@@ -372,19 +372,27 @@ func swapMode():
 		ndi_manager.set_ruler_visible(editMode and ndi_manager.is_enabled())
 	onWindowSizeChange()
 
+func _next_z_index() -> int:
+	var max_z = -1
+	for s in get_tree().get_nodes_in_group("saved"):
+		if s.z > max_z:
+			max_z = s.z
+	return max_z + 1
+
 #Adds sprite object to scene
 func add_image(path):
 	UndoManager.save_state()
 
 	var rand = RandomNumberGenerator.new()
 	var id = rand.randi()
-	
+
 	var sprite = spriteObject.instantiate()
 	sprite.path = path
 	sprite.id = id
+	sprite.z = _next_z_index()
 	origin.add_child(sprite)
 	sprite.position = Vector2.ZERO
-	
+
 	Global.spriteList.updateData()
 	ndi_mark_dirty()
 
@@ -509,6 +517,7 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
 	var canvas_center = canvas_size * 0.5
 	var sprites_added = []
 
+	var layer_z = _next_z_index()
 	for layer in selected_layers:
 		var layer_center = Vector2(
 			(layer.left + layer.right) * 0.5,
@@ -516,6 +525,9 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
 		)
 		var pos = layer_center - canvas_center
 		var sprite = add_image_from_data(layer.image, layer.name, pos)
+		sprite.z = layer_z
+		sprite.setZIndex()
+		layer_z += 1
 		sprites_added.append(sprite)
 
 	Global.spriteList.updateData(true)
@@ -658,6 +670,7 @@ func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
 	sprite.id = id
 	sprite.frames = frame_count
 	sprite.animSpeed = anim_speed
+	sprite.z = _next_z_index()
 	origin.add_child(sprite)
 	sprite.position = Vector2.ZERO
 
@@ -741,6 +754,7 @@ func _import_png_files(paths: Array):
 			var sprite = spriteObject.instantiate()
 			sprite.path = path
 			sprite.id = id
+			sprite.z = _next_z_index()
 			origin.add_child(sprite)
 			sprite.position = Vector2.ZERO
 		count += 1
