@@ -708,11 +708,17 @@ func updateData(sort_by_z: bool = true):
 		for sprite in allSprites:
 			if child.parent == sprite.sprite:
 				parentListObj = sprite
-				index = sprite.get_index() + 1
+				var child_idx = child.get_index()
+				var parent_idx = sprite.get_index()
+				# When child is before parent, removing it shifts parent down by 1
+				if child_idx < parent_idx:
+					index = parent_idx
+				else:
+					index = parent_idx + 1
 				sprite.childrenTags.append(child)
 				break
 		child.parentTag = parentListObj
-		container.move_child(child,index)
+		container.move_child(child, index)
 
 	for sprite in allSprites:
 		sprite.updateChildren()
