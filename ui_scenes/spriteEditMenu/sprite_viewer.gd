@@ -177,6 +177,12 @@ func _set_controls_enabled(enabled: bool):
 	
 func setImage():
 	if Global.heldSprite == null:
+		_preview.texture = null
+		_parent_label.text = ""
+		$Position/Label.text = ""
+		$Position/Label2.text = ""
+		$Position/Label3.text = ""
+		$Slider/Label.text = ""
 		return
 
 	# Crop to opaque content of the first frame so the sprite fills the preview
@@ -330,6 +336,8 @@ func _process(delta):
 	var should_enable = Global.heldSprite != null
 	if should_enable != _controls_enabled:
 		_set_controls_enabled(should_enable)
+		if !should_enable:
+			setImage()
 
 	if Global.heldSprite == null:
 		return
