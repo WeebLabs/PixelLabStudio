@@ -77,6 +77,9 @@ func _ready():
 
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 	
+	$ControlPanel/VersionLabels.visible = false
+	$ControlPanel/Links.visible = false
+
 	if Saving.settings["newUser"]:
 		_on_load_dialog_file_selected("default")
 		Saving.settings["newUser"] = false
@@ -209,13 +212,16 @@ func _init_ndi():
 	ndi_manager.name = "NDIManager"
 	add_child(ndi_manager)
 
-	# NDI status label in ControlPanel
+	# NDI status label above settings icon
 	_ndi_label = Label.new()
 	_ndi_label.name = "NDILabel"
-	_ndi_label.text = "NDI"
-	_ndi_label.add_theme_font_size_override("font_size", 12)
+	_ndi_label.text = "NDI\nON"
+	_ndi_label.add_theme_font_size_override("font_size", 11)
+	_ndi_label.add_theme_constant_override("line_spacing", -4)
 	_ndi_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4))
-	_ndi_label.position = Vector2(-80, -38)
+	_ndi_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ndi_label.position = Vector2(-52, -168)
+	_ndi_label.size = Vector2(34, 28)
 	_ndi_label.visible = false
 	controlPanel.add_child(_ndi_label)
 
