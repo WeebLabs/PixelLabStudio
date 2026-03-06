@@ -81,11 +81,13 @@ func _ready():
 		_on_load_dialog_file_selected("default")
 		Saving.settings["newUser"] = false
 		saveLoaded = true
+		_style_control_sliders()
 	else:
 		_on_load_dialog_file_selected(Saving.settings["lastAvatar"])
 		
 		$ControlPanel/volumeSlider.value = Saving.settings["volume"]
 		$ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
+		_style_control_sliders()
 		
 		get_window().size = str_to_var(Saving.settings["windowSize"])
 		
@@ -161,6 +163,44 @@ func _ready():
 	# (NDI SubViewport only renders layer 1)
 	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $MouseCursor]:
 		hud_node.visibility_layer = 2
+
+func _style_control_sliders():
+	# White circle grabber (20x20, radius ~8)
+	var sz = 20
+	var center = sz / 2
+	var radius_sq = 64  # 8*8
+	var grabber_img = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	grabber_img.fill(Color(0, 0, 0, 0))
+	for px in range(sz):
+		for py in range(sz):
+			var dx = px - center
+			var dy = py - center
+			if dx * dx + dy * dy <= radius_sq:
+				grabber_img.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
+	var grabber_tex = ImageTexture.create_from_image(grabber_img)
+
+	for s in [$ControlPanel/volumeSlider, $ControlPanel/sensitiveSlider]:
+		s.add_theme_icon_override("grabber", grabber_tex)
+		s.add_theme_icon_override("grabber_highlight", grabber_tex)
+		s.add_theme_icon_override("grabber_disabled", grabber_tex)
+		s.add_theme_constant_override("grabber_offset", -11)
+
+	# Replace level meter textures with clean shapes
+	var bar_w = 512
+	var bar_h = 8
+
+	var under_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
+	under_img.fill(Color(0.2, 0.2, 0.22))
+	var under_tex = ImageTexture.create_from_image(under_img)
+
+	var progress_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
+	progress_img.fill(Color(1.0, 0.7, 0.8))
+	var progress_tex = ImageTexture.create_from_image(progress_img)
+
+	for bar in [$ControlPanel/VolumeBar, $ControlPanel/Sensitive]:
+		bar.texture_under = under_tex
+		bar.texture_progress = progress_tex
+		bar.texture_over = null
 
 func _init_ndi():
 	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
