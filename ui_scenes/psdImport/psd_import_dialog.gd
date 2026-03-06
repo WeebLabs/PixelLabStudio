@@ -9,6 +9,7 @@ var layer_entries: Array = []  # Array of {layer, checkbox}
 var layerList: VBoxContainer
 var titleLabel: Label
 var blocker: Area2D
+var _filter_field: LineEdit
 
 func _ready():
 	z_index = 4095
@@ -48,10 +49,36 @@ func _build_ui():
 	titleLabel.add_theme_font_size_override("font_size", 18)
 	add_child(titleLabel)
 
+	# Filter field
+	_filter_field = LineEdit.new()
+	_filter_field.placeholder_text = "Filter layers..."
+	_filter_field.position = Vector2(-240, -185)
+	_filter_field.size = Vector2(480, 28)
+	_filter_field.add_theme_font_size_override("font_size", 13)
+	_filter_field.clear_button_enabled = true
+	_filter_field.caret_blink = true
+	_filter_field.caret_blink_interval = 0.5
+	_filter_field.focus_entered.connect(func(): Global.filtering = true)
+	_filter_field.focus_exited.connect(func(): Global.filtering = false)
+	_filter_field.text_changed.connect(_on_filter_changed)
+	var fs_normal = StyleBoxFlat.new()
+	fs_normal.bg_color = Color(0.1, 0.1, 0.1)
+	fs_normal.set_corner_radius_all(3)
+	fs_normal.content_margin_left = 6
+	fs_normal.content_margin_right = 6
+	fs_normal.content_margin_top = 4
+	fs_normal.content_margin_bottom = 4
+	var fs_focus = fs_normal.duplicate()
+	fs_focus.border_color = Color(0.45, 0.45, 0.5)
+	fs_focus.set_border_width_all(1)
+	_filter_field.add_theme_stylebox_override("normal", fs_normal)
+	_filter_field.add_theme_stylebox_override("focus", fs_focus)
+	add_child(_filter_field)
+
 	# Scroll container for layer list
 	var scroll = ScrollContainer.new()
-	scroll.position = Vector2(-240, -185)
-	scroll.size = Vector2(480, 290)
+	scroll.position = Vector2(-240, -149)
+	scroll.size = Vector2(480, 254)
 	add_child(scroll)
 
 	layerList = VBoxContainer.new()
@@ -95,6 +122,7 @@ func _build_ui():
 
 func setup(psd):
 	psd_file = psd
+	_filter_field.text = ""
 
 	# Clear existing entries
 	for child in layerList.get_children():
@@ -149,7 +177,7 @@ func setup(psd):
 		entry.add_child(info)
 
 		layerList.add_child(entry)
-		layer_entries.append({"layer": layer, "checkbox": check})
+		layer_entries.append({"layer": layer, "checkbox": check, "entry": entry, "name": layer.name})
 
 	titleLabel.text = "Import PSD (" + str(count) + " layers)"
 
@@ -177,3 +205,18 @@ func _on_import():
 func _on_cancel():
 	visible = false
 	import_cancelled.emit()
+
+func _input(event):
+	if event is InputEventMouseButton and event.pressed and _filter_field.has_focus():
+		var local = get_local_mouse_position()
+		var field_rect = Rect2(_filter_field.position, _filter_field.size)
+		if not field_rect.has_point(local):
+			_filter_field.release_focus()
+
+func _on_filter_changed(text: String):
+	var filter = text.to_lower()
+	for item in layer_entries:
+		if filter == "":
+			item["entry"].visible = true
+		else:
+			item["entry"].visible = item["name"].to_lower().begins_with(filter)

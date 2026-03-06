@@ -110,7 +110,7 @@ func _process(delta):
 		else:
 			emit_signal("stopSpeaking")
 	
-	if main != null and heldSprite != null:
+	if main != null and heldSprite != null and !filtering:
 		if Input.is_action_just_pressed("zDown"):
 			UndoManager.save_state()
 			heldSprite.z -= 1
@@ -163,14 +163,14 @@ func _process(delta):
 	scrollSprites()
 	
 	
-	if !main.fileSystemOpen:
-	
+	if !main.fileSystemOpen and !filtering:
+
 		if Input.is_action_just_pressed("refresh"):
 			refresh()
 		if Input.is_action_just_pressed("unlink"):
 			UndoManager.save_state()
 			unlinkSprite()
-		
+
 		if Input.is_action_pressed("control"):
 			if Input.is_action_just_pressed("saveImages"):
 				saveImagesFromData()

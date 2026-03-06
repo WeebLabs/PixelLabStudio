@@ -54,6 +54,8 @@ var _vis_toggle_label: Label
 var _vis_toggle_delete_btn: Button
 var _divider4: ColorRect
 
+var _filter_field: LineEdit
+
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -76,6 +78,29 @@ func _ready():
 
 	for i in range(1, 11):
 		layer_textures.append(load("res://icons/" + str(i) + ".svg"))
+
+	_filter_field = LineEdit.new()
+	_filter_field.placeholder_text = "Filter layers..."
+	_filter_field.add_theme_font_size_override("font_size", 12)
+	_filter_field.clear_button_enabled = true
+	_filter_field.caret_blink = true
+	_filter_field.caret_blink_interval = 0.5
+	_filter_field.focus_entered.connect(func(): Global.filtering = true)
+	_filter_field.focus_exited.connect(func(): Global.filtering = false)
+	_filter_field.text_changed.connect(_on_filter_changed)
+	var fs_normal = StyleBoxFlat.new()
+	fs_normal.bg_color = Color(0.1, 0.1, 0.1)
+	fs_normal.set_corner_radius_all(3)
+	fs_normal.content_margin_left = 6
+	fs_normal.content_margin_right = 6
+	fs_normal.content_margin_top = 4
+	fs_normal.content_margin_bottom = 4
+	var fs_focus = fs_normal.duplicate()
+	fs_focus.border_color = Color(0.45, 0.45, 0.5)
+	fs_focus.set_border_width_all(1)
+	_filter_field.add_theme_stylebox_override("normal", fs_normal)
+	_filter_field.add_theme_stylebox_override("focus", fs_focus)
+	add_child(_filter_field)
 
 	_create_controls()
 	_create_costume_buttons()
@@ -374,8 +399,13 @@ func _apply_size():
 	_divider1.position = Vector2(8, CONTROLS_ROW_HEIGHT + 4)
 	_divider1.size.x = panel_width - 16
 
+	# Filter field
+	var filter_top = CONTROLS_ROW_HEIGHT + 10
+	_filter_field.position = Vector2(0, filter_top)
+	_filter_field.size = Vector2(panel_width - 10, 24)
+
 	# Layer list scroll area
-	var scroll_top = CONTROLS_ROW_HEIGHT + 10
+	var scroll_top = filter_top + 28
 	var scroll_bottom = panel_height * _divider_ratio
 	$ScrollContainer.offset_top = scroll_top
 	$ScrollContainer.offset_right = panel_width - 10
@@ -631,6 +661,12 @@ func _input(event):
 	if not (event is InputEventMouseButton or event is InputEventMouseMotion):
 		return
 
+	if event is InputEventMouseButton and event.pressed and _filter_field.has_focus():
+		var local = get_local_mouse_position()
+		var field_rect = Rect2(_filter_field.position, _filter_field.size)
+		if not field_rect.has_point(local):
+			_filter_field.release_focus()
+
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			if _is_on_left_edge(get_local_mouse_position()):
@@ -681,6 +717,7 @@ func _input(event):
 # --- Layer list data ---
 
 func updateData(sort_by_z: bool = true):
+	_filter_field.text = ""
 	clearContainer()
 	await get_tree().create_timer(0.15).timeout
 	var spritesAll = get_tree().get_nodes_in_group("saved")
@@ -729,6 +766,19 @@ func updateData(sort_by_z: bool = true):
 func clearContainer():
 	for i in container.get_children():
 		i.queue_free()
+
+func _on_filter_changed(text: String):
+	var filter = text.to_lower()
+	for child in container.get_children():
+		if filter == "":
+			child.visible = true
+		else:
+			child.visible = child._name_label.text.to_lower().begins_with(filter)
+	# Re-apply collapse states when filter is cleared
+	if filter == "":
+		for child in container.get_children():
+			if child.collapsed:
+				child._set_descendants_visible(false)
 
 func updateAllVisible():
 	for i in container.get_children():
