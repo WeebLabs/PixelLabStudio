@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "psd_native_init"
+compatibility_minimum = "4.4"
+reloadable = false
+
+[libraries]
+macos.single = "bin/macos/libpsd_native.macos.universal.dylib"
+windows.x86_64.single = "bin/windows/libpsd_native.windows.x86_64.dll"

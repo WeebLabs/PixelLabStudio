@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+"""
+Build script for PSD Native GDExtension.
+
+Usage:
+    # 1. Clone godot-cpp (one-time setup):
+    cd addons/psd-native
+    git clone https://github.com/godotengine/godot-cpp --branch 4.4 --depth 1
+
+    # 2. Build godot-cpp bindings (one-time per platform):
+    cd godot-cpp && scons platform=<macos|windows> && cd ..
+
+    # 3. Build the extension:
+    scons platform=macos arch=universal     # -> bin/macos/libpsd_native.macos.universal.dylib
+    scons platform=windows arch=x86_64      # -> bin/windows/libpsd_native.windows.x86_64.dll
+"""
+
+import os
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+# Determine output path and filename
+platform = env["platform"]
+arch = env.get("arch", "x86_64")
+
+if platform == "macos":
+    libname = "libpsd_native.macos.{}.dylib".format(arch)
+    libpath = "bin/macos/{}".format(libname)
+elif platform == "windows":
+    libname = "libpsd_native.windows.{}.dll".format(arch)
+    libpath = "bin/windows/{}".format(libname)
+elif platform == "linux":
+    libname = "libpsd_native.linux.{}.so".format(arch)
+    libpath = "bin/linux/{}".format(libname)
+else:
+    libname = "libpsd_native.{}".format(platform)
+    libpath = "bin/{}".format(libname)
+
+library = env.SharedLibrary(libpath, source=sources)
+
+Default(library)

@@ -1,5 +1,7 @@
 class_name PSDParser
 
+var _use_native := ClassDB.class_exists("PSDNative")
+
 # PSD Layer data class
 class PSDLayer:
 	var name: String = ""
@@ -65,30 +67,29 @@ func _decode_packbits(data: PackedByteArray, expected_size: int) -> PackedByteAr
 	result.resize(expected_size)
 	var pos = 0
 	var out_pos = 0
+	var data_size = data.size()
 
-	while pos < data.size() and out_pos < expected_size:
+	while pos < data_size and out_pos < expected_size:
 		var n = data[pos]
 		pos += 1
 
 		if n < 128:
 			# Literal run: copy next n+1 bytes
-			var count = n + 1
+			var count = mini(n + 1, mini(data_size - pos, expected_size - out_pos))
 			for i in range(count):
-				if pos < data.size() and out_pos < expected_size:
-					result[out_pos] = data[pos]
-					pos += 1
-					out_pos += 1
+				result[out_pos] = data[pos]
+				pos += 1
+				out_pos += 1
 		elif n > 128:
 			# Repeated run: repeat next byte 257-n times
-			var count = 257 - n
-			var val = 0
-			if pos < data.size():
-				val = data[pos]
-				pos += 1
+			if pos >= data_size:
+				break
+			var val = data[pos]
+			pos += 1
+			var count = mini(257 - n, expected_size - out_pos)
 			for i in range(count):
-				if out_pos < expected_size:
-					result[out_pos] = val
-					out_pos += 1
+				result[out_pos] = val
+				out_pos += 1
 		# n == 128: no-op
 
 	return result
@@ -300,18 +301,21 @@ func parse(path: String) -> PSDFile:
 				channel["data"] = raw_data
 			elif compression == 1:
 				# PackBits RLE
-				# First, read per-scanline byte counts (one u16 per row)
-				var scanline_counts = PackedByteArray()
+				# Bulk-read all per-scanline byte counts (2 bytes each, big-endian)
+				var scanline_bytes = _file.get_buffer(layer.height * 2)
 				var total_compressed = 0
 				for row in range(layer.height):
-					var count = _read_u16()
-					total_compressed += count
+					var off = row * 2
+					total_compressed += (scanline_bytes[off] << 8) | scanline_bytes[off + 1]
 
 				# Read all compressed data
 				var compressed_data = _file.get_buffer(total_compressed)
 
 				# Decompress
-				channel["data"] = _decode_packbits(compressed_data, expected_size)
+				if _use_native:
+					channel["data"] = PSDNative.decode_packbits(compressed_data, expected_size)
+				else:
+					channel["data"] = _decode_packbits(compressed_data, expected_size)
 			else:
 				# ZIP compression not supported
 				result.error = "ZIP compression in layer data is not supported."
@@ -328,11 +332,7 @@ func parse(path: String) -> PSDFile:
 			continue
 
 		var pixel_count = layer.width * layer.height
-		var rgba = PackedByteArray()
-		rgba.resize(pixel_count * 4)
-
-		# Initialize to transparent black
-		rgba.fill(0)
+		var rgba: PackedByteArray
 
 		# Map channel data by ID
 		var channel_map = {}
@@ -345,21 +345,55 @@ func parse(path: String) -> PSDFile:
 		var b_data = channel_map.get(2, PackedByteArray())
 		var a_data = channel_map.get(-1, PackedByteArray())
 
-		var has_r = r_data.size() >= pixel_count
-		var has_g = g_data.size() >= pixel_count
-		var has_b = b_data.size() >= pixel_count
-		var has_a = a_data.size() >= pixel_count
+		if _use_native:
+			rgba = PSDNative.compose_rgba(r_data, g_data, b_data, a_data, pixel_count, layer.opacity)
+		else:
+			rgba = PackedByteArray()
+			rgba.resize(pixel_count * 4)
 
-		for p in range(pixel_count):
-			var idx = p * 4
-			rgba[idx] = r_data[p] if has_r else 0
-			rgba[idx + 1] = g_data[p] if has_g else 0
-			rgba[idx + 2] = b_data[p] if has_b else 0
+			var has_r = r_data.size() >= pixel_count
+			var has_g = g_data.size() >= pixel_count
+			var has_b = b_data.size() >= pixel_count
+			var has_a = a_data.size() >= pixel_count
 
-			var alpha = a_data[p] if has_a else 255
-			# Apply layer opacity
-			alpha = int(alpha * layer.opacity / 255.0)
-			rgba[idx + 3] = alpha
+			# Branch outside the hot loop to eliminate per-pixel conditionals
+			if has_r and has_g and has_b and has_a:
+				if layer.opacity == 255:
+					# Fast path: all channels, full opacity — no math per pixel
+					for p in range(pixel_count):
+						var idx = p * 4
+						rgba[idx] = r_data[p]
+						rgba[idx + 1] = g_data[p]
+						rgba[idx + 2] = b_data[p]
+						rgba[idx + 3] = a_data[p]
+				else:
+					# All channels, partial opacity
+					var opa = layer.opacity / 255.0
+					for p in range(pixel_count):
+						var idx = p * 4
+						rgba[idx] = r_data[p]
+						rgba[idx + 1] = g_data[p]
+						rgba[idx + 2] = b_data[p]
+						rgba[idx + 3] = int(a_data[p] * opa)
+			elif has_r and has_g and has_b:
+				# RGB but no alpha — fully opaque at layer opacity
+				var opa = layer.opacity
+				for p in range(pixel_count):
+					var idx = p * 4
+					rgba[idx] = r_data[p]
+					rgba[idx + 1] = g_data[p]
+					rgba[idx + 2] = b_data[p]
+					rgba[idx + 3] = opa
+			else:
+				# Rare: missing channels — general fallback
+				var opa = layer.opacity / 255.0
+				for p in range(pixel_count):
+					var idx = p * 4
+					rgba[idx] = r_data[p] if has_r else 0
+					rgba[idx + 1] = g_data[p] if has_g else 0
+					rgba[idx + 2] = b_data[p] if has_b else 0
+					var alpha = a_data[p] if has_a else 255
+					rgba[idx + 3] = int(alpha * opa)
 
 		layer.image = Image.create_from_data(layer.width, layer.height, false, Image.FORMAT_RGBA8, rgba)
 
