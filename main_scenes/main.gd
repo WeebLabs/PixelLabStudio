@@ -422,6 +422,7 @@ var _anim_thread: Thread = null
 var _anim_result = null
 var _anim_progress_dialog: Node2D = null
 var _anim_replace_mode: bool = false
+var _anim_import_name: String = ""
 
 func _on_psd_dialog_file_selected(path):
 	_psd_parser = PSDParser.new()
@@ -541,6 +542,7 @@ func _on_psd_import_cancelled():
 func _start_animated_import(path: String, is_replace: bool):
 	_anim_replace_mode = is_replace
 	_anim_result = null
+	_anim_import_name = path.get_file().get_basename()
 
 	_anim_parser = APNGParser.new()
 
@@ -666,7 +668,7 @@ func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
 
 	var sprite = spriteObject.instantiate()
 	sprite.loadedImage = sheet
-	sprite.path = "animated://import"
+	sprite.path = "animated://" + _anim_import_name
 	sprite.id = id
 	sprite.frames = frame_count
 	sprite.animSpeed = anim_speed

@@ -78,8 +78,7 @@ func _ready():
 
 	# Sprite name — expands to fill, absorbs remaining space as indent grows
 	_name_label = Label.new()
-	var count = spritePath.get_slice_count("/") - 1
-	_name_label.text = spritePath.get_slice("/", count)
+	_name_label.text = _display_name(spritePath)
 	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_name_label.clip_text = true
 	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -168,9 +167,7 @@ func _select():
 	Global.heldSprite = sprite
 	Global.spriteEdit.setImage()
 
-	var count = sprite.path.get_slice_count("/") - 1
-	var i1 = sprite.path.get_slice("/", count)
-	Global.pushUpdate("Selected sprite \"" + i1 + "\".")
+	Global.pushUpdate("Selected sprite \"" + _display_name(sprite.path) + "\".")
 
 	sprite.set_physics_process(true)
 
@@ -222,3 +219,14 @@ func _set_descendants_visible(vis: bool):
 			child._set_descendants_visible(false)
 		else:
 			child._set_descendants_visible(true)
+
+static func _display_name(p: String) -> String:
+	if p.begins_with("psd://"):
+		return p.substr(6)
+	if p.begins_with("animated://"):
+		return p.substr(11)
+	var filename = p.get_file()
+	var ext = filename.get_extension()
+	if ext != "":
+		filename = filename.substr(0, filename.length() - ext.length() - 1)
+	return filename
