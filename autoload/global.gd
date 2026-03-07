@@ -67,7 +67,12 @@ func _ready():
 	
 	if !Saving.settings.has("useStreamDeck"):
 		Saving.settings["useStreamDeck"] = false
-	
+
+	if Saving.settings.has("audioDevice") and Saving.settings["audioDevice"] != "":
+		var saved_device = Saving.settings["audioDevice"]
+		if saved_device in AudioServer.get_input_device_list():
+			AudioServer.input_device = saved_device
+
 	createMicrophone()
 
 func createMicrophone():

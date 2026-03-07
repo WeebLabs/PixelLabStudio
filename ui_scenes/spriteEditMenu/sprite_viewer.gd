@@ -91,6 +91,7 @@ func _ready():
 		$Rotation, $RotationalLimits, $Animation,
 	]
 	_set_controls_enabled(false)
+	setImage()
 
 	# Build slider style resources (matching right sidebar)
 	_slider_fill_enabled = StyleBoxFlat.new()
@@ -183,6 +184,17 @@ func setImage():
 		$Position/Label2.text = ""
 		$Position/Label3.text = ""
 		$Slider/Label.text = ""
+		spriteRotDisplay.texture = null
+		spriteRotDisplay.rotation_degrees = 0
+		$RotationalLimits/RotBack/RotLineDisplay3.rotation_degrees = 0
+		$RotationalLimits/rotLimitMin.set_value_no_signal(-180)
+		$RotationalLimits/rotLimitMax.set_value_no_signal(180)
+		$RotationalLimits/RotLimitMin.text = "rotational limit min: -180"
+		$RotationalLimits/RotLimitMax.text = "rotational limit max: 180"
+		$RotationalLimits/RotBack/rotLimitBar.value = 360
+		$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = -180 + 90
+		$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = -180
+		$RotationalLimits/RotBack/RotLineDisplay2.rotation_degrees = 180
 		return
 
 	# Crop to opaque content of the first frame so the sprite fills the preview

@@ -138,7 +138,7 @@ func _ready():
 			bounceOnCostumeChange = Saving.settings["bounceOnCostumeChange"]
 		else:
 			Saving.settings["bounceOnCostumeChange"] = false
-		
+
 		saveLoaded = true
 
 	if screen_scale > 1.0:
