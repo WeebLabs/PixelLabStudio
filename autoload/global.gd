@@ -355,9 +355,9 @@ func _input(event):
 				if event.position.x < spriteEdit.panel_width + 19:
 					return
 		if event.is_action_pressed("scrollUp"):
-			_scroll_input -= 1
-		if event.is_action_pressed("scrollDown"):
 			_scroll_input += 1
+		if event.is_action_pressed("scrollDown"):
+			_scroll_input -= 1
 
 func select(areas):
 	

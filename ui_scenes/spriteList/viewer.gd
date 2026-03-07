@@ -752,7 +752,13 @@ func updateData(sort_by_z: bool = true):
 		listObj.spritePath = sprite.path
 		listObj.sprite = sprite
 		listObj.parent = sprite.parentSprite
-		if sprite.parentSprite != null:
+		# Fallback: look up parent by ID when parentSprite isn't set yet (e.g. during load)
+		if listObj.parent == null and sprite.parentId != null:
+			for other in spritesAll:
+				if other.id == sprite.parentId:
+					listObj.parent = other
+					break
+		if listObj.parent != null:
 			spritesWithParents.append(listObj)
 		allSprites.append(listObj)
 
