@@ -182,6 +182,15 @@ Each sprite layer is an instance with:
 
 Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"` group for enumeration.
 
+> Updated: 2026-03-07 — Parenting & hierarchy hardening (14 bugs fixed)
+> - `getAllDescendants()` added for recursive descendant collection (used by `setClip()`)
+> - `unlinkChildren(parentSpr)` on `Global` unlinks direct children before parent delete, preserving grandchild chains
+> - `linkSprite()` / `unlinkSprite()` zero all ancestor wobbles before position calculations to prevent wobble baking
+> - `_skip_ready_reparent` flag on spriteObject skips `_ready()` timer-based reparent when duplicate handler reparents immediately
+> - Sprite list uses DFS tree flattening for correct sibling ordering, chain-walk indent computation, collapse state preservation across rebuilds, and ancestor-chain visibility in filter
+> - `updateData()` generation counter guards against stale coroutine results on rapid calls
+> - Undo/redo handles missing parents (orphan fallback to origin) and circular reference checks
+
 ---
 
 ## Key Systems
@@ -191,6 +200,7 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 - Snapshot-based: captures full state of all sprites on each action
 - 50-state history limit
 - Snapshots store `Image` object references (not base64 PNG) — no encoding cost. PNG encoding only happens at file-save time. (Updated: 2026-02-16)
+- Handles missing parent sprites by falling back to origin; detects circular references during restore (Updated: 2026-03-07)
 - `save_state()` pushes snapshot; `save_state_continuous()` debounces within same frame
 
 ### Save/Load (`saving.gd`, `main.gd`)

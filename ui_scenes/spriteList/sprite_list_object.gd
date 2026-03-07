@@ -190,8 +190,6 @@ func _process(_delta):
 		_update_style()
 
 func updateChildren():
-	for child in childrenTags:
-		child.indent = indent + 1
 	if childrenTags.size() > 0:
 		_collapse_btn.text = "▼"
 		_collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP

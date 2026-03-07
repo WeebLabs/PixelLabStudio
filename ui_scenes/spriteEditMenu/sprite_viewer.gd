@@ -421,6 +421,7 @@ func _on_blinking_pressed():
 func _on_trash_pressed():
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
+	Global.unlinkChildren(Global.heldSprite)
 	Global.heldSprite.queue_free()
 	Global.heldSprite = null
 

@@ -160,7 +160,7 @@ func _process(delta):
 	
 	if main.editMode:
 		if reparentMode:
-			RenderingServer.set_default_clear_color(Color.POWDER_BLUE)
+			RenderingServer.set_default_clear_color(Color(0.18, 0.25, 0.35))
 		elif originMode:
 			RenderingServer.set_default_clear_color(Color(0.4, 0.55, 0.4))
 		else:
@@ -242,6 +242,7 @@ func _build_z_overlay():
 	fs_focus.set_border_width_all(1)
 	_z_input.add_theme_stylebox_override("normal", fs_normal)
 	_z_input.add_theme_stylebox_override("focus", fs_focus)
+	_z_input.text_submitted.connect(_on_z_input_submitted)
 	_z_overlay.add_child(_z_input)
 
 	# Store normal style for flash effect
@@ -267,6 +268,9 @@ func _hide_z_input():
 		_z_input.release_focus()
 	_z_input_active = false
 	_suppress_keys_frame = Engine.get_process_frames()
+
+func _on_z_input_submitted(_text: String):
+	_apply_z_input()
 
 func _apply_z_input():
 	var text = _z_input.text
@@ -413,7 +417,29 @@ func linkSprite(sprite,newParent):
 		reparentMode = false
 		return
 
+	# Zero all ancestor wobbles for stable reparent position
+	var saved_wobbles = []
+	var current = sprite
+	while current != null:
+		saved_wobbles.append([current, current.wob.position])
+		current.wob.position = Vector2.ZERO
+		current = current.parentSprite
+	current = newParent
+	while current != null:
+		var already_saved = false
+		for entry in saved_wobbles:
+			if entry[0] == current:
+				already_saved = true
+				break
+		if not already_saved:
+			saved_wobbles.append([current, current.wob.position])
+			current.wob.position = Vector2.ZERO
+		current = current.parentSprite
+
 	sprite.reparent(newParent.sprite,true)
+
+	for entry in saved_wobbles:
+		entry[0].wob.position = entry[1]
 
 	sprite.parentId = newParent.id
 	sprite.parentSprite = newParent
@@ -529,22 +555,48 @@ func refresh():
 		object.remadePolygon = false
 	pushUpdate("Refreshed all sprites.")
 
+func unlinkChildren(parentSpr):
+	var children = parentSpr.getAllLinkedSprites()
+	if children.size() == 0:
+		return
+	var saved_wob = parentSpr.wob.position
+	parentSpr.wob.position = Vector2.ZERO
+	for child in children:
+		var glob = child.global_position
+		child.get_parent().remove_child(child)
+		main.origin.add_child(child)
+		child.parentId = null
+		child.parentSprite = null
+		child.position = glob - main.origin.position
+	parentSpr.wob.position = saved_wob
+
 func unlinkSprite():
 	if heldSprite == null:
 		return
 	if heldSprite.parentId == null:
 		return
-	
+
+	# Zero all ancestor wobbles for stable position calculation
+	var saved_wobbles = []
+	var current = heldSprite
+	while current != null:
+		saved_wobbles.append([current, current.wob.position])
+		current.wob.position = Vector2.ZERO
+		current = current.parentSprite
+
 	var glob = heldSprite.global_position
 	glob = Vector2(int(glob.x),int(glob.y))
-	
+
 	heldSprite.get_parent().remove_child(heldSprite)
 	main.origin.add_child(heldSprite)
 	heldSprite.set_owner(main.origin)
 	heldSprite.parentId = null
 	heldSprite.parentSprite = null
 	heldSprite.position = glob - main.origin.position
-	
+
+	for entry in saved_wobbles:
+		entry[0].wob.position = entry[1]
+
 	Global.spriteList.updateData()
 	pushUpdate("Unlinked sprite.")
 

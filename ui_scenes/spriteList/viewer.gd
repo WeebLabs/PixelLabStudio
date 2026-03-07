@@ -56,6 +56,8 @@ var _divider4: ColorRect
 
 var _filter_field: LineEdit
 
+var _saved_collapse_states: Dictionary = {}
+var _update_generation: int = 0
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -570,6 +572,7 @@ func _on_trash_pressed():
 	if Global.heldSprite == null:
 		return
 	UndoManager.save_state()
+	Global.unlinkChildren(Global.heldSprite)
 	Global.heldSprite.queue_free()
 	Global.heldSprite = null
 	Global.spriteList.updateData()
@@ -717,8 +720,16 @@ func _input(event):
 
 func updateData(sort_by_z: bool = true):
 	_filter_field.text = ""
+	_saved_collapse_states = {}
+	for child in container.get_children():
+		if child.sprite != null and child.collapsed:
+			_saved_collapse_states[child.sprite.id] = true
 	clearContainer()
+	_update_generation += 1
+	var my_generation = _update_generation
 	await get_tree().create_timer(0.15).timeout
+	if my_generation != _update_generation:
+		return
 	var spritesAll = get_tree().get_nodes_in_group("saved")
 
 	if sort_by_z:
@@ -738,29 +749,51 @@ func updateData(sort_by_z: bool = true):
 
 		container.add_child(listObj)
 
+	# Build parent-child relationships
 	for child in spritesWithParents:
-		var parentListObj = null
-		var index = 0
-		for sprite in allSprites:
-			if child.parent == sprite.sprite:
-				parentListObj = sprite
-				var child_idx = child.get_index()
-				var parent_idx = sprite.get_index()
-				# When child is before parent, removing it shifts parent down by 1
-				if child_idx < parent_idx:
-					index = parent_idx
-				else:
-					index = parent_idx + 1
-				sprite.childrenTags.append(child)
+		for obj in allSprites:
+			if child.parent == obj.sprite:
+				child.parentTag = obj
+				obj.childrenTags.append(child)
 				break
-		child.parentTag = parentListObj
-		container.move_child(child, index)
 
-	for sprite in allSprites:
-		sprite.updateChildren()
+	# DFS flatten: roots first, then children in z-sorted order
+	var roots = []
+	for obj in allSprites:
+		if obj.parentTag == null:
+			roots.append(obj)
 
-	for child in spritesWithParents:
-		child.updateIndent()
+	var final_order = []
+	var stack = []
+	for i in range(roots.size() - 1, -1, -1):
+		stack.append(roots[i])
+	while stack.size() > 0:
+		var node = stack.pop_back()
+		final_order.append(node)
+		for i in range(node.childrenTags.size() - 1, -1, -1):
+			stack.append(node.childrenTags[i])
+
+	for i in range(final_order.size()):
+		container.move_child(final_order[i], i)
+
+	# Compute indent by chain-walk (order-independent)
+	for obj in final_order:
+		obj.indent = 0
+		var ancestor = obj.parentTag
+		while ancestor != null:
+			obj.indent += 1
+			ancestor = ancestor.parentTag
+		if obj.childrenTags.size() > 0:
+			obj._collapse_btn.text = "▼"
+			obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		obj.updateIndent()
+
+	# Restore collapse states from before rebuild
+	for obj in final_order:
+		if _saved_collapse_states.has(obj.sprite.id):
+			obj.collapsed = true
+			obj._collapse_btn.text = "▶"
+			obj._set_descendants_visible(false)
 
 func clearContainer():
 	for i in container.get_children():
@@ -768,16 +801,26 @@ func clearContainer():
 
 func _on_filter_changed(text: String):
 	var filter = text.to_lower()
-	for child in container.get_children():
-		if filter == "":
-			child.visible = true
-		else:
-			child.visible = child._name_label.text.to_lower().begins_with(filter)
-	# Re-apply collapse states when filter is cleared
 	if filter == "":
+		for child in container.get_children():
+			child.visible = true
 		for child in container.get_children():
 			if child.collapsed:
 				child._set_descendants_visible(false)
+		return
+
+	# Hide all first
+	for child in container.get_children():
+		child.visible = false
+
+	# Show matches and their full ancestor chains
+	for child in container.get_children():
+		if child._name_label.text.to_lower().begins_with(filter):
+			child.visible = true
+			var ancestor = child.parentTag
+			while ancestor != null:
+				ancestor.visible = true
+				ancestor = ancestor.parentTag
 
 func updateAllVisible():
 	for i in container.get_children():

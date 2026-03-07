@@ -186,7 +186,14 @@ func _style_control_sliders():
 		s.add_theme_icon_override("grabber", grabber_tex)
 		s.add_theme_icon_override("grabber_highlight", grabber_tex)
 		s.add_theme_icon_override("grabber_disabled", grabber_tex)
-		s.add_theme_constant_override("grabber_offset", -11)
+		s.add_theme_constant_override("grabber_offset", 0)
+		s.add_theme_constant_override("center_grabber", 1)
+
+	# Align sliders vertically with their meter bars
+	$ControlPanel/volumeSlider.offset_top = -40
+	$ControlPanel/volumeSlider.offset_bottom = -8
+	$ControlPanel/sensitiveSlider.offset_top = -64
+	$ControlPanel/sensitiveSlider.offset_bottom = -32
 
 	# Replace level meter textures with clean shapes
 	var bar_w = 512
@@ -196,14 +203,19 @@ func _style_control_sliders():
 	under_img.fill(Color(0.2, 0.2, 0.22))
 	var under_tex = ImageTexture.create_from_image(under_img)
 
-	var progress_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
-	progress_img.fill(Color(1.0, 0.7, 0.8))
-	var progress_tex = ImageTexture.create_from_image(progress_img)
+	var pink_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
+	pink_img.fill(Color(1.0, 0.7, 0.8))
+	var pink_tex = ImageTexture.create_from_image(pink_img)
+
+	var blue_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
+	blue_img.fill(Color(0.55, 0.78, 1.0))
+	var blue_tex = ImageTexture.create_from_image(blue_img)
 
 	for bar in [$ControlPanel/VolumeBar, $ControlPanel/Sensitive]:
 		bar.texture_under = under_tex
-		bar.texture_progress = progress_tex
 		bar.texture_over = null
+	$ControlPanel/Sensitive.texture_progress = pink_tex
+	$ControlPanel/VolumeBar.texture_progress = blue_tex
 
 func _init_ndi():
 	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
@@ -1313,8 +1325,6 @@ func _on_duplicate_button_pressed():
 	sprite.path = Global.heldSprite.path
 	sprite.loadedImage = Global.heldSprite.imageData.duplicate()
 	sprite.id = id
-	sprite.parentId = Global.heldSprite.parentId
-
 	sprite.dragSpeed = Global.heldSprite.dragSpeed
 	sprite.showOnTalk = Global.heldSprite.showOnTalk
 	sprite.showOnBlink = Global.heldSprite.showOnBlink
@@ -1335,7 +1345,7 @@ func _on_duplicate_button_pressed():
 	sprite.frames = Global.heldSprite.frames
 	sprite.animSpeed = Global.heldSprite.animSpeed
 	
-	sprite.costumeLayers = Global.heldSprite.costumeLayers
+	sprite.costumeLayers = Global.heldSprite.costumeLayers.duplicate()
 
 	sprite.eyeTrack = Global.heldSprite.eyeTrack
 	sprite.eyeTrackDistance = Global.heldSprite.eyeTrackDistance
@@ -1343,12 +1353,22 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
 
 	origin.add_child(sprite)
-	sprite.position = Global.heldSprite.position
-	
+
+	if Global.heldSprite.parentId != null and Global.heldSprite.parentSprite != null:
+		sprite._skip_ready_reparent = true
+		var newParent = Global.heldSprite.parentSprite
+		sprite.get_parent().remove_child(sprite)
+		newParent.sprite.add_child(sprite)
+		sprite.parentId = Global.heldSprite.parentId
+		sprite.parentSprite = newParent
+		sprite.position = Global.heldSprite.position
+	else:
+		sprite.position = Global.heldSprite.position
+
 	Global.heldSprite = sprite
-	
+
 	Global.spriteList.updateData()
-	
+
 	Global.pushUpdate("Duplicated sprite.")
 
 func changeCostumeStreamDeck(id: String):

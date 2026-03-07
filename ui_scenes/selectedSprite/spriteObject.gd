@@ -99,6 +99,7 @@ var tick = 0
 
 #Vis toggle
 var toggle = "null"
+var _skip_ready_reparent = false
 
 func _make_premultiplied_texture(img: Image) -> ImageTexture:
 	var pma = img.duplicate()
@@ -177,12 +178,16 @@ func _ready():
 	
 	add_to_group(str(id))
 	await get_tree().create_timer(0.1).timeout
-	if parentId != null:
+	if parentId != null and not _skip_ready_reparent:
 		var nodes = get_tree().get_nodes_in_group(str(parentId))
-		get_parent().remove_child(self)
-		nodes[0].sprite.add_child(self)
-		parentSprite = nodes[0]
-		set_owner(nodes[0].sprite)
+		if nodes.size() > 0:
+			get_parent().remove_child(self)
+			nodes[0].sprite.add_child(self)
+			parentSprite = nodes[0]
+			set_owner(nodes[0].sprite)
+		else:
+			parentId = null
+			parentSprite = null
 	
 	setClip(clipped)
 	
@@ -539,14 +544,14 @@ func remakePolygon():
 func setClip(toggle):
 	if toggle:
 		sprite.clip_children = CLIP_CHILDREN_AND_DRAW
-		
-		for node in getAllLinkedSprites():
+
+		for node in getAllDescendants():
 			node.z = z
 			node.setZIndex()
-		
+
 	else:
 		sprite.clip_children = CLIP_CHILDREN_DISABLED
-		
+
 	clipped = toggle
 
 func getAllLinkedSprites():
@@ -556,6 +561,17 @@ func getAllLinkedSprites():
 		if node.parentId == id:
 			linkedSprites.append(node)
 	return linkedSprites
+
+func getAllDescendants() -> Array:
+	var result = []
+	var stack = getAllLinkedSprites()
+	while stack.size() > 0:
+		var current = stack.pop_back()
+		result.append(current)
+		for node in get_tree().get_nodes_in_group("saved"):
+			if node.parentId == current.id:
+				stack.append(node)
+	return result
 
 func visToggle(keys):
 	if Global.awaitingToggleBind: return

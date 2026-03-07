@@ -118,9 +118,19 @@ func _restore(data: Dictionary):
 			else:
 				var parent_nodes = get_tree().get_nodes_in_group(str(new_parent_id))
 				if parent_nodes.size() > 0:
-					parent_nodes[0].sprite.add_child(sprite)
-					sprite.parentId = new_parent_id
-					sprite.parentSprite = parent_nodes[0]
+					var new_parent = parent_nodes[0]
+					if sprite.is_ancestor_of(new_parent):
+						Global.main.origin.add_child(sprite)
+						sprite.parentId = null
+						sprite.parentSprite = null
+					else:
+						new_parent.sprite.add_child(sprite)
+						sprite.parentId = new_parent_id
+						sprite.parentSprite = new_parent
+				else:
+					Global.main.origin.add_child(sprite)
+					sprite.parentId = null
+					sprite.parentSprite = null
 
 		sprite.position = str_to_var(d["pos"])
 		sprite.offset = str_to_var(d["offset"])
