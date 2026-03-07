@@ -64,6 +64,15 @@ func _ready():
 	# Shift all sections below Position down to accommodate parent label
 	for node in [$Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
 		node.position.y += 24
+	# Pull Wobble and Rotational Limits up to sit just below checkboxes
+	for node in [$WobbleControl, $RotationalLimits]:
+		node.position.y -= 83
+	# Increase spacing after section dividers
+	for node in [$Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
+		node.position.y += 8
+	for node in [$WobbleControl, $RotationalLimits]:
+		node.position.y += 8
+	$RotationalLimits.position.y += 8
 
 	# Hide sections moved to right sidebar
 	$Layers.visible = false
@@ -149,9 +158,10 @@ func _ready():
 	# Add section dividers
 	_create_divider(141)   # between 3D Preview and Position Info
 	_create_divider(274)   # between Position Info and Animation
-	_create_divider(486)   # between Rotation and Buttons row
-	_create_divider(639)   # between Buttons/Checkboxes and Wobble
-	_create_divider(979)   # between Wobble and Rotational Limits
+	_create_divider(564)   # between Buttons/Checkboxes and Wobble
+	_create_divider(773)   # between Wobble and Rotational Limits circle
+
+	_replace_rot_display_textures()
 
 	# Create dark gray background panel
 	_bg = ColorRect.new()
@@ -179,6 +189,97 @@ func _set_controls_enabled(enabled: bool):
 		slider.add_theme_icon_override("grabber", grab)
 		slider.add_theme_icon_override("grabber_highlight", grab)
 	
+func _replace_rot_display_textures():
+	var size = 260
+	var cx = 130.0
+	var cy = 130.0
+	var radius = 105.0
+	var fill_color = Color(0.18, 0.18, 0.18)
+	var border_color = Color(0.4, 0.4, 0.4, 0.6)
+	var border_width = 2.0
+
+	# Dark grey filled circle with clean border for RotBack
+	var back_img = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	for x in range(size):
+		for y in range(size):
+			var dist = Vector2(x, y).distance_to(Vector2(cx, cy))
+			if dist <= radius - border_width:
+				back_img.set_pixel(x, y, fill_color)
+			elif dist <= radius:
+				back_img.set_pixel(x, y, border_color)
+	$RotationalLimits/RotBack.texture = ImageTexture.create_from_image(back_img)
+
+	# Clean thin line for rotation markers (spans from center to circle edge)
+	var line_w = int(radius)
+	var line_h = 4
+	var line_img = Image.create(line_w, line_h, false, Image.FORMAT_RGBA8)
+	var line_color = Color(0.75, 0.75, 0.8, 0.6)
+	for x in range(line_w):
+		line_img.set_pixel(x, 1, line_color)
+		line_img.set_pixel(x, 2, line_color)
+	var line_tex = ImageTexture.create_from_image(line_img)
+	var pointer_img = Image.create(line_w, line_h, false, Image.FORMAT_RGBA8)
+	var pointer_color = Color(0.85, 0.85, 0.9, 0.9)
+	for x in range(line_w):
+		pointer_img.set_pixel(x, 1, pointer_color)
+		pointer_img.set_pixel(x, 2, pointer_color)
+	var pointer_tex = ImageTexture.create_from_image(pointer_img)
+	for node in [$RotationalLimits/RotBack/RotLineDisplay,
+				$RotationalLimits/RotBack/RotLineDisplay2]:
+		node.texture = line_tex
+		node.offset = Vector2(radius / 2.0, 0)
+	$RotationalLimits/RotBack/RotLineDisplay3.texture = pointer_tex
+	$RotationalLimits/RotBack/RotLineDisplay3.offset = Vector2(radius / 2.0, 0)
+
+	# Reorder children: fill → lines → sprite → dot (later = on top)
+	var rot_back = $RotationalLimits/RotBack
+	rot_back.move_child($RotationalLimits/RotBack/rotLimitBar, 0)
+	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay, 1)
+	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay2, 2)
+	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay3, 3)
+	rot_back.move_child($RotationalLimits/RotBack/SpriteDisplay, 4)
+	# White dot to indicate origin point
+	var dot_size = 8
+	var dot_img = Image.create(dot_size, dot_size, false, Image.FORMAT_RGBA8)
+	var dot_center = dot_size / 2.0
+	for x in range(dot_size):
+		for y in range(dot_size):
+			if Vector2(x, y).distance_to(Vector2(dot_center, dot_center)) <= dot_center:
+				dot_img.set_pixel(x, y, Color(1, 1, 1))
+	var origin_dot = Sprite2D.new()
+	origin_dot.texture = ImageTexture.create_from_image(dot_img)
+	rot_back.add_child(origin_dot)
+	$RotationalLimits/RotBack/SpriteDisplay.position = Vector2.ZERO
+	$RotationalLimits/RotBack/RotLineDisplay.position = Vector2.ZERO
+	$RotationalLimits/RotBack/RotLineDisplay2.position = Vector2.ZERO
+	$RotationalLimits/RotBack/RotLineDisplay3.position = Vector2.ZERO
+	# Resize rotLimitBar to fill circle radius, change to light blue
+	var bar = $RotationalLimits/RotBack/rotLimitBar
+	var bar_size = int(radius) * 2
+	var fill_img = Image.create(bar_size, bar_size, false, Image.FORMAT_RGBA8)
+	fill_img.fill(Color(0.55, 0.78, 1.0))
+	bar.texture_progress = ImageTexture.create_from_image(fill_img)
+	bar.offset_left = -radius
+	bar.offset_top = -radius
+	bar.offset_right = radius
+	bar.offset_bottom = radius
+	bar.pivot_offset = Vector2(radius, radius)
+
+	# Move circle up to reduce gap with previous section
+	$RotationalLimits/RotBack.position.y = 698
+	$RotationalLimits/RotBorder.position.y = 698
+
+	# Move labels and sliders below the circle
+	var controls_top = 698 + radius + 20
+	$RotationalLimits/RotLimitMin.offset_top = controls_top
+	$RotationalLimits/RotLimitMin.offset_bottom = controls_top + 26
+	$RotationalLimits/rotLimitMin.offset_top = controls_top + 24
+	$RotationalLimits/rotLimitMin.offset_bottom = controls_top + 44
+	$RotationalLimits/RotLimitMax.offset_top = controls_top + 49
+	$RotationalLimits/RotLimitMax.offset_bottom = controls_top + 75
+	$RotationalLimits/rotLimitMax.offset_top = controls_top + 73
+	$RotationalLimits/rotLimitMax.offset_bottom = controls_top + 93
+
 func setImage():
 	if Global.heldSprite == null:
 		_preview.texture = null
@@ -241,8 +342,15 @@ func setImage():
 
 	spriteRotDisplay.texture = Global.heldSprite.tex
 	spriteRotDisplay.offset = Global.heldSprite.offset
-	var displaySize = Global.heldSprite.imageData.get_size().y
-	spriteRotDisplay.scale = Vector2(1,1) * (150.0/displaySize)
+	# Scale so opaque area occupies 50% of circle radius
+	var rot_img = Global.heldSprite.imageData
+	var rot_used = rot_img.get_used_rect()
+	var target_size = 105.0  # 50% of radius (105) = 52.5 per side from center
+	if rot_used.size.x > 0 and rot_used.size.y > 0:
+		var rot_scale = target_size / max(rot_used.size.x, rot_used.size.y)
+		spriteRotDisplay.scale = Vector2(rot_scale, rot_scale)
+	else:
+		spriteRotDisplay.scale = Vector2(1, 1) * (target_size / rot_img.get_size().y)
 
 	$Slider/Label.text = "drag: " + str(Global.heldSprite.dragSpeed)
 	$Slider/DragSlider.set_value_no_signal(Global.heldSprite.dragSpeed)
