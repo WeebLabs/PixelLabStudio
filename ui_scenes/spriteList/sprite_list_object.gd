@@ -148,7 +148,7 @@ func _update_vis_display():
 	else:
 		_vis_btn.text = "○"
 		_vis_btn.add_theme_color_override("font_color", Color(0.35, 0.35, 0.4))
-		modulate.a = 0.5
+		modulate.a = 0.3
 
 func _on_vis_toggled():
 	sprite.visible = !sprite.visible
