@@ -100,6 +100,8 @@ var tick = 0
 #Vis toggle
 var toggle = "null"
 var _skip_ready_reparent = false
+var _prebuilt_pma_image: Image = null
+var _prebuilt_polygons: Array = []
 
 func _make_premultiplied_texture(img: Image) -> ImageTexture:
 	var pma = img.duplicate()
@@ -133,7 +135,13 @@ func _ready():
 					return
 		
 	imageData = img
-	tex = _make_premultiplied_texture(img)
+
+	# Use prebuilt premultiplied image if available (from threaded import)
+	if _prebuilt_pma_image != null:
+		tex = ImageTexture.create_from_image(_prebuilt_pma_image)
+		_prebuilt_pma_image = null
+	else:
+		tex = _make_premultiplied_texture(img)
 
 	imageSize = img.get_size()
 
@@ -142,11 +150,16 @@ func _ready():
 	var mat = CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
 	sprite.material = mat
-	
-	var bitmap = BitMap.new()
-	bitmap.create_from_image_alpha(imageData)
-	
-	var polygons = bitmap.opaque_to_polygons(Rect2(Vector2(0, 0), bitmap.get_size()),4.0) #bitmap.get_size()
+
+	# Use prebuilt polygons if available (from threaded import)
+	var polygons
+	if _prebuilt_polygons.size() > 0:
+		polygons = _prebuilt_polygons
+		_prebuilt_polygons = []
+	else:
+		var bitmap = BitMap.new()
+		bitmap.create_from_image_alpha(imageData)
+		polygons = bitmap.opaque_to_polygons(Rect2(Vector2(0, 0), bitmap.get_size()), 4.0)
 
 	var b = false
 	for polygon in polygons:

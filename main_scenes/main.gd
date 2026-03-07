@@ -267,6 +267,7 @@ func _process(delta):
 	fileSystemOpen = isFileSystemOpen()
 
 	_process_psd_thread(delta)
+	_process_import_thread(delta)
 	_process_anim_thread(delta)
 	panCamera()
 	followShadow()
@@ -475,6 +476,15 @@ var _psd_result = null
 var _psd_progress_dialog: Node2D = null
 var _psd_replace_mode: bool = false
 
+# Threaded sprite creation (post-PSD-import)
+var _import_thread: Thread = null
+var _import_layers: Array = []
+var _import_canvas_size: Vector2 = Vector2.ZERO
+var _import_results: Array = []
+var _import_mutex: Mutex = null
+var _import_completed: int = 0
+var _import_progress_dialog2: Node2D = null
+
 var _anim_parser = null        # GIFParser or APNGParser
 var _anim_thread: Thread = null
 var _anim_result = null
@@ -573,25 +583,111 @@ func _process_psd_thread(_delta):
 			psdImportDialog.visible = true
 
 func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
-	UndoManager.save_state()
-	var canvas_center = canvas_size * 0.5
-	var sprites_added = []
+	_import_layers = selected_layers
+	_import_canvas_size = canvas_size
+	_import_results = []
+	_import_results.resize(selected_layers.size())
+	_import_completed = 0
+	_import_mutex = Mutex.new()
 
+	# Show progress dialog for sprite creation phase
+	_import_progress_dialog2 = _create_psd_progress_dialog()
+	_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites..."
+	add_child(_import_progress_dialog2)
+
+	# Start coordinator thread that spawns per-layer workers
+	_import_thread = Thread.new()
+	_import_thread.start(_precompute_all_layers)
+
+func _precompute_all_layers():
+	var count = _import_layers.size()
+	var threads: Array = []
+
+	for i in range(count):
+		var t = Thread.new()
+		var layer = _import_layers[i]
+		var idx = i
+		t.start(func():
+			var img = layer.image
+			var pma = img.duplicate()
+			pma.premultiply_alpha()
+			var bitmap = BitMap.new()
+			bitmap.create_from_image_alpha(img)
+			var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0)
+			_import_results[idx] = {
+				"pma_image": pma,
+				"polygons": polygons
+			}
+			_import_mutex.lock()
+			_import_completed += 1
+			_import_mutex.unlock()
+		)
+		threads.append(t)
+
+	for t in threads:
+		t.wait_to_finish()
+
+func _process_import_thread(_delta):
+	if _import_thread == null:
+		return
+
+	# Update progress
+	var count = _import_layers.size()
+	if count > 0 and _import_progress_dialog2 != null:
+		_import_mutex.lock()
+		var completed = _import_completed
+		_import_mutex.unlock()
+		_import_progress_dialog2.get_node("ProgressBar").value = float(completed) / count
+		_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites... " + str(completed) + "/" + str(count)
+
+	# Check if coordinator thread is done
+	if !_import_thread.is_alive():
+		_import_thread.wait_to_finish()
+		_import_thread = null
+
+		if _import_progress_dialog2 != null:
+			_import_progress_dialog2.queue_free()
+			_import_progress_dialog2 = null
+
+		_finalize_psd_import()
+
+func _finalize_psd_import():
+	UndoManager.save_state()
+	var canvas_center = _import_canvas_size * 0.5
 	var layer_z = _next_z_index()
-	for layer in selected_layers:
+	var count = _import_layers.size()
+
+	for i in range(count):
+		var layer = _import_layers[i]
+		var result = _import_results[i]
+
+		var rand = RandomNumberGenerator.new()
+		var id = rand.randi()
+
+		var sprite = spriteObject.instantiate()
+		sprite.loadedImage = layer.image
+		sprite.path = "psd://" + layer.name
+		sprite.id = id
+		sprite._prebuilt_pma_image = result["pma_image"]
+		sprite._prebuilt_polygons = result["polygons"]
+		sprite.z = layer_z
+
 		var layer_center = Vector2(
 			(layer.left + layer.right) * 0.5,
 			(layer.top + layer.bottom) * 0.5
 		)
-		var pos = layer_center - canvas_center
-		var sprite = add_image_from_data(layer.image, layer.name, pos)
-		sprite.z = layer_z
+		origin.add_child(sprite)
+		sprite.position = layer_center - canvas_center
 		sprite.setZIndex()
 		layer_z += 1
-		sprites_added.append(sprite)
 
 	Global.spriteList.updateData(true)
-	Global.pushUpdate("Imported " + str(sprites_added.size()) + " layers from PSD.")
+	Global.pushUpdate("Imported " + str(count) + " layers from PSD.")
+
+	_import_layers = []
+	_import_results = []
+	_import_mutex = null
+
 	_save_post_import_snapshot()
 
 func _on_psd_import_cancelled():
