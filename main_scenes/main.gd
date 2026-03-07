@@ -1566,12 +1566,14 @@ func _on_settings_buttons_pressed():
 
 
 func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
+	if Global._z_input_active:
+		return
 	var keyStrings = []
-	
+
 	for i in keys_pressed:
 		if keys_pressed[i]:
 			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
-	
+
 	if fileSystemOpen:
 		return
 	
@@ -1600,6 +1602,8 @@ func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
 
 
 func bgInputSprite(node, keys_pressed):
+	if Global._z_input_active:
+		return
 	if fileSystemOpen:
 		return
 	var keyStrings = []

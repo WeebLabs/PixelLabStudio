@@ -248,6 +248,12 @@ func _build_z_overlay():
 	_z_input.add_theme_stylebox_override("normal", fs_normal)
 	_z_input.add_theme_stylebox_override("focus", fs_focus)
 	_z_input.text_submitted.connect(_on_z_input_submitted)
+	_z_input.gui_input.connect(func(event):
+		if event is InputEventKey and event.pressed:
+			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+				_on_z_input_submitted(_z_input.text)
+				_z_input.accept_event()
+	)
 	_z_overlay.add_child(_z_input)
 
 	# Store normal style for flash effect
@@ -278,7 +284,7 @@ func _on_z_input_submitted(_text: String):
 	_apply_z_input()
 
 func _apply_z_input():
-	var text = _z_input.text
+	var text = _z_input.text.strip_edges()
 	if heldSprite == null or !text.is_valid_int():
 		return
 	UndoManager.save_state()
@@ -298,9 +304,9 @@ func _flash_z_confirm():
 	_z_input.add_theme_stylebox_override("normal", flash_style)
 	_z_input.add_theme_stylebox_override("focus", flash_style)
 	var bg_from = _z_style_focus.bg_color
-	var bg_peak = Color(0.12, 0.22, 0.12)
+	var bg_peak = Color(0.22, 0.12, 0.15)
 	var border_from = _z_style_focus.border_color
-	var border_peak = Color(0.35, 0.65, 0.4)
+	var border_peak = Color(1.0, 0.7, 0.8)
 	_z_flash_tween = create_tween()
 	_z_flash_tween.tween_method(func(t: float):
 		flash_style.bg_color = bg_from.lerp(bg_peak, t)
@@ -323,10 +329,6 @@ func _input(event):
 		if _z_input_active:
 			if event.physical_keycode == KEY_ESCAPE or event.keycode == KEY_ESCAPE:
 				_hide_z_input()
-				get_viewport().set_input_as_handled()
-				return
-			if event.physical_keycode == KEY_ENTER or event.keycode == KEY_ENTER or event.physical_keycode == KEY_KP_ENTER or event.keycode == KEY_KP_ENTER:
-				_apply_z_input()
 				get_viewport().set_input_as_handled()
 				return
 		elif main != null and !main.fileSystemOpen and heldSprite != null and main.editMode:
