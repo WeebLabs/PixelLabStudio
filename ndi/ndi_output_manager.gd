@@ -229,9 +229,8 @@ func _recalculate_framing():
 		if sprite_obj.visible:
 			max_y_amp = max(max_y_amp, abs(sprite_obj.yAmp))
 
-	# Headroom: bounce peak + wobble amplitude + 15% safety margin
-	# Camera tracks average wobble + bounce, but individual sprites can deviate
-	var headroom = (peak_displacement + max_y_amp) * 1.15
+	# Headroom: small safety margin for bounce; wobble range is handled by upward_shift
+	var headroom = peak_displacement * 1.15
 
 	# Content bounds (relative to origin)
 	var ruler_y = Saving.settings["ndiRulerY"]
