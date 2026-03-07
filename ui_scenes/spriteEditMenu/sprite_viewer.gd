@@ -90,6 +90,9 @@ func _ready():
 		$Position, $Buttons, $Slider, $WobbleControl,
 		$Rotation, $RotationalLimits, $Animation,
 	]
+	$WobbleControl/xAmp.max_value = 512.0
+	$WobbleControl/yAmp.max_value = 512.0
+
 	_set_controls_enabled(false)
 	setImage()
 
