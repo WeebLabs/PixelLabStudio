@@ -481,6 +481,7 @@ var _anim_result = null
 var _anim_progress_dialog: Node2D = null
 var _anim_replace_mode: bool = false
 var _anim_import_name: String = ""
+var _anim_queue: Array = []
 
 func _on_psd_dialog_file_selected(path):
 	_psd_parser = PSDParser.new()
@@ -598,6 +599,10 @@ func _on_psd_import_cancelled():
 # --- Animated GIF/APNG Import ---
 
 func _start_animated_import(path: String, is_replace: bool):
+	if _anim_thread != null:
+		_anim_queue.append({"path": path, "replace": is_replace})
+		return
+
 	_anim_replace_mode = is_replace
 	_anim_result = null
 	_anim_import_name = path.get_file().get_basename()
@@ -674,9 +679,16 @@ func _process_anim_thread(_delta):
 		if result.error != "":
 			Global.pushUpdate("Import Error: " + result.error)
 			Global.epicFail(ERR_INVALID_DATA)
+			_process_anim_queue()
 			return
 
 		_finish_animated_import(result)
+		_process_anim_queue()
+
+func _process_anim_queue():
+	if _anim_queue.size() > 0:
+		var next = _anim_queue.pop_front()
+		_start_animated_import(next["path"], next["replace"])
 
 func _finish_animated_import(result):
 	var frame_count = result.frames.size()
