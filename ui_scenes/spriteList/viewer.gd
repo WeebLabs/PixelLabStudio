@@ -736,7 +736,7 @@ func updateData(sort_by_z: bool = true):
 	clearContainer()
 	_update_generation += 1
 	var my_generation = _update_generation
-	await get_tree().create_timer(0.15).timeout
+	await get_tree().process_frame
 	if my_generation != _update_generation:
 		return
 	var spritesAll = get_tree().get_nodes_in_group("saved")
@@ -803,6 +803,67 @@ func updateData(sort_by_z: bool = true):
 			obj.collapsed = true
 			obj._collapse_btn.text = "▶"
 			obj._set_descendants_visible(false)
+
+	if _pending_scroll_target != null:
+		var target = _pending_scroll_target
+		_pending_scroll_target = null
+		await get_tree().process_frame
+		scroll_to_sprite(target)
+
+func refreshHierarchy():
+	var items = container.get_children()
+	if items.size() == 0:
+		return
+
+	# Reset relationships
+	for obj in items:
+		obj.childrenTags = []
+		obj.parentTag = null
+		obj.indent = 0
+		obj.collapsed = false
+		obj._collapse_btn.text = ""
+		obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		obj.parent = obj.sprite.parentSprite
+
+	# Build parent-child relationships
+	for obj in items:
+		if obj.parent != null:
+			for other in items:
+				if obj.parent == other.sprite:
+					obj.parentTag = other
+					other.childrenTags.append(obj)
+					break
+
+	# DFS flatten
+	var roots = []
+	for obj in items:
+		if obj.parentTag == null:
+			roots.append(obj)
+
+	var final_order = []
+	var stack = []
+	for i in range(roots.size() - 1, -1, -1):
+		stack.append(roots[i])
+	while stack.size() > 0:
+		var node = stack.pop_back()
+		final_order.append(node)
+		for i in range(node.childrenTags.size() - 1, -1, -1):
+			stack.append(node.childrenTags[i])
+
+	for i in range(final_order.size()):
+		container.move_child(final_order[i], i)
+
+	# Compute indent by chain-walk
+	for obj in final_order:
+		obj.indent = 0
+		var ancestor = obj.parentTag
+		while ancestor != null:
+			obj.indent += 1
+			ancestor = ancestor.parentTag
+		if obj.childrenTags.size() > 0:
+			obj._collapse_btn.text = "▼"
+			obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		obj.updateIndent()
 
 	if _pending_scroll_target != null:
 		var target = _pending_scroll_target

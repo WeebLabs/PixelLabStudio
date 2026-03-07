@@ -191,8 +191,10 @@ func _restore(data: Dictionary):
 			node.visible = false
 			node.changeCollision(false)
 
-	if scene_changed or reparented:
+	if scene_changed:
 		Global.spriteList.updateData()
+	elif reparented:
+		Global.spriteList.refreshHierarchy()
 	if Global.heldSprite != null:
 		Global.spriteEdit.setImage()
 

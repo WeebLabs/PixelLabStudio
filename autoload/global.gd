@@ -452,7 +452,7 @@ func linkSprite(sprite,newParent):
 	reparentMode = false
 
 	Global.spriteList._pending_scroll_target = newParent
-	Global.spriteList.updateData()
+	Global.spriteList.refreshHierarchy()
 	
 	var count = sprite.path.get_slice_count("/") - 1
 	var i1 = sprite.path.get_slice("/",count)
@@ -603,7 +603,7 @@ func unlinkSprite():
 	for entry in saved_wobbles:
 		entry[0].wob.position = entry[1]
 
-	Global.spriteList.updateData()
+	Global.spriteList.refreshHierarchy()
 	pushUpdate("Unlinked sprite.")
 
 func saveImagesFromData():
