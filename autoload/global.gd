@@ -167,7 +167,7 @@ func _process(delta):
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color(0.18, 0.25, 0.35))
 		elif originMode:
-			RenderingServer.set_default_clear_color(Color(0.4, 0.55, 0.4))
+			RenderingServer.set_default_clear_color(Color(0.25, 0.18, 0.3))
 		else:
 			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))
 
