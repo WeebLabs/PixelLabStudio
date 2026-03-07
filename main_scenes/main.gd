@@ -592,9 +592,15 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
 
 	Global.spriteList.updateData(true)
 	Global.pushUpdate("Imported " + str(sprites_added.size()) + " layers from PSD.")
+	_save_post_import_snapshot()
 
 func _on_psd_import_cancelled():
 	Global.pushUpdate("PSD import cancelled.")
+
+func _save_post_import_snapshot():
+	# Wait for spriteObject._ready() reparent timers (0.1s) to settle
+	await get_tree().create_timer(0.2).timeout
+	UndoManager.save_state()
 
 # --- Animated GIF/APNG Import ---
 
@@ -836,6 +842,7 @@ func _import_png_files(paths: Array):
 		Global.pushUpdate("Added new sprite.")
 	else:
 		Global.pushUpdate("Imported " + str(count) + " sprites.")
+	_save_post_import_snapshot()
 
 func _on_save_button_pressed():
 	$SaveDialog.visible = true

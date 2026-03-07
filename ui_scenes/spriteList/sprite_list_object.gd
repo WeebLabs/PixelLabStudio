@@ -161,6 +161,7 @@ func _gui_input(event: InputEvent):
 
 func _select():
 	if Global.heldSprite != null and Global.reparentMode:
+		UndoManager.save_state()
 		Global.linkSprite(Global.heldSprite, sprite)
 		Global.chain.enable(false)
 
