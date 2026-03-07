@@ -58,6 +58,7 @@ var _filter_field: LineEdit
 
 var _saved_collapse_states: Dictionary = {}
 var _update_generation: int = 0
+var _pending_scroll_target = null
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -523,6 +524,14 @@ func scroll_to_selected():
 			$ScrollContainer.ensure_control_visible(child)
 			return
 
+func scroll_to_sprite(target_sprite):
+	if target_sprite == null:
+		return
+	for child in container.get_children():
+		if child.sprite == target_sprite:
+			$ScrollContainer.scroll_vertical = int(child.position.y)
+			return
+
 func updateControls():
 	if Global.heldSprite == null:
 		return
@@ -794,6 +803,12 @@ func updateData(sort_by_z: bool = true):
 			obj.collapsed = true
 			obj._collapse_btn.text = "▶"
 			obj._set_descendants_visible(false)
+
+	if _pending_scroll_target != null:
+		var target = _pending_scroll_target
+		_pending_scroll_target = null
+		await get_tree().process_frame
+		scroll_to_sprite(target)
 
 func clearContainer():
 	for i in container.get_children():

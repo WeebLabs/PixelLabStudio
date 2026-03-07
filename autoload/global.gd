@@ -450,7 +450,8 @@ func linkSprite(sprite,newParent):
 	sprite.parentSprite = newParent
 	
 	reparentMode = false
-		
+
+	Global.spriteList._pending_scroll_target = newParent
 	Global.spriteList.updateData()
 	
 	var count = sprite.path.get_slice_count("/") - 1
