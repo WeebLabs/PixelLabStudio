@@ -304,11 +304,7 @@ func _recalculate_framing():
 		ndi_camera.zoom = Vector2.ONE
 		return
 
-	# Viewport bottom is always pinned to crop line so below-crop content
-	# never becomes visible when sprites wobble/bounce upward
-	content_max.y = crop_bottom
-
-	# Find reference sprite for upward shift (or fallback to global max)
+	# Find reference sprite's vertical amplitude (or fallback to global max)
 	var ref_y_amp = 0.0
 	var ref_eye = 0.0
 	var ref_sprite = null
@@ -322,7 +318,14 @@ func _recalculate_framing():
 		for sprite_obj in sprites:
 			if sprite_obj.visible:
 				ref_y_amp = max(ref_y_amp, abs(sprite_obj.yAmp))
-	var upward_shift = ref_y_amp + ref_eye + peak_displacement
+
+	# Extend top by bounce peak so sprites don't clip out during bounce
+	content_min.y -= peak_displacement
+
+	# Pin viewport bottom above crop line by enough margin that below-crop
+	# content never becomes visible during wobble or bounce
+	var bottom_margin = ref_y_amp + ref_eye + peak_displacement
+	content_max.y = crop_bottom - bottom_margin
 
 	# Content area
 	var content_width = content_max.x - content_min.x
@@ -359,8 +362,8 @@ func _recalculate_framing():
 		var z = float(target_width) / content_width
 		ndi_camera.zoom = Vector2(z, z)
 
-	# Camera center — shifted up by reference layer amplitude + bounce
+	# Camera center
 	ndi_camera.position = Vector2(
 		(content_min.x + content_max.x) * 0.5,
-		(content_min.y + content_max.y) * 0.5 - upward_shift
+		(content_min.y + content_max.y) * 0.5
 	)
