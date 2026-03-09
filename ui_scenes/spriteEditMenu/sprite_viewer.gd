@@ -88,10 +88,18 @@ func _ready():
 		$RotationalLimits/rotLimitMin, $RotationalLimits/rotLimitMax,
 		$Animation/animSpeed, $Animation/animFrames,
 	]
+	var ndi_ref_check = CheckBox.new()
+	ndi_ref_check.name = "NdiRefLayer"
+	ndi_ref_check.text = "NDI reference layer"
+	ndi_ref_check.add_theme_font_size_override("font_size", 12)
+	ndi_ref_check.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+	$Buttons.add_child(ndi_ref_check)
+	ndi_ref_check.toggled.connect(_on_ndi_ref_layer_toggled)
+
 	_buttons = [
 		$Buttons/Speaking/speaking, $Buttons/Blinking/blinking,
 		$Buttons/Trash/trash, $Buttons/Unlink/unlink,
-		$Buttons/CheckBox, $Buttons/ClipLinked,
+		$Buttons/CheckBox, $Buttons/ClipLinked, ndi_ref_check,
 	]
 	# Sections to dim when no sprite is selected
 	_sections = [
@@ -383,6 +391,7 @@ func setImage():
 
 	$Buttons/CheckBox.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
 	$Buttons/ClipLinked.set_pressed_no_signal(Global.heldSprite.clipped)
+	$Buttons/NdiRefLayer.set_pressed_no_signal(Global.heldSprite.ndiRefLayer)
 
 	$Animation/animSpeedLabel.text = "animation speed: " + str(Global.heldSprite.animSpeed)
 	$Animation/animSpeed.set_value_no_signal(Global.heldSprite.animSpeed)
@@ -499,6 +508,7 @@ func _on_x_amp_value_changed(value):
 	UndoManager.save_state_continuous()
 	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(value)
 	Global.heldSprite.xAmp = value
+	Global.main.ndi_mark_dirty()
 
 
 func _on_y_frq_value_changed(value):
@@ -512,6 +522,7 @@ func _on_y_amp_value_changed(value):
 	UndoManager.save_state_continuous()
 	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(value)
 	Global.heldSprite.yAmp = value
+	Global.main.ndi_mark_dirty()
 
 
 func _on_r_drag_value_changed(value):
@@ -519,6 +530,7 @@ func _on_r_drag_value_changed(value):
 	UndoManager.save_state_continuous()
 	$Rotation/rDragLabel.text = "rotational drag: " + str(value)
 	Global.heldSprite.rdragStr = value
+	Global.main.ndi_mark_dirty()
 
 
 func _on_speaking_pressed():
@@ -564,6 +576,7 @@ func _on_rot_limit_min_value_changed(value):
 	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(value)
 	Global.heldSprite.rLimitMin = value
+	Global.main.ndi_mark_dirty()
 
 	changeRotLimit()
 
@@ -572,6 +585,7 @@ func _on_rot_limit_max_value_changed(value):
 	UndoManager.save_state_continuous()
 	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(value)
 	Global.heldSprite.rLimitMax = value
+	Global.main.ndi_mark_dirty()
 
 	changeRotLimit()
 
@@ -776,16 +790,28 @@ func _on_set_toggle_pressed():
 	Global.heldSprite.toggle = key
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 
+func _on_ndi_ref_layer_toggled(button_pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	if button_pressed:
+		for spr in get_tree().get_nodes_in_group("saved"):
+			if spr != Global.heldSprite:
+				spr.ndiRefLayer = false
+	Global.heldSprite.ndiRefLayer = button_pressed
+	Global.main.ndi_mark_dirty()
+
 func _on_eye_track_toggled(button_pressed):
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.eyeTrack = button_pressed
+	Global.main.ndi_mark_dirty()
 
 func _on_eye_track_dist_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(value)
 	Global.heldSprite.eyeTrackDistance = value
+	Global.main.ndi_mark_dirty()
 
 func _on_eye_track_speed_value_changed(value):
 	if Global.heldSprite == null: return

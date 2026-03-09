@@ -163,6 +163,98 @@ func _process(_delta):
 		_dirty = false
 		_recalculate_framing()
 
+func _get_opaque_rect_local(sprite_obj) -> Rect2:
+	var img = sprite_obj.imageData
+	if img == null:
+		return Rect2()
+	var used = img.get_used_rect()
+	if used.size.x == 0 or used.size.y == 0:
+		return Rect2()
+	var tex_size = Vector2(img.get_size())
+	var frame_w = tex_size.x
+	if sprite_obj.frames > 1:
+		frame_w = tex_size.x / sprite_obj.frames
+		# Clamp used rect to single-frame width (conservative union across frames)
+		used = used.intersection(Rect2i(0, 0, int(frame_w), int(tex_size.y)))
+		if used.size.x == 0 or used.size.y == 0:
+			return Rect2()
+	# Convert to centered coords (Godot draws textures centered) + user offset
+	return Rect2(
+		Vector2(used.position) - Vector2(frame_w, tex_size.y) * 0.5 + sprite_obj.offset,
+		Vector2(used.size)
+	)
+
+func _rotation_expanded_aabb(rect: Rect2, min_angle: float, max_angle: float) -> Rect2:
+	var result = rect
+	for angle in [min_angle, max_angle]:
+		if is_zero_approx(angle):
+			continue
+		var cos_a = cos(angle)
+		var sin_a = sin(angle)
+		var corners = [rect.position, Vector2(rect.end.x, rect.position.y),
+					   Vector2(rect.position.x, rect.end.y), rect.end]
+		var rmin = Vector2(INF, INF)
+		var rmax = Vector2(-INF, -INF)
+		for c in corners:
+			var rc = Vector2(c.x * cos_a - c.y * sin_a, c.x * sin_a + c.y * cos_a)
+			rmin = Vector2(min(rmin.x, rc.x), min(rmin.y, rc.y))
+			rmax = Vector2(max(rmax.x, rc.x), max(rmax.y, rc.y))
+		result = result.merge(Rect2(rmin, rmax - rmin))
+	return result
+
+func _get_rest_position(sprite_obj, rest_origin_pos: Vector2) -> Vector2:
+	if sprite_obj.parentSprite == null or sprite_obj.parentId == null:
+		return rest_origin_pos + sprite_obj.position
+	return _get_rest_position(sprite_obj.parentSprite, rest_origin_pos) + sprite_obj.position
+
+func _compute_sprite_envelope(sprite_obj, crop_bottom: float, rest_origin_pos: Vector2) -> Rect2:
+	var opaque = _get_opaque_rect_local(sprite_obj)
+	if opaque.size == Vector2.ZERO:
+		return Rect2()
+
+	# Rotation expansion
+	var expanded = opaque
+	if sprite_obj.rdragStr > 0:
+		expanded = _rotation_expanded_aabb(opaque,
+			deg_to_rad(sprite_obj.rLimitMin), deg_to_rad(sprite_obj.rLimitMax))
+
+	# Own wobble + eye tracking
+	var eye_dist = sprite_obj.eyeTrackDistance if sprite_obj.eyeTrack else 0.0
+	var ex = abs(sprite_obj.xAmp) + eye_dist
+	var ey = abs(sprite_obj.yAmp) + eye_dist
+	expanded = expanded.grow_individual(ex, ey, ex, ey)
+
+	# Parent chain contributions
+	var parent = sprite_obj.parentSprite
+	var child_offset_from_parent = sprite_obj.position
+	while parent != null:
+		var p_eye = parent.eyeTrackDistance if parent.eyeTrack else 0.0
+		var px = abs(parent.xAmp) + p_eye
+		var py = abs(parent.yAmp) + p_eye
+		expanded = expanded.grow_individual(px, py, px, py)
+		# Parent rotation swings child in arc around parent center
+		if parent.rdragStr > 0:
+			var p_rot_max = max(abs(parent.rLimitMin), abs(parent.rLimitMax))
+			if p_rot_max > 0:
+				var dist = child_offset_from_parent.length()
+				var angle = deg_to_rad(min(p_rot_max, 90.0))
+				var arc_x = dist * sin(angle)
+				var arc_y = dist * (1.0 - cos(angle))
+				expanded = expanded.grow_individual(arc_x, arc_y, arc_x, arc_y)
+		child_offset_from_parent += parent.position
+		parent = parent.parentSprite
+
+	# Place in global space
+	var rest_pos = _get_rest_position(sprite_obj, rest_origin_pos)
+	var global_env = Rect2(rest_pos + expanded.position, expanded.size)
+
+	# Crop clamp
+	if global_env.position.y >= crop_bottom:
+		return Rect2()  # Entirely below crop
+	if global_env.end.y > crop_bottom:
+		global_env.size.y = crop_bottom - global_env.position.y
+	return global_env
+
 func _recalculate_framing():
 	if ndi_viewport == null or ndi_camera == null:
 		return
@@ -170,97 +262,80 @@ func _recalculate_framing():
 	var main = Global.main
 	var origin = main.origin
 
-	# Compute bounding box of all visible sprites
-	var sprites = get_tree().get_nodes_in_group("saved")
-	if sprites.size() == 0:
-		# No sprites - use a small default viewport
-		ndi_viewport.size = Vector2i(Saving.settings["ndiWidth"], Saving.settings["ndiWidth"])
-		ndi_camera.position = origin.global_position
-		ndi_camera.zoom = Vector2.ONE
-		return
+	# Rest origin position (subtract current bounce offset)
+	var bounce_offset = origin.get_parent().position.y
+	var rest_origin_pos = origin.global_position - Vector2(0, bounce_offset)
 
-	var bbox_min = Vector2(INF, INF)
-	var bbox_max = Vector2(-INF, -INF)
-	var has_visible = false
+	# Bounce peak displacement
+	# Bounce re-triggers at 16px above rest, so actual peak is up to 16px higher
+	var bounce_vel = float(main.bounceSlider)
+	var gravity = float(main.bounceGravity)
+	var peak_displacement = 0.0
+	if gravity > 0:
+		peak_displacement = (bounce_vel * bounce_vel) / (2.0 * gravity) + 16.0
+
+	# Crop bottom at rest position
+	var ruler_y = Saving.settings["ndiRulerY"]
+	var crop_bottom = rest_origin_pos.y + ruler_y
+
+	# Compute per-sprite envelopes
+	var sprites = get_tree().get_nodes_in_group("saved")
+	var content_min = Vector2(INF, INF)
+	var content_max = Vector2(-INF, -INF)
+	var has_content = false
 
 	for sprite_obj in sprites:
 		if !sprite_obj.visible:
 			continue
 		if sprite_obj.sprite.self_modulate.a < 0.1:
 			continue
-
-		has_visible = true
-		var spr: Sprite2D = sprite_obj.sprite
-		var tex = spr.texture
-		if tex == null:
+		var env = _compute_sprite_envelope(sprite_obj, crop_bottom, rest_origin_pos)
+		if env.size == Vector2.ZERO:
 			continue
+		has_content = true
+		content_min.x = min(content_min.x, env.position.x)
+		content_min.y = min(content_min.y, env.position.y)
+		content_max.x = max(content_max.x, env.end.x)
+		content_max.y = max(content_max.y, env.end.y)
 
-		var tex_size = tex.get_size()
-		# Account for spritesheet frames
-		if spr.hframes > 1:
-			tex_size.x /= spr.hframes
-
-		var half = tex_size * 0.5
-		var spr_offset = spr.offset
-		# Get REST position (subtract wobble offset so framing is stable)
-		var center = (spr.global_position - sprite_obj.wob.position) + spr_offset
-
-		bbox_min.x = min(bbox_min.x, center.x - half.x)
-		bbox_min.y = min(bbox_min.y, center.y - half.y)
-		bbox_max.x = max(bbox_max.x, center.x + half.x)
-		bbox_max.y = max(bbox_max.y, center.y + half.y)
-
-	if !has_visible:
+	if !has_content:
 		ndi_viewport.size = Vector2i(Saving.settings["ndiWidth"], Saving.settings["ndiWidth"])
-		ndi_camera.position = origin.global_position
+		ndi_camera.position = rest_origin_pos
 		ndi_camera.zoom = Vector2.ONE
 		return
 
-	# Calculate peak bounce displacement
-	var bounce_vel = float(main.bounceSlider)
-	var gravity = float(main.bounceGravity)
-	var peak_displacement = 0.0
-	if gravity > 0:
-		peak_displacement = (bounce_vel * bounce_vel) / (2.0 * gravity)
+	# Viewport bottom is always pinned to crop line so below-crop content
+	# never becomes visible when sprites wobble/bounce upward
+	content_max.y = crop_bottom
 
-	# Max wobble amplitude across sprites
-	var max_y_amp = 0.0
+	# Find reference sprite for upward shift (or fallback to global max)
+	var ref_y_amp = 0.0
+	var ref_eye = 0.0
+	var ref_sprite = null
 	for sprite_obj in sprites:
-		if sprite_obj.visible:
-			max_y_amp = max(max_y_amp, abs(sprite_obj.yAmp))
+		if sprite_obj.visible and sprite_obj.ndiRefLayer:
+			ref_sprite = sprite_obj
+			ref_y_amp = abs(sprite_obj.yAmp)
+			ref_eye = sprite_obj.eyeTrackDistance if sprite_obj.eyeTrack else 0.0
+			break
+	if ref_sprite == null:
+		for sprite_obj in sprites:
+			if sprite_obj.visible:
+				ref_y_amp = max(ref_y_amp, abs(sprite_obj.yAmp))
+	var upward_shift = ref_y_amp + ref_eye + peak_displacement
 
-	# Headroom: small safety margin for bounce; wobble range is handled by upward_shift
-	var headroom = peak_displacement * 1.15
+	# Content area
+	var content_width = content_max.x - content_min.x
+	var content_height = content_max.y - content_min.y
+	if content_width <= 0: content_width = 100
+	if content_height <= 0: content_height = 100
 
-	# Content bounds (relative to origin)
-	var ruler_y = Saving.settings["ndiRulerY"]
+	_content_top = content_min.y
+	_content_bottom = content_max.y
+	_content_left = content_min.x
+	_content_right = content_max.x
 
-	# The ruler_y is an offset below origin (positive = below)
-	var crop_bottom = origin.global_position.y + ruler_y
-
-	# Top of frame = highest sprite edge - headroom (wobble can push sprites up by yAmp)
-	var content_top = bbox_min.y - headroom
-	var content_bottom = crop_bottom
-
-	# Horizontal bounds with some padding
-	var padding_x = 10.0
-	var content_left = bbox_min.x - padding_x
-	var content_right = bbox_max.x + padding_x
-
-	var content_width = content_right - content_left
-	var content_height = content_bottom - content_top
-
-	if content_width <= 0:
-		content_width = 100
-	if content_height <= 0:
-		content_height = 100
-
-	# Store for reference
-	_content_top = content_top
-	_content_bottom = content_bottom
-	_content_left = content_left
-	_content_right = content_right
-
+	# Viewport sizing
 	var mode = Saving.settings["ndiMode"]
 	if mode == "manual":
 		var vp_w = int(Saving.settings["ndiManualWidth"])
@@ -284,14 +359,8 @@ func _recalculate_framing():
 		var z = float(target_width) / content_width
 		ndi_camera.zoom = Vector2(z, z)
 
-	# Camera center: horizontally centered on content, vertically centered between top and bottom
-	var center_x = (content_left + content_right) * 0.5
-	var center_y = (content_top + content_bottom) * 0.5
-
-	# Shift camera upward so the artwork cutoff is never visible.
-	# The ruler is placed at worst-case-down (wob = +yAmp). The full upward
-	# range from there is 2*yAmp (peak-to-peak wobble) + bounce peak.
-	var upward_shift = 2.0 * max_y_amp + peak_displacement
-	center_y -= upward_shift
-
-	ndi_camera.position = Vector2(center_x, center_y)
+	# Camera center — shifted up by reference layer amplitude + bounce
+	ndi_camera.position = Vector2(
+		(content_min.x + content_max.x) * 0.5,
+		(content_min.y + content_max.y) * 0.5 - upward_shift
+	)

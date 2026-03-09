@@ -1016,6 +1016,8 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackSpeed = data[item]["eyeTrackSpeed"]
 		if data[item].has("eyeTrackInvert"):
 			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
+		if data[item].has("ndiRefLayer"):
+			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
 
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
@@ -1084,6 +1086,7 @@ func _on_save_dialog_file_selected(path):
 			data[id]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[id]["eyeTrackSpeed"] = child.eyeTrackSpeed
 			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
+			data[id]["ndiRefLayer"] = child.ndiRefLayer
 
 		id += 1
 

@@ -136,11 +136,12 @@ func _set_freeze(frozen: bool):
 		# Freeze bounce: snap OriginMotion to rest
 		Global.main.origin.get_parent().position.y = 0
 		Global.main.yVel = 0
-		# Push sprites to max downward wobble extent
+		# Push sprites to max downward wobble extent, zero horizontal wobble
 		var sprites = get_tree().get_nodes_in_group("saved")
 		for sprite_obj in sprites:
 			if sprite_obj.visible:
 				sprite_obj.wob.position.y = abs(sprite_obj.yAmp)
+				sprite_obj.wob.position.x = 0
 
 func _save_ruler_y():
 	Global.pushUpdate("NDI crop line moved to Y=" + str(int(_get_ruler_y())))

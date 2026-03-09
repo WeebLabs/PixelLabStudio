@@ -94,6 +94,7 @@ var animSpeed = 0
 var remadePolygon = false
 
 var clipped = false
+var ndiRefLayer = false
 
 var tick = 0
 
