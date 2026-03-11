@@ -13,6 +13,8 @@ var _dirty: bool = true
 var _enabled: bool = false
 var _plugin_available: bool = false
 var ruler_dragging: bool = false
+var _debounce_timer: Timer = null
+const DEBOUNCE_DELAY = 1.0
 
 # Framing state
 var _content_top: float = 0.0
@@ -25,6 +27,10 @@ const RULER_SCENE = preload("res://ndi/ndi_ruler.gd")
 func _ready():
 	_plugin_available = ClassDB.class_exists("NDIOutput")
 	_load_settings()
+	_debounce_timer = Timer.new()
+	_debounce_timer.one_shot = true
+	_debounce_timer.timeout.connect(_on_debounce_timeout)
+	add_child(_debounce_timer)
 	if _enabled:
 		_create_ndi_pipeline()
 	get_tree().root.size_changed.connect(_on_window_resized)
@@ -86,6 +92,9 @@ func get_ruler_y() -> float:
 	return Saving.settings["ndiRulerY"]
 
 func mark_dirty():
+	_debounce_timer.start(DEBOUNCE_DELAY)
+
+func _on_debounce_timeout():
 	_dirty = true
 
 func _create_ndi_pipeline():

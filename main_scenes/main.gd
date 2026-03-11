@@ -1030,7 +1030,32 @@ func _on_load_dialog_file_selected(path):
 
 	onWindowSizeChange()
 	ndi_mark_dirty()
-	
+
+	# Auto-detect NDI reference layer after sprites finish loading/reparenting
+	await get_tree().create_timer(1.0).timeout
+	var has_ref = false
+	for spr in get_tree().get_nodes_in_group("saved"):
+		if spr.ndiRefLayer:
+			has_ref = true
+			break
+	if !has_ref:
+		# Prefer "Neck", fall back to "Body" — name must start with the keyword
+		# (e.g. "Neck", "Body 2" match but "Sputnik Body" does not)
+		var ref_candidates = ["neck", "body"]
+		for keyword in ref_candidates:
+			var found = false
+			for spr in get_tree().get_nodes_in_group("saved"):
+				var filename = spr.path.get_file().strip_edges().to_lower()
+				while filename.contains("."):
+					filename = filename.get_basename()
+				if filename == keyword or filename.begins_with(keyword + " "):
+					spr.ndiRefLayer = true
+					found = true
+					break
+			if found:
+				break
+	ndi_mark_dirty()
+
 #SAVE AVATAR
 func _on_save_dialog_file_selected(path):
 	if _save_thread != null:
