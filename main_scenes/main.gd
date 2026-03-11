@@ -29,6 +29,8 @@ var ndi_manager: Node = null
 var _ndi_label: Label = null
 
 var _save_thread: Thread = null
+var _save_progress: float = 0.0
+var _save_progress_dialog: Node2D = null
 
 
 #Scene Reference
@@ -269,6 +271,7 @@ func _process(delta):
 	_process_psd_thread(delta)
 	_process_import_thread(delta)
 	_process_anim_thread(delta)
+	_process_save_thread(delta)
 	panCamera()
 	followShadow()
 
@@ -334,6 +337,9 @@ func _notification(what):
 			if _save_thread != null:
 				_save_thread.wait_to_finish()
 				_save_thread = null
+			if _save_progress_dialog != null:
+				_save_progress_dialog.queue_free()
+				_save_progress_dialog = null
 		30:
 			onWindowSizeChange()
 
@@ -1056,6 +1062,54 @@ func _on_load_dialog_file_selected(path):
 				break
 	ndi_mark_dirty()
 
+func _create_save_progress_dialog() -> Node2D:
+	var dialog = Node2D.new()
+	dialog.z_index = 4095
+	dialog.visibility_layer = 2
+	dialog.position = camera.position
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-160, -50)
+	bg.size = Vector2(320, 100)
+	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(bg)
+
+	var label = Label.new()
+	label.name = "StatusLabel"
+	label.position = Vector2(-150, -40)
+	label.size = Vector2(300, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.text = "Saving avatar..."
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(label)
+
+	var bar = ProgressBar.new()
+	bar.name = "ProgressBar"
+	bar.position = Vector2(-140, 0)
+	bar.size = Vector2(280, 24)
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	dialog.add_child(bar)
+
+	var blocker = Area2D.new()
+	blocker.add_to_group("penis")
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(3840, 2160)
+	col.shape = shape
+	blocker.add_child(col)
+	dialog.add_child(blocker)
+
+	return dialog
+
+func _process_save_thread(_delta):
+	if _save_thread == null or _save_progress_dialog == null:
+		return
+	_save_progress_dialog.get_node("ProgressBar").value = _save_progress
+	_save_progress_dialog.position = camera.position
+
 #SAVE AVATAR
 func _on_save_dialog_file_selected(path):
 	if _save_thread != null:
@@ -1116,17 +1170,24 @@ func _on_save_dialog_file_selected(path):
 		id += 1
 
 	Saving.settings["lastAvatar"] = path
-	Global.pushUpdate("Saving avatar...")
+
+	_save_progress = 0.0
+	_save_progress_dialog = _create_save_progress_dialog()
+	add_child(_save_progress_dialog)
 
 	_save_thread = Thread.new()
 	_save_thread.start(_save_worker.bind(data, path))
 
 func _save_worker(data: Dictionary, path: String):
+	var total = data.size()
+	var done = 0
 	for id in data:
 		if data[id].has("_image_ref"):
 			var img: Image = data[id]["_image_ref"]
 			data[id]["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
 			data[id].erase("_image_ref")
+		done += 1
+		_save_progress = float(done) / float(total)
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	file.store_line(JSON.stringify(data))
 	file.close()
@@ -1137,7 +1198,10 @@ func _on_save_finished(path: String, data: Dictionary):
 	if _save_thread != null:
 		_save_thread.wait_to_finish()
 		_save_thread = null
-	Global.pushUpdate("Saved avatar at: " + path)
+	if _save_progress_dialog != null:
+		_save_progress_dialog.queue_free()
+		_save_progress_dialog = null
+	Global.pushUpdate("Save complete: " + path.get_file())
 
 func _on_link_button_pressed():
 	Global.reparentMode = true
