@@ -32,6 +32,9 @@ var _save_thread: Thread = null
 var _save_progress: float = 0.0
 var _save_progress_dialog: Node2D = null
 
+var _screenshot_dialog: FileDialog = null
+var _screenshot_image: Image = null
+
 
 #Scene Reference
 @onready var spriteObject = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
@@ -318,6 +321,8 @@ func isFileSystemOpen():
 		Global.heldSprite = null
 		return true
 	if _replace_dialog != null and _replace_dialog.visible:
+		return true
+	if _screenshot_dialog != null and _screenshot_dialog.visible:
 		return true
 	return false
 
@@ -1103,6 +1108,64 @@ func _create_save_progress_dialog() -> Node2D:
 	dialog.add_child(blocker)
 
 	return dialog
+
+func takeScreenshot():
+	if _screenshot_image != null:
+		return  # Previous capture pending save
+
+	var vp_size = get_viewport().get_visible_rect().size
+
+	var screenshot_vp = SubViewport.new()
+	screenshot_vp.transparent_bg = true
+	screenshot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	screenshot_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	screenshot_vp.size = Vector2i(vp_size)
+	screenshot_vp.world_2d = get_viewport().world_2d
+	screenshot_vp.canvas_cull_mask = 1  # Sprites only, no UI (layer 2)
+	screenshot_vp.gui_disable_input = true
+	screenshot_vp.handle_input_locally = false
+	add_child(screenshot_vp)
+
+	var screenshot_cam = Camera2D.new()
+	screenshot_cam.position = camera.position
+	screenshot_cam.zoom = camera.zoom
+	screenshot_vp.add_child(screenshot_cam)
+	screenshot_cam.make_current()
+
+	await RenderingServer.frame_post_draw
+
+	_screenshot_image = screenshot_vp.get_texture().get_image()
+	screenshot_vp.queue_free()
+
+	if _screenshot_dialog == null:
+		_create_screenshot_dialog()
+
+	var timestamp = Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "_")
+	_screenshot_dialog.current_file = "screenshot_" + timestamp + ".png"
+	_screenshot_dialog.popup_centered(Vector2i(600, 400))
+
+func _create_screenshot_dialog():
+	_screenshot_dialog = FileDialog.new()
+	_screenshot_dialog.title = "Save Screenshot"
+	_screenshot_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	_screenshot_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_screenshot_dialog.filters = PackedStringArray(["*.png;PNG Image"])
+	_screenshot_dialog.use_native_dialog = true
+	_screenshot_dialog.file_selected.connect(_on_screenshot_dialog_file_selected)
+	add_child(_screenshot_dialog)
+
+func _on_screenshot_dialog_file_selected(path: String):
+	if _screenshot_image == null:
+		return
+	if !path.ends_with(".png"):
+		path += ".png"
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	var err = _screenshot_image.save_png(path)
+	if err == OK:
+		Global.pushUpdate("Screenshot saved: " + path.get_file())
+	else:
+		Global.pushUpdate("Failed to save screenshot.")
+	_screenshot_image = null
 
 func _process_save_thread(_delta):
 	if _save_thread == null or _save_progress_dialog == null:

@@ -191,6 +191,8 @@ func _process(delta):
 				UndoManager.undo()
 			if Input.is_action_just_pressed("redo"):
 				UndoManager.redo()
+			if Input.is_action_just_pressed("screenshot"):
+				main.takeScreenshot()
 	
 	
 func _is_any_field_focused() -> bool:

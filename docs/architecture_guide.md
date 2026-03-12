@@ -255,6 +255,7 @@ Key bindings (edit mode, handled in `global.gd`):
 | Mouse wheel| Scroll through sprite list                |
 | Ctrl+Scroll| Zoom viewport (10%-400%)                  |
 | Middle drag| Pan viewport                              |
+| Ctrl+K     | Screenshot with transparent background     |
 | Left click | Select sprite / deselect on empty space   |
 
 ---
