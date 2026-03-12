@@ -255,7 +255,7 @@ Key bindings (edit mode, handled in `global.gd`):
 | Mouse wheel| Scroll through sprite list                |
 | Ctrl+Scroll| Zoom viewport (10%-400%)                  |
 | Middle drag| Pan viewport                              |
-| Ctrl+K     | Screenshot with transparent background     |
+| Ctrl+K     | Tap: screenshot; Hold (≥1s): record transparent video. Format (WebM/APNG/GIF) and FPS (15/30/60) configurable in Settings. APNG/GIF default to 15 FPS, WebM defaults to 30 FPS |
 | Left click | Select sprite / deselect on empty space   |
 
 ---

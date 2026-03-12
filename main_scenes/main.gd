@@ -35,6 +35,23 @@ var _save_progress_dialog: Node2D = null
 var _screenshot_dialog: FileDialog = null
 var _screenshot_image: Image = null
 
+# Recording state
+var _recording: bool = false
+var _recording_vp: SubViewport = null
+var _recording_cam: Camera2D = null
+var _recording_file: FileAccess = null
+var _recording_temp_path: String = ""
+var _recording_frame_count: int = 0
+var _recording_timer: float = 0.0
+var _recording_size: Vector2i = Vector2i.ZERO
+var _record_dialog: FileDialog = null
+var _encode_thread: Thread = null
+var _encoding: bool = false
+var _encode_progress: float = 0.0
+var _encode_progress_dialog: Node2D = null
+var _encode_progress_path: String = ""
+var _encode_total_frames: int = 0
+
 
 #Scene Reference
 @onready var spriteObject = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
@@ -275,6 +292,7 @@ func _process(delta):
 	_process_import_thread(delta)
 	_process_anim_thread(delta)
 	_process_save_thread(delta)
+	_process_recording(delta)
 	panCamera()
 	followShadow()
 
@@ -323,6 +341,8 @@ func isFileSystemOpen():
 	if _replace_dialog != null and _replace_dialog.visible:
 		return true
 	if _screenshot_dialog != null and _screenshot_dialog.visible:
+		return true
+	if _record_dialog != null and _record_dialog.visible:
 		return true
 	return false
 
@@ -1166,6 +1186,309 @@ func _on_screenshot_dialog_file_selected(path: String):
 	else:
 		Global.pushUpdate("Failed to save screenshot.")
 	_screenshot_image = null
+
+# --- Screenshot press/release (hold-to-record) ---
+
+func onScreenshotPressed():
+	pass  # Timing tracked in global.gd; recording starts from _process after 1s threshold
+
+func onScreenshotReleased():
+	if _recording:
+		_stopRecording()
+	elif Global._screenshot_press_time > 0:
+		# Tap — take screenshot (existing behavior)
+		takeScreenshot()
+
+# --- Recording ---
+
+func _process_recording(delta):
+	# Start recording after 1s hold
+	if !_recording and !_encoding and Global._screenshot_key_held and Global._screenshot_press_time > 0:
+		if Time.get_ticks_msec() - Global._screenshot_press_time >= 1000:
+			_startRecording()
+
+	# Capture frames at configured FPS
+	if _recording:
+		_recording_timer += delta
+		var interval = 1.0 / float(Saving.settings.get("recordingFPS", 30))
+		while _recording_timer >= interval:
+			_captureRecordingFrame()
+			_recording_timer -= interval
+
+	# Poll encode progress and check thread completion
+	if _encoding:
+		_poll_encode_progress()
+		if _encode_thread != null and !_encode_thread.is_alive():
+			_encode_thread.wait_to_finish()
+			_encode_thread = null
+			_encoding = false
+			if _encode_progress_dialog != null:
+				_encode_progress_dialog.queue_free()
+				_encode_progress_dialog = null
+			_cleanup_recording_temp()
+
+func _startRecording():
+	if _recording or _encoding:
+		return
+	if !_is_ffmpeg_available():
+		Global.pushUpdate("FFmpeg not found. Install FFmpeg to record video.")
+		return
+
+	_recording = true
+	_recording_timer = 0.0
+	_recording_frame_count = 0
+	_recording_size = Vector2i(get_viewport().get_visible_rect().size)
+
+	# Temp file for raw RGBA frames
+	var temp_dir = OS.get_cache_dir() + "/pngtuber_recording"
+	DirAccess.make_dir_recursive_absolute(temp_dir)
+	_recording_temp_path = temp_dir + "/frames.raw"
+	_recording_file = FileAccess.open(_recording_temp_path, FileAccess.WRITE)
+
+	# SubViewport (same pattern as NDI)
+	_recording_vp = SubViewport.new()
+	_recording_vp.transparent_bg = true
+	_recording_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_recording_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	_recording_vp.size = _recording_size
+	_recording_vp.world_2d = get_viewport().world_2d
+	_recording_vp.canvas_cull_mask = 1
+	_recording_vp.gui_disable_input = true
+	_recording_vp.handle_input_locally = false
+	add_child(_recording_vp)
+
+	_recording_cam = Camera2D.new()
+	_recording_vp.add_child(_recording_cam)
+	_recording_cam.position = camera.position
+	_recording_cam.zoom = camera.zoom
+	_recording_cam.make_current()
+
+	Global.pushUpdate("Recording...")
+
+func _stopRecording():
+	if !_recording:
+		return
+	_recording = false
+
+	if _recording_file != null:
+		_recording_file.close()
+		_recording_file = null
+
+	if _recording_vp != null:
+		_recording_vp.queue_free()
+		_recording_vp = null
+		_recording_cam = null
+
+	if _recording_frame_count == 0:
+		Global.pushUpdate("No frames captured.")
+		_cleanup_recording_temp()
+		return
+
+	Global.pushUpdate("Encoding... (" + str(_recording_frame_count) + " frames)")
+
+	if _record_dialog == null:
+		_create_record_dialog()
+
+	var fmt = Saving.settings.get("recordingFormat", "webm")
+	var ext_map = {"webm": ".webm", "apng": ".apng", "gif": ".gif"}
+	var filter_map = {
+		"webm": "*.webm;WebM Video",
+		"apng": "*.apng;Animated PNG",
+		"gif": "*.gif;GIF Image"
+	}
+	var ext = ext_map.get(fmt, ".webm")
+	_record_dialog.filters = PackedStringArray([filter_map.get(fmt, "*.webm;WebM Video")])
+
+	var timestamp = Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "_")
+	_record_dialog.current_file = "recording_" + timestamp + ext
+	_record_dialog.popup_centered(Vector2i(600, 400))
+
+func _captureRecordingFrame():
+	if _recording_vp == null or _recording_file == null:
+		return
+	# Sync camera to main camera each frame
+	_recording_cam.position = camera.position
+	_recording_cam.zoom = camera.zoom
+	var img = _recording_vp.get_texture().get_image()
+	if img != null:
+		_recording_file.store_buffer(img.get_data())
+		_recording_frame_count += 1
+
+func _is_ffmpeg_available() -> bool:
+	return _find_ffmpeg() != ""
+
+func _find_ffmpeg() -> String:
+	# Try common paths first (macOS GUI apps may not inherit full PATH)
+	for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
+		if FileAccess.file_exists(path):
+			return path
+	# Fallback to PATH
+	var output = []
+	if OS.execute("which", ["ffmpeg"], output) == 0 and output.size() > 0:
+		return output[0].strip_edges()
+	return ""
+
+func _create_record_dialog():
+	_record_dialog = FileDialog.new()
+	_record_dialog.title = "Save Recording"
+	_record_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	_record_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_record_dialog.filters = PackedStringArray(["*.webm;WebM Video"])
+	_record_dialog.use_native_dialog = true
+	_record_dialog.file_selected.connect(_on_record_dialog_file_selected)
+	_record_dialog.canceled.connect(_on_record_dialog_canceled)
+	add_child(_record_dialog)
+
+func _on_record_dialog_file_selected(path: String):
+	var fmt = Saving.settings.get("recordingFormat", "webm")
+	var ext_map = {"webm": ".webm", "apng": ".apng", "gif": ".gif"}
+	var ext = ext_map.get(fmt, ".webm")
+	if !path.ends_with(ext):
+		path += ext
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+
+	_encoding = true
+	_encode_progress = 0.0
+	_encode_total_frames = _recording_frame_count
+	var raw_path = _recording_temp_path
+	var size = _recording_size
+
+	# Progress file for FFmpeg to write stats into
+	var temp_dir = OS.get_cache_dir() + "/pngtuber_recording"
+	_encode_progress_path = temp_dir + "/ffmpeg_progress.log"
+
+	# Show progress dialog
+	_encode_progress_dialog = _create_encode_progress_dialog()
+	add_child(_encode_progress_dialog)
+
+	_encode_thread = Thread.new()
+	var fps = int(Saving.settings.get("recordingFPS", 30))
+	_encode_thread.start(_encode_worker.bind(raw_path, size, path, _encode_progress_path, fps))
+
+func _create_encode_progress_dialog() -> Node2D:
+	var dialog = Node2D.new()
+	dialog.z_index = 4095
+	dialog.visibility_layer = 2
+	dialog.position = camera.position
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-160, -50)
+	bg.size = Vector2(320, 100)
+	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(bg)
+
+	var label = Label.new()
+	label.name = "StatusLabel"
+	label.position = Vector2(-150, -40)
+	label.size = Vector2(300, 24)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.text = "Encoding video..."
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(label)
+
+	var bar = ProgressBar.new()
+	bar.name = "ProgressBar"
+	bar.position = Vector2(-140, 0)
+	bar.size = Vector2(280, 24)
+	bar.min_value = 0.0
+	bar.max_value = 1.0
+	bar.value = 0.0
+	dialog.add_child(bar)
+
+	var blocker = Area2D.new()
+	blocker.add_to_group("penis")
+	var col = CollisionShape2D.new()
+	var shape = RectangleShape2D.new()
+	shape.size = Vector2(3840, 2160)
+	col.shape = shape
+	blocker.add_child(col)
+	dialog.add_child(blocker)
+
+	return dialog
+
+func _poll_encode_progress():
+	if _encode_progress_dialog == null:
+		return
+	# Read FFmpeg progress file to extract current frame
+	if _encode_progress_path != "" and FileAccess.file_exists(_encode_progress_path):
+		var f = FileAccess.open(_encode_progress_path, FileAccess.READ)
+		if f != null:
+			var content = f.get_as_text()
+			f.close()
+			# Find last "frame=" line in the progress output
+			var lines = content.split("\n")
+			for i in range(lines.size() - 1, -1, -1):
+				if lines[i].begins_with("frame="):
+					var frame_str = lines[i].substr(6).strip_edges()
+					if frame_str.is_valid_int() and _encode_total_frames > 0:
+						_encode_progress = clampf(float(frame_str.to_int()) / float(_encode_total_frames), 0.0, 1.0)
+					break
+	_encode_progress_dialog.get_node("ProgressBar").value = _encode_progress
+	_encode_progress_dialog.position = camera.position
+
+func _encode_worker(raw_path: String, size: Vector2i, output_path: String, progress_path: String, fps: int = 30):
+	var ffmpeg = _find_ffmpeg()
+	if ffmpeg == "":
+		call_deferred("_on_encode_done", false)
+		return
+
+	var base_args = [
+		"-y",
+		"-f", "rawvideo",
+		"-pix_fmt", "rgba",
+		"-s", str(size.x) + "x" + str(size.y),
+		"-r", str(fps),
+		"-i", raw_path,
+	]
+
+	var fmt_args = []
+	if output_path.ends_with(".apng"):
+		fmt_args = [
+			"-c:v", "apng",
+			"-pix_fmt", "rgba",
+			"-plays", "0",
+		]
+	elif output_path.ends_with(".gif"):
+		var filtergraph = "split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128"
+		fmt_args = [
+			"-filter_complex", filtergraph,
+			"-loop", "0",
+		]
+	else:
+		# WebM VP9 (default)
+		fmt_args = [
+			"-c:v", "libvpx-vp9",
+			"-pix_fmt", "yuva420p",
+			"-auto-alt-ref", "0",
+			"-crf", "30",
+			"-b:v", "0",
+		]
+
+	var args = base_args + fmt_args + ["-progress", progress_path, output_path]
+
+	var output = []
+	var exit_code = OS.execute(ffmpeg, args, output)
+	call_deferred("_on_encode_done", exit_code == 0)
+
+func _on_encode_done(success: bool):
+	if success:
+		Global.pushUpdate("Recording saved!")
+	else:
+		Global.pushUpdate("FFmpeg encoding failed.")
+
+func _on_record_dialog_canceled():
+	_cleanup_recording_temp()
+	Global.pushUpdate("Recording discarded.")
+
+func _cleanup_recording_temp():
+	if _recording_temp_path != "" and FileAccess.file_exists(_recording_temp_path):
+		DirAccess.remove_absolute(_recording_temp_path)
+	if _encode_progress_path != "" and FileAccess.file_exists(_encode_progress_path):
+		DirAccess.remove_absolute(_encode_progress_path)
+	_recording_temp_path = ""
+	_encode_progress_path = ""
+	_recording_frame_count = 0
 
 func _process_save_thread(_delta):
 	if _save_thread == null or _save_progress_dialog == null:

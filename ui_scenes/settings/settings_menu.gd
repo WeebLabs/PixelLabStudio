@@ -14,6 +14,11 @@ var _ndi_manual_w: SpinBox = null
 var _ndi_manual_h: SpinBox = null
 var _ndi_manual_container: HBoxContainer = null
 
+# Recording UI references (built in code)
+var _recording_section: Node2D = null
+var _recording_format_option: OptionButton = null
+var _recording_fps_option: OptionButton = null
+
 func setvalues():
 	
 	$Background/ColorPickerButton.color = Global.backgroundColor
@@ -44,6 +49,8 @@ func setvalues():
 
 	_build_ndi_section()
 	_update_ndi_ui()
+	_build_recording_section()
+	_update_recording_ui()
 
 	var costumeLabels = [$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton1/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton2/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton3/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton4/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton5/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton6/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton7/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton8/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton9/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton10/Label,]
 	var tag = 1
@@ -447,3 +454,103 @@ func _on_ndi_manual_size_changed(_value: float):
 	var ndi = Global.main.ndi_manager
 	if ndi and _ndi_manual_w and _ndi_manual_h:
 		ndi.set_manual_size(int(_ndi_manual_w.value), int(_ndi_manual_h.value))
+
+# --- Recording Settings ---
+
+func _build_recording_section():
+	if _recording_section != null:
+		return
+
+	$NinePatchRect.offset_bottom += 60
+	position.y -= 60
+
+	_recording_section = Node2D.new()
+	_recording_section.name = "RecordingSettings"
+	_recording_section.position = Vector2(22, 565)
+	add_child(_recording_section)
+
+	# Separator line
+	var sep = ColorRect.new()
+	sep.position = Vector2(-4, 0)
+	sep.size = Vector2(380, 2)
+	sep.color = Color(0.5, 0.5, 0.5, 0.4)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_recording_section.add_child(sep)
+
+	# Title label
+	var title = Label.new()
+	title.position = Vector2(0, 6)
+	title.text = "Recording"
+	title.add_theme_font_size_override("font_size", 14)
+	_recording_section.add_child(title)
+
+	# Format label
+	var fmt_label = Label.new()
+	fmt_label.position = Vector2(0, 30)
+	fmt_label.text = "format"
+	_recording_section.add_child(fmt_label)
+
+	# Format OptionButton
+	_recording_format_option = OptionButton.new()
+	_recording_format_option.position = Vector2(77, 30)
+	_recording_format_option.size = Vector2(160, 26)
+	_recording_format_option.add_item("Video (WebM)", 0)
+	_recording_format_option.add_item("Animated PNG", 1)
+	_recording_format_option.add_item("GIF", 2)
+	_recording_format_option.item_selected.connect(_on_recording_format_selected)
+	_recording_section.add_child(_recording_format_option)
+
+	# FPS label
+	var fps_label = Label.new()
+	fps_label.position = Vector2(250, 30)
+	fps_label.text = "fps"
+	_recording_section.add_child(fps_label)
+
+	# FPS OptionButton
+	_recording_fps_option = OptionButton.new()
+	_recording_fps_option.position = Vector2(285, 30)
+	_recording_fps_option.size = Vector2(80, 26)
+	_recording_fps_option.add_item("15", 0)
+	_recording_fps_option.add_item("30", 1)
+	_recording_fps_option.add_item("60", 2)
+	_recording_fps_option.item_selected.connect(_on_recording_fps_selected)
+	_recording_section.add_child(_recording_fps_option)
+
+func _update_recording_ui():
+	if _recording_format_option == null:
+		return
+	var fmt = Saving.settings.get("recordingFormat", "webm")
+	var formats = ["webm", "apng", "gif"]
+	var idx = formats.find(fmt)
+	if idx >= 0:
+		_recording_format_option.selected = idx
+	else:
+		_recording_format_option.selected = 0
+
+	if _recording_fps_option != null:
+		var fps = Saving.settings.get("recordingFPS", 30)
+		var fps_values = [15, 30, 60]
+		var fps_idx = fps_values.find(fps)
+		if fps_idx >= 0:
+			_recording_fps_option.selected = fps_idx
+		else:
+			_recording_fps_option.selected = 1
+
+func _on_recording_format_selected(idx: int):
+	var formats = ["webm", "apng", "gif"]
+	if idx < formats.size():
+		Saving.settings["recordingFormat"] = formats[idx]
+		# Auto-set FPS based on format
+		var fmt = formats[idx]
+		if fmt == "apng" or fmt == "gif":
+			Saving.settings["recordingFPS"] = 15
+		elif fmt == "webm":
+			Saving.settings["recordingFPS"] = 30
+		_update_recording_ui()
+		Global.pushUpdate("Recording format set to " + _recording_format_option.get_item_text(idx) + ".")
+
+func _on_recording_fps_selected(idx: int):
+	var fps_values = [15, 30, 60]
+	if idx < fps_values.size():
+		Saving.settings["recordingFPS"] = fps_values[idx]
+		Global.pushUpdate("Recording FPS set to " + str(fps_values[idx]) + ".")

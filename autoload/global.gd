@@ -21,6 +21,9 @@ var _z_style_focus: StyleBoxFlat = null
 var _z_input_active: bool = false
 var _suppress_keys_frame: int = -1
 
+var _screenshot_key_held: bool = false
+var _screenshot_press_time: int = 0
+
 #Object Selection
 var heldSprite = null
 var lastArray = []
@@ -174,8 +177,13 @@ func _process(delta):
 	
 	blinking()
 	scrollSprites()
-	
-	
+
+	# Screenshot/record key release (outside control block so release is caught
+	# even if Ctrl is released before K)
+	if _screenshot_key_held and Input.is_action_just_released("screenshot"):
+		main.onScreenshotReleased()
+		_screenshot_key_held = false
+
 	if !main.fileSystemOpen and !_text_field_active:
 
 		if Input.is_action_just_pressed("refresh"):
@@ -192,7 +200,9 @@ func _process(delta):
 			if Input.is_action_just_pressed("redo"):
 				UndoManager.redo()
 			if Input.is_action_just_pressed("screenshot"):
-				main.takeScreenshot()
+				_screenshot_key_held = true
+				_screenshot_press_time = Time.get_ticks_msec()
+				main.onScreenshotPressed()
 	
 	
 func _is_any_field_focused() -> bool:
