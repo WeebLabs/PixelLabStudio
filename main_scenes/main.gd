@@ -1133,29 +1133,33 @@ func takeScreenshot():
 	if _screenshot_image != null:
 		return  # Previous capture pending save
 
-	var vp_size = get_viewport().get_visible_rect().size
+	# If NDI is enabled, capture the NDI crop view directly
+	if ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_viewport != null:
+		_screenshot_image = ndi_manager.ndi_viewport.get_texture().get_image()
+	else:
+		var vp_size = get_viewport().get_visible_rect().size
 
-	var screenshot_vp = SubViewport.new()
-	screenshot_vp.transparent_bg = true
-	screenshot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-	screenshot_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-	screenshot_vp.size = Vector2i(vp_size)
-	screenshot_vp.world_2d = get_viewport().world_2d
-	screenshot_vp.canvas_cull_mask = 1  # Sprites only, no UI (layer 2)
-	screenshot_vp.gui_disable_input = true
-	screenshot_vp.handle_input_locally = false
-	add_child(screenshot_vp)
+		var screenshot_vp = SubViewport.new()
+		screenshot_vp.transparent_bg = true
+		screenshot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		screenshot_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+		screenshot_vp.size = Vector2i(vp_size)
+		screenshot_vp.world_2d = get_viewport().world_2d
+		screenshot_vp.canvas_cull_mask = 1  # Sprites only, no UI (layer 2)
+		screenshot_vp.gui_disable_input = true
+		screenshot_vp.handle_input_locally = false
+		add_child(screenshot_vp)
 
-	var screenshot_cam = Camera2D.new()
-	screenshot_cam.position = camera.position
-	screenshot_cam.zoom = camera.zoom
-	screenshot_vp.add_child(screenshot_cam)
-	screenshot_cam.make_current()
+		var screenshot_cam = Camera2D.new()
+		screenshot_cam.position = camera.position
+		screenshot_cam.zoom = camera.zoom
+		screenshot_vp.add_child(screenshot_cam)
+		screenshot_cam.make_current()
 
-	await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
 
-	_screenshot_image = screenshot_vp.get_texture().get_image()
-	screenshot_vp.queue_free()
+		_screenshot_image = screenshot_vp.get_texture().get_image()
+		screenshot_vp.queue_free()
 
 	if _screenshot_dialog == null:
 		_create_screenshot_dialog()
@@ -1237,7 +1241,11 @@ func _startRecording():
 	_recording = true
 	_recording_timer = 0.0
 	_recording_frame_count = 0
-	_recording_size = Vector2i(get_viewport().get_visible_rect().size)
+	var use_ndi = ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_viewport != null
+	if use_ndi:
+		_recording_size = ndi_manager.ndi_viewport.size
+	else:
+		_recording_size = Vector2i(get_viewport().get_visible_rect().size)
 
 	# Temp file for raw RGBA frames
 	var temp_dir = OS.get_cache_dir() + "/pngtuber_recording"
@@ -1259,8 +1267,12 @@ func _startRecording():
 
 	_recording_cam = Camera2D.new()
 	_recording_vp.add_child(_recording_cam)
-	_recording_cam.position = camera.position
-	_recording_cam.zoom = camera.zoom
+	if use_ndi:
+		_recording_cam.position = ndi_manager.ndi_camera.position
+		_recording_cam.zoom = ndi_manager.ndi_camera.zoom
+	else:
+		_recording_cam.position = camera.position
+		_recording_cam.zoom = camera.zoom
 	_recording_cam.make_current()
 
 	Global.pushUpdate("Recording...")
@@ -1306,9 +1318,13 @@ func _stopRecording():
 func _captureRecordingFrame():
 	if _recording_vp == null or _recording_file == null:
 		return
-	# Sync camera to main camera each frame
-	_recording_cam.position = camera.position
-	_recording_cam.zoom = camera.zoom
+	# Sync camera — use NDI crop view when active, otherwise main camera
+	if ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_camera != null:
+		_recording_cam.position = ndi_manager.ndi_camera.position
+		_recording_cam.zoom = ndi_manager.ndi_camera.zoom
+	else:
+		_recording_cam.position = camera.position
+		_recording_cam.zoom = camera.zoom
 	var img = _recording_vp.get_texture().get_image()
 	if img != null:
 		_recording_file.store_buffer(img.get_data())
