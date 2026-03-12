@@ -96,6 +96,13 @@ var remadePolygon = false
 var clipped = false
 var ndiRefLayer = false
 
+# Normal map
+var normalImageData: Image = null
+var normalTex: ImageTexture = null
+var normalPath: String = ""
+var loadedNormalImage: Image = null
+var loadedNormalData: String = ""
+
 var tick = 0
 
 #Vis toggle
@@ -108,6 +115,35 @@ func _make_premultiplied_texture(img: Image) -> ImageTexture:
 	var pma = img.duplicate()
 	pma.premultiply_alpha()
 	return ImageTexture.create_from_image(pma)
+
+func _rebuild_sprite_texture():
+	if normalTex != null:
+		var canvas_tex = CanvasTexture.new()
+		canvas_tex.diffuse_texture = tex
+		canvas_tex.normal_texture = normalTex
+		sprite.texture = canvas_tex
+	else:
+		sprite.texture = tex
+
+func setNormalMap(img: Image, nrml_path: String):
+	if imageData != null and img.get_size() != imageData.get_size():
+		Global.pushUpdate("Normal map size mismatch. Must match diffuse dimensions.")
+		return
+	normalImageData = img
+	normalPath = nrml_path
+	normalTex = ImageTexture.create_from_image(img)
+	_rebuild_sprite_texture()
+
+func clearNormalMap():
+	normalImageData = null
+	normalTex = null
+	normalPath = ""
+	loadedNormalImage = null
+	loadedNormalData = ""
+	_rebuild_sprite_texture()
+
+func hasNormalMap() -> bool:
+	return normalTex != null
 
 func _ready():
 	
@@ -146,7 +182,18 @@ func _ready():
 
 	imageSize = img.get_size()
 
-	sprite.texture = tex
+	# Load normal map if present (from PSD import or save file)
+	if loadedNormalImage != null:
+		setNormalMap(loadedNormalImage, normalPath)
+		loadedNormalImage = null
+	elif loadedNormalData != "":
+		var nrml_raw = Marshalls.base64_to_raw(loadedNormalData)
+		var nrml_img = Image.new()
+		if nrml_img.load_png_from_buffer(nrml_raw) == OK:
+			setNormalMap(nrml_img, normalPath)
+		loadedNormalData = ""
+	else:
+		_rebuild_sprite_texture()
 
 	var mat = CanvasItemMaterial.new()
 	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
@@ -213,17 +260,22 @@ func replaceSprite(pathNew):
 	var img = Image.new()
 	var err = img.load(pathNew)
 	if err != OK:
-		#Runs if image import fails. 
+		#Runs if image import fails.
 		Global.epicFail(err)
 		print_debug("Failed to load image.")
 		return
-	
+
 	path = pathNew
 
 	imageData = img
 	tex = _make_premultiplied_texture(img)
 
-	sprite.texture = tex
+	# Clear normal if new diffuse has different dimensions
+	if hasNormalMap() and normalImageData.get_size() != img.get_size():
+		clearNormalMap()
+		Global.pushUpdate("Normal map cleared (size mismatch after replace).")
+	else:
+		_rebuild_sprite_texture()
 	
 	var bitmap = BitMap.new()
 	bitmap.create_from_image_alpha(imageData)
@@ -257,7 +309,13 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 	path = "psd://" + layer_name
 	imageData = img
 	tex = _make_premultiplied_texture(img)
-	sprite.texture = tex
+
+	# Clear normal if new diffuse has different dimensions
+	if hasNormalMap() and normalImageData.get_size() != img.get_size():
+		clearNormalMap()
+		Global.pushUpdate("Normal map cleared (size mismatch after replace).")
+	else:
+		_rebuild_sprite_texture()
 
 	var bitmap = BitMap.new()
 	bitmap.create_from_image_alpha(imageData)

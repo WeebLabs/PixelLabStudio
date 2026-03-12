@@ -22,6 +22,13 @@ var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
 
+# Normal map section
+var _normal_section: Control
+var _normal_status: Label
+var _normal_import_btn: Button
+var _normal_clear_btn: Button
+var _normal_dialog: FileDialog
+
 func _ready():
 	Global.spriteEdit = self
 	$Buttons/Speaking.visible = false
@@ -163,11 +170,54 @@ func _ready():
 		cb.add_theme_font_size_override("font_size", 12)
 		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 
+	# Normal Map section — below preview, above Position
+	var _nrml_y = 133
+	_normal_section = Control.new()
+	_normal_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_normal_section)
+
+	_normal_status = Label.new()
+	_normal_status.text = "(none)"
+	_normal_status.add_theme_font_size_override("font_size", 11)
+	_normal_status.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
+	_normal_status.position = Vector2(10, _nrml_y)
+	_normal_status.size = Vector2(panel_width - 100, 20)
+	_normal_status.clip_text = true
+	_normal_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	add_child(_normal_status)
+
+	_normal_import_btn = Button.new()
+	_normal_import_btn.text = "Normal"
+	_normal_import_btn.custom_minimum_size = Vector2(70, 22)
+	_normal_import_btn.position = Vector2(panel_width - 155, _nrml_y - 1)
+	_normal_import_btn.add_theme_font_size_override("font_size", 11)
+	_normal_import_btn.pressed.connect(_on_normal_import)
+	add_child(_normal_import_btn)
+
+	_normal_clear_btn = Button.new()
+	_normal_clear_btn.text = "Clear"
+	_normal_clear_btn.custom_minimum_size = Vector2(60, 22)
+	_normal_clear_btn.position = Vector2(panel_width - 80, _nrml_y - 1)
+	_normal_clear_btn.add_theme_font_size_override("font_size", 11)
+	_normal_clear_btn.disabled = true
+	_normal_clear_btn.pressed.connect(_on_normal_clear)
+	add_child(_normal_clear_btn)
+
+	_sections.append(_normal_section)
+	_sections.append(_normal_status)
+	_buttons.append(_normal_import_btn)
+	_buttons.append(_normal_clear_btn)
+
+	# Push everything below preview down to make room for normal row
+	var _nrml_shift = 26
+	for node in [$Position, $Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
+		node.position.y += _nrml_shift
+
 	# Add section dividers
-	_create_divider(141)   # between 3D Preview and Position Info
-	_create_divider(274)   # between Position Info and Animation
-	_create_divider(564)   # between Buttons/Checkboxes and Wobble
-	_create_divider(773)   # between Wobble and Rotational Limits circle
+	_create_divider(141 + _nrml_shift)   # between Normal row and Position Info
+	_create_divider(274 + _nrml_shift)   # between Position Info and Animation
+	_create_divider(564 + _nrml_shift)   # between Buttons/Checkboxes and Wobble
+	_create_divider(773 + _nrml_shift)   # between Wobble and Rotational Limits circle
 
 	_replace_rot_display_textures()
 
@@ -307,6 +357,7 @@ func setImage():
 		$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = -180 + 90
 		$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = -180
 		$RotationalLimits/RotBack/RotLineDisplay2.rotation_degrees = 180
+		_update_normal_display()
 		return
 
 	# Crop to opaque content of the first frame so the sprite fills the preview
@@ -412,11 +463,13 @@ func setImage():
 
 	setLayerButtons()
 
+	_update_normal_display()
+
 	if Global.spriteList:
 		Global.spriteList.updateControls()
 		Global.spriteList.scroll_to_selected()
 
-	
+
 func _create_divider(y_pos: float) -> ColorRect:
 	var div = ColorRect.new()
 	div.color = Color(0.3, 0.3, 0.35)
@@ -445,7 +498,7 @@ func _input(event):
 		return
 	# Only scroll when window is short enough to need it
 	var s = get_viewport().get_visible_rect().size
-	if s.y > 1174:
+	if s.y > 1200:
 		return
 	var step = 50
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -456,7 +509,7 @@ func _input(event):
 		return
 	# Clamp to same bounds as moveSpriteMenu()
 	var top_y = 30  # MENU_BAR_HEIGHT + 2
-	var min_y = s.y - 1124
+	var min_y = s.y - 1150
 	position.y = clamp(position.y, min_y, top_y)
 	get_viewport().set_input_as_handled()
 
@@ -823,3 +876,48 @@ func _on_eye_track_invert_toggled(button_pressed):
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.eyeTrackInvert = button_pressed
+
+func _update_normal_display():
+	if _normal_status == null:
+		return
+	if Global.heldSprite == null or !Global.heldSprite.hasNormalMap():
+		_normal_status.text = "(none)"
+		_normal_clear_btn.disabled = true
+	else:
+		var nname = Global.heldSprite.normalPath.get_file()
+		if nname == "":
+			nname = "(embedded)"
+		_normal_status.text = nname
+		_normal_clear_btn.disabled = false
+
+func _on_normal_import():
+	if _normal_dialog == null:
+		_normal_dialog = FileDialog.new()
+		_normal_dialog.title = "Select Normal Map"
+		_normal_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		_normal_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_normal_dialog.filters = PackedStringArray(["*.png;PNG Image"])
+		_normal_dialog.use_native_dialog = true
+		_normal_dialog.file_selected.connect(_on_normal_file_selected)
+		add_child(_normal_dialog)
+	_normal_dialog.popup_centered(Vector2i(600, 400))
+
+func _on_normal_file_selected(path: String):
+	if Global.heldSprite == null:
+		return
+	var img = Image.new()
+	if img.load(path) != OK:
+		Global.pushUpdate("Failed to load normal map.")
+		return
+	UndoManager.save_state()
+	Global.heldSprite.setNormalMap(img, path)
+	UndoManager.invalidate_normal(Global.heldSprite.id)
+	_update_normal_display()
+
+func _on_normal_clear():
+	if Global.heldSprite == null or !Global.heldSprite.hasNormalMap():
+		return
+	UndoManager.save_state()
+	Global.heldSprite.clearNormalMap()
+	UndoManager.invalidate_normal(Global.heldSprite.id)
+	_update_normal_display()

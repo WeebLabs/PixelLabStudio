@@ -14,6 +14,7 @@ var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 # so we store a reference once and reuse across snapshots. No PNG encoding
 # needed — that only happens at file-save time in main.gd.
 var _image_cache: Dictionary = {}
+var _normal_cache: Dictionary = {}
 
 func _snapshot() -> Dictionary:
 	var data = {}
@@ -55,6 +56,12 @@ func _snapshot() -> Dictionary:
 			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
 			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
+
+			if child.normalImageData != null:
+				if !_normal_cache.has(child.id):
+					_normal_cache[child.id] = child.normalImageData
+				data[idx]["normalImageData"] = _normal_cache[child.id]
+				data[idx]["normalPath"] = child.normalPath
 		idx += 1
 	return data
 
@@ -179,6 +186,12 @@ func _restore(data: Dictionary):
 		if d.has("eyeTrackInvert"):
 			sprite.eyeTrackInvert = d["eyeTrackInvert"]
 
+		if d.has("normalImageData") and d["normalImageData"] != null:
+			if sprite.normalImageData != d["normalImageData"]:
+				sprite.setNormalMap(d["normalImageData"], d.get("normalPath", ""))
+		elif sprite.hasNormalMap():
+			sprite.clearNormalMap()
+
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
 	for node in get_tree().get_nodes_in_group("saved"):
@@ -232,6 +245,9 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
 	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
 	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
+	if d.has("normalImageData") and d["normalImageData"] != null:
+		sprite.loadedNormalImage = d["normalImageData"]
+		sprite.normalPath = d.get("normalPath", "")
 	Global.main.origin.add_child(sprite)
 	sprite.position = str_to_var(d["pos"])
 
@@ -240,9 +256,12 @@ func _restore_full(data: Dictionary):
 	Global.heldSprite = null
 
 	_image_cache.clear()
+	_normal_cache.clear()
 	for item in data:
 		if data[item].has("imageData"):
 			_image_cache[data[item]["identification"]] = data[item]["imageData"]
+		if data[item].has("normalImageData"):
+			_normal_cache[data[item]["identification"]] = data[item]["normalImageData"]
 
 	var main = Global.main
 	main.origin.queue_free()
@@ -259,6 +278,9 @@ func _restore_full(data: Dictionary):
 
 func invalidate_image(sprite_id):
 	_image_cache.erase(sprite_id)
+
+func invalidate_normal(sprite_id):
+	_normal_cache.erase(sprite_id)
 
 func save_state():
 	if suppressed or Global.main == null or !Global.main.saveLoaded:

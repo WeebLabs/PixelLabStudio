@@ -13,6 +13,7 @@ var _collapse_btn: Button
 var _thumbnail: TextureRect
 var _name_label: Label
 var _vis_btn: Button
+var _normal_badge: Label
 var _indent_spacer: Control
 var _hovered = false
 var _was_selected = false
@@ -86,6 +87,18 @@ func _ready():
 	_name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_name_label)
+
+	# Normal map indicator
+	_normal_badge = Label.new()
+	_normal_badge.text = "N"
+	_normal_badge.add_theme_font_size_override("font_size", 10)
+	_normal_badge.add_theme_color_override("font_color", Color(0.4, 0.75, 1.0))
+	_normal_badge.custom_minimum_size = Vector2(14, 14)
+	_normal_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_normal_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_normal_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_normal_badge.visible = sprite.hasNormalMap()
+	hbox.add_child(_normal_badge)
 
 	# Visibility toggle — pinned to right edge
 	_vis_btn = Button.new()
@@ -189,6 +202,7 @@ func _process(_delta):
 	if is_selected != _was_selected:
 		_was_selected = is_selected
 		_update_style()
+	_normal_badge.visible = sprite.hasNormalMap()
 
 func updateChildren():
 	if childrenTags.size() > 0:

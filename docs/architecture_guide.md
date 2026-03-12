@@ -336,3 +336,57 @@ Uses `ClassDB.class_exists("NDIOutput")` before instantiation. If the godot-ndi 
 ### Plugin Dependency
 
 Requires the godot-ndi GDExtension plugin (by unvermuthet, MPL-2.0) in `addons/godot-ndi/`. Also requires NDI Runtime installed on the user's OS.
+
+---
+
+## Normal Map System
+
+> Updated: 2026-03-12 — Normal map data pipeline (import, assign, save/load, undo/redo)
+
+### Overview
+
+Normal maps allow 2D lights (`Light2D`, `DirectionalLight2D`) to interact with sprite layers. A normal map is a **property of a diffuse layer**, never a separate layer in the list. Godot 4's `CanvasTexture` pairs a diffuse + normal texture on any Sprite2D.
+
+### Data Model (`spriteObject.gd`)
+
+Each sprite has optional normal map properties:
+- `normalImageData: Image` — raw normal map Image
+- `normalTex: ImageTexture` — texture for the normal map
+- `normalPath: String` — file path or `"psd://layerName_NRML"`
+- `loadedNormalImage: Image` — in-memory Image for PSD import (consumed in `_ready()`)
+- `loadedNormalData: String` — base64 from save file (consumed in `_ready()`)
+
+Key methods:
+- `_rebuild_sprite_texture()` — if a normal map exists, wraps diffuse + normal in a `CanvasTexture`; otherwise assigns plain diffuse texture
+- `setNormalMap(img, path)` — validates dimensions match diffuse, assigns normal, rebuilds texture
+- `clearNormalMap()` — removes normal data, rebuilds texture
+- `hasNormalMap() -> bool` — returns `normalTex != null`
+
+### Naming Convention
+
+Files/layers with the suffix `_NRML` (case insensitive) are treated as normal maps. Examples: `head_NRML.png`, `Body_nrml`.
+
+### Auto-Pairing on Import
+
+**PNG import** (`_import_png_files`): Separates `_NRML` files from diffuse files. Pairs by matching base name (e.g., `head.png` pairs with `head_NRML.png`). Unmatched normals attempt to pair with existing sprites; if no match, a toast notification is shown.
+
+**PSD import** (`psd_import_dialog.gd`): `_NRML` layers are hidden from the layer selection UI but tracked in `normal_layers` dictionary. Count shown in dialog title. Passed through the `import_confirmed` signal and paired in `_finalize_psd_import()`.
+
+### Save Format
+
+Per-sprite dictionary additions:
+- `normalPath` (String) — always saved
+- `normalImageData` (String) — base64-encoded PNG, only if normal exists
+
+Backward compatible: old saves without these fields load fine via `.has()` checks.
+
+### Undo/Redo (`undo_manager.gd`)
+
+- `_normal_cache: Dictionary` — sprite id → Image reference (mirrors `_image_cache` pattern)
+- `invalidate_normal(sprite_id)` — call when normal map changes (import, clear)
+- Snapshot includes `normalImageData` and `normalPath`; restore re-applies or clears as needed
+
+### UI
+
+- **Sprite Edit Panel** (`sprite_viewer.gd`): "normal map" section with status label, Import button (opens file dialog), Clear button
+- **Sprite List** (`sprite_list_object.gd`): Blue "N" badge shown next to layer name when normal map is assigned

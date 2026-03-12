@@ -1,10 +1,11 @@
 extends Node2D
 
-signal import_confirmed(selected_layers: Array, canvas_size: Vector2)
+signal import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary)
 signal import_cancelled
 
 var psd_file = null
 var layer_entries: Array = []  # Array of {layer, checkbox}
+var normal_layers: Dictionary = {}  # base_name (lower) -> layer
 
 var layerList: VBoxContainer
 var titleLabel: Label
@@ -126,13 +127,22 @@ func setup(psd):
 	for child in layerList.get_children():
 		child.queue_free()
 	layer_entries.clear()
+	normal_layers.clear()
 
 	var count = 0
+	var nrml_count = 0
 	for layer in psd.layers:
 		# Skip zero-size layers (group dividers, adjustment layers)
 		if layer.width <= 0 or layer.height <= 0:
 			continue
 		if layer.image == null:
+			continue
+
+		# Detect normal map layers — don't show in selection, track for pairing
+		if layer.name.to_lower().ends_with("_nrml"):
+			var base = layer.name.substr(0, layer.name.length() - 5)
+			normal_layers[base.to_lower()] = layer
+			nrml_count += 1
 			continue
 
 		count += 1
@@ -177,7 +187,10 @@ func setup(psd):
 		layerList.add_child(entry)
 		layer_entries.append({"layer": layer, "checkbox": check, "entry": entry, "name": layer.name})
 
-	titleLabel.text = "Import PSD (" + str(count) + " layers)"
+	if nrml_count > 0:
+		titleLabel.text = "Import PSD (" + str(count) + " layers, " + str(nrml_count) + " normals detected)"
+	else:
+		titleLabel.text = "Import PSD (" + str(count) + " layers)"
 
 func _on_select_all():
 	for entry in layer_entries:
@@ -198,7 +211,7 @@ func _on_import():
 
 	visible = false
 	var canvas_size = Vector2(psd_file.width, psd_file.height)
-	import_confirmed.emit(selected, canvas_size)
+	import_confirmed.emit(selected, canvas_size, normal_layers)
 
 func _on_cancel():
 	visible = false

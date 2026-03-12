@@ -514,6 +514,7 @@ var _import_canvas_size: Vector2 = Vector2.ZERO
 var _import_results: Array = []
 var _import_mutex: Mutex = null
 var _import_completed: int = 0
+var _import_normal_layers: Dictionary = {}
 var _import_progress_dialog2: Node2D = null
 
 var _anim_parser = null        # GIFParser or APNGParser
@@ -613,9 +614,10 @@ func _process_psd_thread(_delta):
 			psdImportDialog.setup(result)
 			psdImportDialog.visible = true
 
-func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2):
+func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary = {}):
 	_import_layers = selected_layers
 	_import_canvas_size = canvas_size
+	_import_normal_layers = normal_layers
 	_import_results = []
 	_import_results.resize(selected_layers.size())
 	_import_completed = 0
@@ -707,6 +709,13 @@ func _finalize_psd_import():
 			(layer.left + layer.right) * 0.5,
 			(layer.top + layer.bottom) * 0.5
 		)
+		# Check for matching normal map layer
+		var layer_base = layer.name.to_lower()
+		if _import_normal_layers.has(layer_base):
+			var nrml_layer = _import_normal_layers[layer_base]
+			sprite.loadedNormalImage = nrml_layer.image
+			sprite.normalPath = "psd://" + nrml_layer.name
+
 		origin.add_child(sprite)
 		sprite.position = layer_center - canvas_center
 		sprite.setZIndex()
@@ -718,6 +727,7 @@ func _finalize_psd_import():
 	_import_layers = []
 	_import_results = []
 	_import_mutex = null
+	_import_normal_layers = {}
 
 	_save_post_import_snapshot()
 
@@ -949,8 +959,20 @@ func _on_import_files_selected(paths: PackedStringArray):
 
 func _import_png_files(paths: Array):
 	UndoManager.save_state()
-	var count = 0
+
+	# Separate normal maps from diffuse files
+	var diffuse_paths = []
+	var normal_map = {}  # base_name (lower) -> normal_path
 	for path in paths:
+		var filename = path.get_file().get_basename()
+		if filename.to_lower().ends_with("_nrml"):
+			var base = filename.substr(0, filename.length() - 5)
+			normal_map[base.to_lower()] = path
+		else:
+			diffuse_paths.append(path)
+
+	var count = 0
+	for path in diffuse_paths:
 		if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
 			_start_animated_import(path, false)
 		else:
@@ -960,14 +982,40 @@ func _import_png_files(paths: Array):
 			sprite.path = path
 			sprite.id = id
 			sprite.z = _next_z_index()
+
+			# Check for matching normal map
+			var diffuse_base = path.get_file().get_basename().to_lower()
+			if normal_map.has(diffuse_base):
+				var nrml_img = Image.new()
+				if nrml_img.load(normal_map[diffuse_base]) == OK:
+					sprite.loadedNormalImage = nrml_img
+					sprite.normalPath = normal_map[diffuse_base]
+				normal_map.erase(diffuse_base)
+
 			origin.add_child(sprite)
 			sprite.position = Vector2.ZERO
 		count += 1
+
+	# Import remaining unmatched normals: try to pair with existing sprites
+	for base in normal_map:
+		var matched = false
+		for spr in get_tree().get_nodes_in_group("saved"):
+			var spr_base = spr.path.get_file().get_basename().to_lower()
+			if spr_base == base:
+				var nrml_img = Image.new()
+				if nrml_img.load(normal_map[base]) == OK:
+					spr.setNormalMap(nrml_img, normal_map[base])
+					UndoManager.invalidate_normal(spr.id)
+				matched = true
+				break
+		if !matched:
+			Global.pushUpdate("No match for normal: " + normal_map[base].get_file())
+
 	Global.spriteList.updateData()
 	ndi_mark_dirty()
 	if count == 1:
 		Global.pushUpdate("Added new sprite.")
-	else:
+	elif count > 1:
 		Global.pushUpdate("Imported " + str(count) + " sprites.")
 	_save_post_import_snapshot()
 
@@ -1049,6 +1097,11 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
+
+		if data[item].has("normalPath"):
+			sprite.normalPath = data[item]["normalPath"]
+		if data[item].has("normalImageData"):
+			sprite.loadedNormalData = data[item]["normalImageData"]
 
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
@@ -1334,13 +1387,26 @@ func _is_ffmpeg_available() -> bool:
 	return _find_ffmpeg() != ""
 
 func _find_ffmpeg() -> String:
-	# Try common paths first (macOS GUI apps may not inherit full PATH)
-	for path in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
+	# Try common paths (GUI apps may not inherit full PATH)
+	var common_paths = []
+	if OS.get_name() == "Windows":
+		var program_files = OS.get_environment("ProgramFiles")
+		var localappdata = OS.get_environment("LOCALAPPDATA")
+		common_paths = [
+			OS.get_executable_path().get_base_dir() + "/ffmpeg.exe",
+			program_files + "/ffmpeg/bin/ffmpeg.exe",
+			localappdata + "/Microsoft/WinGet/Links/ffmpeg.exe",
+			"C:/ffmpeg/bin/ffmpeg.exe",
+		]
+	else:
+		common_paths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
+	for path in common_paths:
 		if FileAccess.file_exists(path):
 			return path
 	# Fallback to PATH
 	var output = []
-	if OS.execute("which", ["ffmpeg"], output) == 0 and output.size() > 0:
+	var cmd = "where" if OS.get_name() == "Windows" else "which"
+	if OS.execute(cmd, ["ffmpeg"], output) == 0 and output.size() > 0:
 		return output[0].strip_edges()
 	return ""
 
@@ -1569,6 +1635,10 @@ func _on_save_dialog_file_selected(path):
 			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
 			data[id]["ndiRefLayer"] = child.ndiRefLayer
 
+			data[id]["normalPath"] = child.normalPath
+			if child.normalImageData != null:
+				data[id]["_normal_image_ref"] = child.normalImageData
+
 		id += 1
 
 	Saving.settings["lastAvatar"] = path
@@ -1588,6 +1658,10 @@ func _save_worker(data: Dictionary, path: String):
 			var img: Image = data[id]["_image_ref"]
 			data[id]["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
 			data[id].erase("_image_ref")
+		if data[id].has("_normal_image_ref"):
+			var nrml_img: Image = data[id]["_normal_image_ref"]
+			data[id]["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
+			data[id].erase("_normal_image_ref")
 		done += 1
 		_save_progress = float(done) / float(total)
 	var file = FileAccess.open(path, FileAccess.WRITE)
@@ -2020,7 +2094,7 @@ func moveSpriteMenu(delta):
 	var size = get_viewport().get_visible_rect().size
 	var topY = editControls.MENU_BAR_HEIGHT + 2
 
-	var windowLength = 1124
+	var windowLength = 1150
 
 	$ViewerArrows/Arrows.visible = false
 	$ViewerArrows/Arrows2.visible = false
