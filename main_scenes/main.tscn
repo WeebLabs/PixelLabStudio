@@ -14506,7 +14506,7 @@ use_native_dialog = true
 
 [node name="PSDImportDialog" parent="." unique_id=679721683 instance=ExtResource("31_psdim")]
 
-[node name="ReplaceReviewDialog" parent="." instance=ExtResource("32_rrdlg")]
+[node name="ReplaceReviewDialog" parent="." unique_id=1201067964 instance=ExtResource("32_rrdlg")]
 
 [node name="Chain" parent="." unique_id=984828163 instance=ExtResource("19_mt1os")]
 z_index = 4096
@@ -14574,7 +14574,7 @@ z_index = -4096
 [connection signal="file_selected" from="LoadDialog" to="." method="_on_load_dialog_file_selected"]
 [connection signal="import_cancelled" from="PSDImportDialog" to="." method="_on_psd_import_cancelled"]
 [connection signal="import_confirmed" from="PSDImportDialog" to="." method="_on_psd_import_confirmed"]
-[connection signal="replace_confirmed" from="ReplaceReviewDialog" to="." method="_on_replace_confirmed"]
 [connection signal="replace_cancelled" from="ReplaceReviewDialog" to="." method="_on_replace_cancelled"]
+[connection signal="replace_confirmed" from="ReplaceReviewDialog" to="." method="_on_replace_confirmed"]
 [connection signal="bg_key_pressed" from="BackgroundInputCapture" to="." method="bgInputSprite"]
 [connection signal="bg_key_pressed" from="BackgroundInputCapture" to="." method="_on_background_input_capture_bg_key_pressed"]

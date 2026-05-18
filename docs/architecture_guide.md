@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-02-21 — NDI video output system
+> Last updated: 2026-03-12 — Draggable point light gizmo for normal maps
 
 ## Overview
 
@@ -43,6 +43,8 @@ PNGTuberPlus/
 │   │   └── settings_menu.gd      Settings panel
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
+│   ├── light/
+│   │   └── light_gizmo.gd        Draggable PointLight2D + edit-mode gizmo
 │   └── volume/                    Audio level sliders & visualization
 │
 ├── autoload/                      Global singletons (autoloaded)
@@ -390,3 +392,34 @@ Backward compatible: old saves without these fields load fine via `.has()` check
 
 - **Sprite Edit Panel** (`sprite_viewer.gd`): "normal map" section with status label, Import button (opens file dialog), Clear button
 - **Sprite List** (`sprite_list_object.gd`): Blue "N" badge shown next to layer name when normal map is assigned
+
+## Light Gizmo
+
+> Updated: 2026-03-12 — Draggable PointLight2D for normal map visualization
+
+### Overview
+
+A single `PointLight2D` is always present in the scene so that normal-mapped sprites have a light to react to. The light lives inside `ui_scenes/light/light_gizmo.gd` (extends `Node2D`), added as a child of `origin` so it bounces with the avatar.
+
+### Interaction
+
+- **Edit mode**: yellow dot gizmo visible at the light position; click-drag within 20px to reposition
+- **View mode**: gizmo hidden, light stays active
+- Drag uses `_unhandled_input()` with `global_position` offset pattern; calls `get_viewport().set_input_as_handled()` to block sprite selection underneath
+- `UndoManager.save_state()` called on drag start
+
+### Properties
+
+| Property | Type | Default | Maps to |
+|----------|------|---------|---------|
+| `light_energy` | float | 1.0 | `PointLight2D.energy` |
+| `light_color` | Color | white | `PointLight2D.color` |
+| `light_range` | float | 2.0 | `PointLight2D.texture_scale` |
+| `light_enabled` | bool | true | `PointLight2D.enabled` |
+
+### Integration
+
+- **`main.gd`**: `_create_light_gizmo()` instantiates the gizmo and adds it to `origin`. Called in `_ready()` and after origin rebuild (load, undo full restore). `_apply_light_data(dict)` helper sets properties from a dictionary.
+- **`swapMode()`**: calls `_light_gizmo.queue_redraw()` to show/hide gizmo dot
+- **Save/Load**: `"_light"` key in avatar JSON with `{pos, energy, color, range, enabled}`. Old saves without `"_light"` get default values.
+- **Undo**: snapshot includes `"_light"` sub-dictionary; `_restore()` and `_restore_full()` skip it in sprite loops and apply separately

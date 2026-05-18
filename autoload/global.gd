@@ -11,6 +11,7 @@ var chain = null
 var animationTick = 0
 
 var cursorWorldPos = Vector2.ZERO
+var _cursorScreenToWorldOffset: Vector2 = Vector2.ZERO
 
 var filtering = false
 var _text_field_active: bool = false
@@ -99,10 +100,7 @@ func _process(delta):
 	animationTick += 1
 
 	if main != null:
-		var screen_pos = DisplayServer.mouse_get_position()
-		var window_pos = DisplayServer.window_get_position()
-		var local_pos = Vector2(screen_pos - window_pos)
-		cursorWorldPos = main.get_viewport().get_screen_transform().affine_inverse() * local_pos
+		cursorWorldPos = Vector2(DisplayServer.mouse_get_position()) + _cursorScreenToWorldOffset
 
 	volume = spectrum.get_magnitude_for_frequency_range(20, 20000).length()
 	if currentMicrophone != null:
@@ -336,6 +334,11 @@ func _reset_z_style():
 		_z_input.add_theme_stylebox_override("focus", _z_style_focus)
 
 func _input(event):
+	# Refresh screen-to-world offset whenever the cursor is inside the window,
+	# so out-of-window tracking can extrapolate from DisplayServer.mouse_get_position().
+	if event is InputEventMouseMotion and main != null:
+		_cursorScreenToWorldOffset = main.get_global_mouse_position() - Vector2(DisplayServer.mouse_get_position())
+
 	# Z-index overlay: Escape to cancel, click outside to dismiss, N to open
 	if event is InputEventKey and event.pressed and !event.echo:
 		if _z_input_active:
@@ -530,12 +533,14 @@ func scrollSprites():
 		_z_input.select_all()
 
 func blinking():
+	# Floor scales with blinkChance so the slider actually moves the gap between blinks
+	var floor_frames = 2 * blinkChance * blinkSpeed
 	blinkTick += 1
 	if blinkTick == 0:
 		blink = false
 		if rand.randf_range(-1.0,1.0) > 0.5:
-			blinkTick = (420 * blinkSpeed) + 1
-	if blinkTick > 420 * blinkSpeed:
+			blinkTick = floor_frames + 1
+	if blinkTick > floor_frames:
 		if rand.randi() % int(blinkChance) == 0:
 			blink = true
 

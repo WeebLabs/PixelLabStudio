@@ -52,6 +52,8 @@ func _load_settings():
 		Saving.settings["ndiManualHeight"] = 1200
 	if !Saving.settings.has("ndiRulerY"):
 		Saving.settings["ndiRulerY"] = 200.0
+	if !Saving.settings.has("ndiSourceName"):
+		Saving.settings["ndiSourceName"] = "PixelLab Studio"
 
 	_enabled = Saving.settings["ndiEnabled"]
 
@@ -87,6 +89,18 @@ func set_manual_size(w: int, h: int):
 func set_ruler_y(y: float):
 	Saving.settings["ndiRulerY"] = y
 	mark_dirty()
+
+func set_source_name(name: String):
+	var clean = name.strip_edges()
+	if clean == "":
+		clean = "PixelLab Studio"
+	if Saving.settings.get("ndiSourceName", "") == clean:
+		return
+	Saving.settings["ndiSourceName"] = clean
+	# NDI source name can only be set at output creation, so recycle the pipeline
+	if _enabled:
+		_destroy_ndi_pipeline()
+		_create_ndi_pipeline()
 
 func get_ruler_y() -> float:
 	return Saving.settings["ndiRulerY"]
@@ -127,7 +141,7 @@ func _create_ndi_pipeline():
 	# Create NDIOutput node (plugin)
 	if _plugin_available:
 		ndi_output = ClassDB.instantiate("NDIOutput")
-		ndi_output.set("name", "PixelLab Studio")
+		ndi_output.set("name", Saving.settings.get("ndiSourceName", "PixelLab Studio"))
 		ndi_viewport.add_child(ndi_output)
 
 	print("[NDI] Pipeline created. Viewport size: ", ndi_viewport.size, " Plugin: ", _plugin_available)

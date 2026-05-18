@@ -63,6 +63,18 @@ func _snapshot() -> Dictionary:
 				data[idx]["normalImageData"] = _normal_cache[child.id]
 				data[idx]["normalPath"] = child.normalPath
 		idx += 1
+
+	# Snapshot light gizmo
+	if Global.main and Global.main._light_gizmo:
+		var g = Global.main._light_gizmo
+		data["_light"] = {
+			"pos": var_to_str(g.position),
+			"energy": g.light_energy,
+			"color": var_to_str(g.light_color),
+			"range": g.light_range,
+			"enabled": g.light_enabled
+		}
+
 	return data
 
 func _restore(data: Dictionary):
@@ -73,6 +85,8 @@ func _restore(data: Dictionary):
 
 	var snapshot_ids = {}
 	for item in data:
+		if item == "_light":
+			continue
 		snapshot_ids[data[item]["identification"]] = true
 
 	# Check if any current sprites survive into the snapshot
@@ -101,6 +115,8 @@ func _restore(data: Dictionary):
 
 	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
 	for item in data:
+		if item == "_light":
+			continue
 		var d = data[item]
 		if !current_ids.has(d["identification"]):
 			scene_changed = true
@@ -109,6 +125,8 @@ func _restore(data: Dictionary):
 	# 3. Update existing sprites' properties and reparent if needed
 	var reparented = false
 	for item in data:
+		if item == "_light":
+			continue
 		var d = data[item]
 		var sprite = current_ids.get(d["identification"])
 		if sprite == null:
@@ -211,6 +229,10 @@ func _restore(data: Dictionary):
 	if Global.heldSprite != null:
 		Global.spriteEdit.setImage()
 
+	# Restore light gizmo
+	if data.has("_light") and Global.main and Global.main._light_gizmo:
+		Global.main._apply_light_data(data["_light"])
+
 # Instantiate a single sprite from snapshot data and add to origin.
 func _add_sprite_from_data(d: Dictionary):
 	var sprite = _sprite_scene.instantiate()
@@ -258,6 +280,8 @@ func _restore_full(data: Dictionary):
 	_image_cache.clear()
 	_normal_cache.clear()
 	for item in data:
+		if item == "_light":
+			continue
 		if data[item].has("imageData"):
 			_image_cache[data[item]["identification"]] = data[item]["imageData"]
 		if data[item].has("normalImageData"):
@@ -270,7 +294,14 @@ func _restore_full(data: Dictionary):
 	main.origin = new_origin
 
 	for item in data:
+		if item == "_light":
+			continue
 		_add_sprite_from_data(data[item])
+
+	# Re-create light gizmo on new origin
+	main._create_light_gizmo()
+	if data.has("_light"):
+		main._apply_light_data(data["_light"])
 
 	Global.main.changeCostume(Global.main.costume)
 	Global.spriteList.updateData()

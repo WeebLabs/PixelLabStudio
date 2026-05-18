@@ -28,6 +28,8 @@ var editMode = true
 var ndi_manager: Node = null
 var _ndi_label: Label = null
 
+var _light_gizmo: Node2D = null
+
 var _save_thread: Thread = null
 var _save_progress: float = 0.0
 var _save_progress_dialog: Node2D = null
@@ -184,6 +186,8 @@ func _ready():
 	origin.position = s*0.5
 	camera.position = origin.position
 
+	_create_light_gizmo()
+
 	# Put HUD elements on visibility layer 2 so they're excluded from NDI output
 	# (NDI SubViewport only renders layer 1)
 	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $MouseCursor]:
@@ -258,6 +262,30 @@ func _init_ndi():
 	_ndi_label.size = Vector2(34, 28)
 	_ndi_label.visible = false
 	controlPanel.add_child(_ndi_label)
+
+func _create_light_gizmo():
+	# Lighting test disabled
+	return
+	var LightGizmoScript = load("res://ui_scenes/light/light_gizmo.gd")
+	_light_gizmo = Node2D.new()
+	_light_gizmo.set_script(LightGizmoScript)
+	_light_gizmo.name = "LightGizmo"
+	_light_gizmo.position = Vector2(200, -200)
+	origin.add_child(_light_gizmo)
+
+func _apply_light_data(ld: Dictionary):
+	if _light_gizmo == null:
+		return
+	if ld.has("pos"):
+		_light_gizmo.position = str_to_var(ld["pos"])
+	if ld.has("energy"):
+		_light_gizmo.light_energy = ld["energy"]
+	if ld.has("color"):
+		_light_gizmo.light_color = str_to_var(ld["color"])
+	if ld.has("range"):
+		_light_gizmo.light_range = ld["range"]
+	if ld.has("enabled"):
+		_light_gizmo.light_enabled = ld["enabled"]
 
 func ndi_mark_dirty():
 	if ndi_manager != null:
@@ -460,6 +488,8 @@ func swapMode():
 	viewerArrows.visible = editMode
 	if ndi_manager != null:
 		ndi_manager.set_ruler_visible(editMode and ndi_manager.is_enabled())
+	if _light_gizmo != null:
+		_light_gizmo.queue_redraw()
 	onWindowSizeChange()
 
 func _next_z_index() -> int:
@@ -1041,6 +1071,8 @@ func _on_load_dialog_file_selected(path):
 	origin = new
 	
 	for item in data:
+		if item == "_light":
+			continue
 		var sprite = spriteObject.instantiate()
 		sprite.path = data[item]["path"]
 		sprite.id = data[item]["identification"]
@@ -1106,6 +1138,11 @@ func _on_load_dialog_file_selected(path):
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
 	
+	# Re-create light gizmo on new origin
+	_create_light_gizmo()
+	if data.has("_light"):
+		_apply_light_data(data["_light"])
+
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
 	Global.spriteList.updateData()
@@ -1640,6 +1677,16 @@ func _on_save_dialog_file_selected(path):
 				data[id]["_normal_image_ref"] = child.normalImageData
 
 		id += 1
+
+	# Save light gizmo data
+	if _light_gizmo != null:
+		data["_light"] = {
+			"pos": var_to_str(_light_gizmo.position),
+			"energy": _light_gizmo.light_energy,
+			"color": var_to_str(_light_gizmo.light_color),
+			"range": _light_gizmo.light_range,
+			"enabled": _light_gizmo.light_enabled
+		}
 
 	Saving.settings["lastAvatar"] = path
 

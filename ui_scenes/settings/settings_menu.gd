@@ -13,6 +13,7 @@ var _ndi_mode_option: OptionButton = null
 var _ndi_manual_w: SpinBox = null
 var _ndi_manual_h: SpinBox = null
 var _ndi_manual_container: HBoxContainer = null
+var _ndi_source_name_input: LineEdit = null
 
 # Recording UI references (built in code)
 var _recording_section: Node2D = null
@@ -374,6 +375,20 @@ func _build_ndi_section():
 	_ndi_manual_h.value_changed.connect(_on_ndi_manual_size_changed)
 	_ndi_manual_container.add_child(_ndi_manual_h)
 
+	# Source name (applied on Enter or focus-out to avoid recycling NDI per keystroke)
+	var name_label = Label.new()
+	name_label.position = Vector2(0, 122)
+	name_label.text = "source name"
+	_ndi_section.add_child(name_label)
+
+	_ndi_source_name_input = LineEdit.new()
+	_ndi_source_name_input.position = Vector2(105, 120)
+	_ndi_source_name_input.size = Vector2(245, 26)
+	_ndi_source_name_input.placeholder_text = "PixelLab Studio"
+	_ndi_source_name_input.text_submitted.connect(_on_ndi_source_name_committed)
+	_ndi_source_name_input.focus_exited.connect(_on_ndi_source_name_focus_exited)
+	_ndi_section.add_child(_ndi_source_name_input)
+
 func _update_ndi_ui():
 	if _ndi_section == null:
 		return
@@ -390,11 +405,17 @@ func _update_ndi_ui():
 		_ndi_toggle.button_pressed = false
 		_ndi_width_option.disabled = true
 		_ndi_mode_option.disabled = true
+		if _ndi_source_name_input != null:
+			_ndi_source_name_input.editable = false
 		return
 
 	_ndi_status_label.text = ""
 	_ndi_toggle.disabled = false
 	_ndi_toggle.button_pressed = ndi.is_enabled()
+
+	if _ndi_source_name_input != null:
+		_ndi_source_name_input.text = Saving.settings.get("ndiSourceName", "PixelLab Studio")
+		_ndi_source_name_input.editable = true
 
 	# Width preset
 	var widths = [512, 720, 1080, 1920]
@@ -454,6 +475,27 @@ func _on_ndi_manual_size_changed(_value: float):
 	var ndi = Global.main.ndi_manager
 	if ndi and _ndi_manual_w and _ndi_manual_h:
 		ndi.set_manual_size(int(_ndi_manual_w.value), int(_ndi_manual_h.value))
+
+func _on_ndi_source_name_committed(new_text: String):
+	_apply_ndi_source_name(new_text)
+	if _ndi_source_name_input != null:
+		_ndi_source_name_input.release_focus()
+
+func _on_ndi_source_name_focus_exited():
+	if _ndi_source_name_input != null:
+		_apply_ndi_source_name(_ndi_source_name_input.text)
+
+func _apply_ndi_source_name(new_text: String):
+	var ndi = Global.main.ndi_manager
+	if ndi == null:
+		return
+	var prev = Saving.settings.get("ndiSourceName", "PixelLab Studio")
+	ndi.set_source_name(new_text)
+	var applied = Saving.settings.get("ndiSourceName", "PixelLab Studio")
+	if _ndi_source_name_input != null:
+		_ndi_source_name_input.text = applied
+	if applied != prev:
+		Global.pushUpdate("NDI source name set to \"" + applied + "\".")
 
 # --- Recording Settings ---
 
