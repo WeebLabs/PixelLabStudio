@@ -215,11 +215,16 @@ func _style_control_sliders():
 		s.add_theme_constant_override("grabber_offset", 0)
 		s.add_theme_constant_override("center_grabber", 1)
 
-	# Align sliders vertically with their meter bars
+	# Align sliders vertically with their meter bars, and inset horizontally by the
+	# grabber radius so the disc stops at each end of the bar instead of overshooting
 	$ControlPanel/volumeSlider.offset_top = -40
 	$ControlPanel/volumeSlider.offset_bottom = -8
+	$ControlPanel/volumeSlider.offset_left = -574
+	$ControlPanel/volumeSlider.offset_right = -82
 	$ControlPanel/sensitiveSlider.offset_top = -64
 	$ControlPanel/sensitiveSlider.offset_bottom = -32
+	$ControlPanel/sensitiveSlider.offset_left = -574
+	$ControlPanel/sensitiveSlider.offset_right = -82
 
 	# Replace level meter textures with clean shapes
 	var bar_w = 512
