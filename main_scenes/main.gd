@@ -552,6 +552,11 @@ var _import_completed: int = 0
 var _import_normal_layers: Dictionary = {}
 var _import_progress_dialog2: Node2D = null
 
+# Threaded avatar JSON load (parallel PNG decode + polygon generation per sprite)
+var _load_keys: Array = []
+var _load_data_ref = null
+var _load_results: Array = []
+
 var _anim_parser = null        # GIFParser or APNGParser
 var _anim_thread: Thread = null
 var _anim_result = null
@@ -694,6 +699,43 @@ func _precompute_all_layers():
 
 	for t in threads:
 		t.wait_to_finish()
+
+func _load_worker_decode(idx: int):
+	# Runs on a worker thread. Decodes the PNG, premultiplies alpha, and builds the
+	# polygon outline for one sprite. Each task writes to its own _load_results slot,
+	# so no mutex is needed for the result writes.
+	var key = _load_keys[idx]
+	var item_data = _load_data_ref[key]
+	var img = Image.new()
+	var has_image = false
+
+	if item_data.has("path"):
+		var err = img.load(item_data["path"])
+		if err == OK:
+			has_image = true
+	if !has_image and item_data.has("imageData"):
+		var raw = Marshalls.base64_to_raw(item_data["imageData"])
+		if img.load_png_from_buffer(raw) == OK:
+			has_image = true
+
+	var result = {"ok": has_image}
+	if has_image:
+		var pma = img.duplicate()
+		pma.premultiply_alpha()
+		var bitmap = BitMap.new()
+		bitmap.create_from_image_alpha(img)
+		var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0)
+		result["image"] = img
+		result["pma_image"] = pma
+		result["polygons"] = polygons
+
+		if item_data.has("normalImageData"):
+			var nrml_raw = Marshalls.base64_to_raw(item_data["normalImageData"])
+			var nrml = Image.new()
+			if nrml.load_png_from_buffer(nrml_raw) == OK:
+				result["normal_image"] = nrml
+
+	_load_results[idx] = result
 
 func _process_import_thread(_delta):
 	if _import_thread == null:
@@ -1085,68 +1127,81 @@ func _on_load_dialog_file_selected(path):
 	$OriginMotion.add_child(new)
 	origin = new
 
-	var _load_total = 0
+	# Build ordered key list (skip non-sprite metadata)
+	_load_keys = []
 	for _it in data:
 		if _it == "_light":
 			continue
-		_load_total += 1
-	var _load_done = 0
+		_load_keys.append(_it)
+	var _load_total = _load_keys.size()
+	_load_data_ref = data
+	_load_results = []
+	_load_results.resize(_load_total)
+
 	var _load_dialog: Node2D = null
 	var _load_bar: ProgressBar = null
 	if _load_total > 0:
-		_load_dialog = _create_progress_dialog("Loading avatar...")
-		add_child(_load_dialog)
-		_load_bar = _load_dialog.get_node("ProgressBar")
-		# Force one frame so the dialog actually paints before the load work begins
-		# (otherwise a fast load can finish before any of the throttled yields fire)
-		await get_tree().process_frame
-	var _last_yield_ms = Time.get_ticks_msec()
+		# Run PNG decode + premult + polygon generation in parallel across worker threads
+		var group_id = WorkerThreadPool.add_group_task(_load_worker_decode, _load_total, -1, false, "Avatar load")
+		var _load_start_ms = Time.get_ticks_msec()
+		var _last_bar_ms = _load_start_ms
+		# Only show the bar if decode is still running after 200 ms — fast loads skip it
+		const BAR_SHOW_DELAY_MS = 200
+		while !WorkerThreadPool.is_group_task_completed(group_id):
+			await get_tree().process_frame
+			var now = Time.get_ticks_msec()
+			if _load_dialog == null and now - _load_start_ms >= BAR_SHOW_DELAY_MS:
+				_load_dialog = _create_progress_dialog("Loading avatar...")
+				add_child(_load_dialog)
+				_load_bar = _load_dialog.get_node("ProgressBar")
+			if _load_dialog != null and now - _last_bar_ms >= 100:
+				_last_bar_ms = now
+				var done = WorkerThreadPool.get_group_processed_element_count(group_id)
+				_load_bar.value = float(done) / float(_load_total)
+				_load_dialog.position = camera.position
+		WorkerThreadPool.wait_for_group_task_completion(group_id)
+		if _load_bar != null:
+			_load_bar.value = 1.0
 
-	for item in data:
-		if item == "_light":
-			continue
+	# Spawn sprites synchronously now that decode/polygon work is prebuilt — this
+	# loop is fast because each spriteObject._ready just adopts the prebuilt data
+	for i in range(_load_total):
+		var item = _load_keys[i]
 		var sprite = spriteObject.instantiate()
 		sprite.path = data[item]["path"]
 		sprite.id = data[item]["identification"]
 		sprite.parentId = data[item]["parentId"]
-		
+
 		sprite.offset = str_to_var(data[item]["offset"])
 		sprite.z = data[item]["zindex"]
 		sprite.dragSpeed = data[item]["drag"]
-		
+
 		sprite.xFrq = data[item]["xFrq"]
 		sprite.xAmp = data[item]["xAmp"]
 		sprite.yFrq = data[item]["yFrq"]
 		sprite.yAmp = data[item]["yAmp"]
-		
+
 		sprite.rdragStr = data[item]["rotDrag"]
 		sprite.showOnTalk = data[item]["showTalk"]
-		
 		sprite.showOnBlink = data[item]["showBlink"]
-		
+
 		if data[item].has("rLimitMin"):
 			sprite.rLimitMin = data[item]["rLimitMin"]
 		if data[item].has("rLimitMax"):
 			sprite.rLimitMax = data[item]["rLimitMax"]
-		
 		if data[item].has("costumeLayers"):
 			sprite.costumeLayers = str_to_var(data[item]["costumeLayers"]).duplicate()
 			if sprite.costumeLayers.size() < 8:
-				for i in range(5):
+				for _j in range(5):
 					sprite.costumeLayers.append(1)
-
 		if data[item].has("stretchAmount"):
 			sprite.stretchAmount = data[item]["stretchAmount"]
-		
 		if data[item].has("ignoreBounce"):
 			sprite.ignoreBounce = data[item]["ignoreBounce"]
-		
 		if data[item].has("frames"):
 			sprite.frames = data[item]["frames"]
 		if data[item].has("animSpeed"):
 			sprite.animSpeed = data[item]["animSpeed"]
-		if data[item].has("imageData"):
-			sprite.loadedImageData = data[item]["imageData"]
 		if data[item].has("clipped"):
 			sprite.clipped = data[item]["clipped"]
 		if data[item].has("toggle"):
@@ -1161,25 +1216,33 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
-
 		if data[item].has("normalPath"):
 			sprite.normalPath = data[item]["normalPath"]
-		if data[item].has("normalImageData"):
-			sprite.loadedNormalData = data[item]["normalImageData"]
+
+		# Hand off the thread-decoded results, or fall back to the JSON-base64 path
+		# if decode failed for some reason (sprite._ready will retry from base64)
+		var r = _load_results[i] if i < _load_results.size() else null
+		if r != null and r.get("ok", false):
+			sprite.loadedImage = r["image"]
+			sprite._prebuilt_pma_image = r["pma_image"]
+			sprite._prebuilt_polygons = r["polygons"]
+			if r.has("normal_image"):
+				sprite.loadedNormalImage = r["normal_image"]
+		else:
+			if data[item].has("imageData"):
+				sprite.loadedImageData = data[item]["imageData"]
+			if data[item].has("normalImageData"):
+				sprite.loadedNormalData = data[item]["normalImageData"]
 
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
 		# No physics ticks until the avatar is revealed
 		sprite.set_process(false)
 
-		_load_done += 1
-		if _load_dialog != null:
-			_load_bar.value = float(_load_done) / float(_load_total)
-			_load_dialog.position = camera.position
-			# Cap yields at ~2 Hz so the bar animates without significant load overhead
-			if Time.get_ticks_msec() - _last_yield_ms >= 500 or _load_done == _load_total:
-				_last_yield_ms = Time.get_ticks_msec()
-				await get_tree().process_frame
+	# Release thread-state references so the result images can be freed once consumed
+	_load_keys = []
+	_load_data_ref = null
+	_load_results = []
 
 	# Do all the heavy post-load setup while the avatar is still hidden and the bar is
 	# at 100% — this keeps the upcoming fade-in free of frame stutters
@@ -1198,9 +1261,6 @@ func _on_load_dialog_file_selected(path):
 
 	onWindowSizeChange()
 	ndi_mark_dirty()
-
-	# Hold on 100% briefly so the bar's completion state is visible before reveal
-	await get_tree().create_timer(0.3).timeout
 
 	if _load_dialog != null:
 		_load_dialog.queue_free()
