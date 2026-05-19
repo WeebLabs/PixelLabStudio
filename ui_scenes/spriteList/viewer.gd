@@ -731,7 +731,7 @@ func updateData(sort_by_z: bool = true):
 	_filter_field.text = ""
 	_saved_collapse_states = {}
 	for child in container.get_children():
-		if child.sprite != null and child.collapsed:
+		if is_instance_valid(child.sprite) and child.collapsed:
 			_saved_collapse_states[child.sprite.id] = true
 	clearContainer()
 	_update_generation += 1

@@ -154,6 +154,8 @@ func _update_style():
 		add_theme_stylebox_override("panel", _style_normal)
 
 func _update_vis_display():
+	if !is_instance_valid(sprite):
+		return
 	if sprite.visible:
 		_vis_btn.text = "●"
 		_vis_btn.add_theme_color_override("font_color", Color(0.5, 0.78, 0.5))
@@ -198,6 +200,8 @@ func _draw():
 		draw_line(Vector2(my_x, size.y * 0.5), Vector2(my_x, size.y), Color(0.4, 0.4, 0.48, 0.45), 1.5, true)
 
 func _process(_delta):
+	if !is_instance_valid(sprite):
+		return
 	var is_selected = sprite == Global.heldSprite
 	if is_selected != _was_selected:
 		_was_selected = is_selected

@@ -1070,11 +1070,35 @@ func _on_load_dialog_file_selected(path):
 		return
 
 	Global.heldSprite = null
+	# Hide the old avatar immediately so it doesn't linger on screen during load
+	origin.visible = false
 	origin.queue_free()
 	var new = Node2D.new()
+	# Match the position onWindowSizeChange() will set later — otherwise panCamera()
+	# would re-center the camera on (0,0) every frame and the UI would visibly drift
+	new.position = get_viewport().get_visible_rect().size * 0.5
+	# Keep the new avatar hidden while sprites stream in
+	new.visible = false
 	$OriginMotion.add_child(new)
 	origin = new
-	
+
+	var _load_total = 0
+	for _it in data:
+		if _it == "_light":
+			continue
+		_load_total += 1
+	var _load_done = 0
+	var _load_dialog: Node2D = null
+	var _load_bar: ProgressBar = null
+	if _load_total > 0:
+		_load_dialog = _create_progress_dialog("Loading avatar...")
+		add_child(_load_dialog)
+		_load_bar = _load_dialog.get_node("ProgressBar")
+		# Force one frame so the dialog actually paints before the load work begins
+		# (otherwise a fast load can finish before any of the throttled yields fire)
+		await get_tree().process_frame
+	var _last_yield_ms = Time.get_ticks_msec()
+
 	for item in data:
 		if item == "_light":
 			continue
@@ -1142,7 +1166,29 @@ func _on_load_dialog_file_selected(path):
 
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
-	
+		# No physics ticks until the avatar is revealed
+		sprite.set_process(false)
+
+		_load_done += 1
+		if _load_dialog != null:
+			_load_bar.value = float(_load_done) / float(_load_total)
+			_load_dialog.position = camera.position
+			# Cap yields at ~2 Hz so the bar animates without significant load overhead
+			if Time.get_ticks_msec() - _last_yield_ms >= 500 or _load_done == _load_total:
+				_last_yield_ms = Time.get_ticks_msec()
+				await get_tree().process_frame
+
+	# Hold on 100% briefly so the bar's completion state is visible before reveal
+	await get_tree().create_timer(0.3).timeout
+
+	if _load_dialog != null:
+		_load_dialog.queue_free()
+
+	# Reveal the finished avatar and re-enable physics on its sprites
+	origin.visible = true
+	for spr in get_tree().get_nodes_in_group("saved"):
+		spr.set_process(true)
+
 	# Re-create light gizmo on new origin
 	_create_light_gizmo()
 	if data.has("_light"):
@@ -1183,6 +1229,9 @@ func _on_load_dialog_file_selected(path):
 	ndi_mark_dirty()
 
 func _create_save_progress_dialog() -> Node2D:
+	return _create_progress_dialog("Saving avatar...")
+
+func _create_progress_dialog(status_text: String) -> Node2D:
 	var dialog = Node2D.new()
 	dialog.z_index = 4095
 	dialog.visibility_layer = 2
@@ -1200,7 +1249,7 @@ func _create_save_progress_dialog() -> Node2D:
 	label.position = Vector2(-150, -40)
 	label.size = Vector2(300, 24)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = "Saving avatar..."
+	label.text = status_text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dialog.add_child(label)
 

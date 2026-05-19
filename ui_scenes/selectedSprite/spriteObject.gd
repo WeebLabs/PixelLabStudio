@@ -43,6 +43,7 @@ var z = 0
 #Movement
 var heldTicks = 0
 var dragSpeed = 0
+var _force_drag_snap: bool = true
 
 
 #Origin
@@ -246,6 +247,8 @@ func _ready():
 			nodes[0].sprite.add_child(self)
 			parentSprite = nodes[0]
 			set_owner(nodes[0].sprite)
+			# Reparent changed our global transform — re-snap the top_level dragger
+			_force_drag_snap = true
 		else:
 			parentId = null
 			parentSprite = null
@@ -361,12 +364,14 @@ func _process(delta):
 	var glob = dragger.global_position
 	if ignoreBounce:
 		glob.y -= Global.main.bounceChange
-	
+
+	# A snap-frame teleports the dragger; don't let that feed stretch/rotation
+	var did_snap = _force_drag_snap
 	drag(delta)
 	wobble()
-	
-	var length = (glob.y - dragger.global_position.y)
-	
+
+	var length = 0.0 if did_snap else (glob.y - dragger.global_position.y)
+
 	rotationalDrag(length,delta)
 	stretch(length,delta)
 	
@@ -539,6 +544,11 @@ func snapOriginToMouse():
 	grabArea.position = (size * -0.5) + offset
 
 func drag(delta):
+	if _force_drag_snap:
+		_force_drag_snap = false
+		dragger.global_position = wob.global_position
+		dragOrigin.global_position = dragger.global_position
+		return
 	if dragSpeed == 0:
 		dragger.global_position = wob.global_position
 	else:
