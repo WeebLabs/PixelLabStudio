@@ -224,10 +224,14 @@ func _ready():
 	
 	size = imageData.get_size()
 	grabArea.position = size*-0.5
-	
+
 	sprite.offset = offset
-	
+
 	grabArea.position = (size*-0.5) + offset
+
+	# Selection overlays are off by default; _process toggles them on for the held sprite
+	grabArea.visible = false
+	originSprite.visible = false
 	
 	changeFrames()
 	setZIndex()

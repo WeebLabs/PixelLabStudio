@@ -1077,8 +1077,11 @@ func _on_load_dialog_file_selected(path):
 	# Match the position onWindowSizeChange() will set later — otherwise panCamera()
 	# would re-center the camera on (0,0) every frame and the UI would visibly drift
 	new.position = get_viewport().get_visible_rect().size * 0.5
-	# Keep the new avatar hidden while sprites stream in
+	# Keep the new avatar hidden while sprites stream in (and start transparent for fade-in)
+	# Premult-alpha sprites need RGB and A scaled together — fading via modulate.a alone
+	# leaves RGB at full brightness and the avatar reads as too bright mid-fade
 	new.visible = false
+	new.modulate = Color(0, 0, 0, 0)
 	$OriginMotion.add_child(new)
 	origin = new
 
@@ -1178,30 +1181,36 @@ func _on_load_dialog_file_selected(path):
 				_last_yield_ms = Time.get_ticks_msec()
 				await get_tree().process_frame
 
+	# Do all the heavy post-load setup while the avatar is still hidden and the bar is
+	# at 100% — this keeps the upcoming fade-in free of frame stutters
+	_create_light_gizmo()
+	if data.has("_light"):
+		_apply_light_data(data["_light"])
+
+	# Pre-enable physics so the first-tick snap (drag/wobble) happens during the
+	# dialog hold, not mid-fade
+	for spr in get_tree().get_nodes_in_group("saved"):
+		spr.set_process(true)
+
+	changeCostume(1)
+	Saving.settings["lastAvatar"] = path
+	await Global.spriteList.updateData()
+
+	onWindowSizeChange()
+	ndi_mark_dirty()
+
 	# Hold on 100% briefly so the bar's completion state is visible before reveal
 	await get_tree().create_timer(0.3).timeout
 
 	if _load_dialog != null:
 		_load_dialog.queue_free()
 
-	# Reveal the finished avatar and re-enable physics on its sprites
-	origin.visible = true
-	for spr in get_tree().get_nodes_in_group("saved"):
-		spr.set_process(true)
-
-	# Re-create light gizmo on new origin
-	_create_light_gizmo()
-	if data.has("_light"):
-		_apply_light_data(data["_light"])
-
-	changeCostume(1)
-	Saving.settings["lastAvatar"] = path
-	Global.spriteList.updateData()
-
 	Global.pushUpdate("Loaded avatar at: " + path)
 
-	onWindowSizeChange()
-	ndi_mark_dirty()
+	# Reveal the finished avatar and fade it in — scale RGB and A together for premult-alpha
+	origin.visible = true
+	var fade = create_tween()
+	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
 
 	# Auto-detect NDI reference layer after sprites finish loading/reparenting
 	await get_tree().create_timer(1.0).timeout
