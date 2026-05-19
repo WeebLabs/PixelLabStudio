@@ -1234,6 +1234,9 @@ func _on_load_dialog_file_selected(path):
 			if data[item].has("normalImageData"):
 				sprite.loadedNormalData = data[item]["normalImageData"]
 
+		# Reparent is done synchronously below — don't fire the per-sprite 0.1s timer cascade
+		sprite._skip_ready_reparent = true
+
 		origin.add_child(sprite)
 		sprite.position = str_to_var(data[item]["pos"])
 		# No physics ticks until the avatar is revealed
@@ -1244,36 +1247,40 @@ func _on_load_dialog_file_selected(path):
 	_load_data_ref = null
 	_load_results = []
 
-	# Do all the heavy post-load setup while the avatar is still hidden and the bar is
+	# Single pass over every spawned sprite:
+	#   - reparent to declared parent (replaces the per-sprite 0.1s _ready timer cascade)
+	#   - pre-warm remakePolygon for animated sprites (so first-tick rebuild is a no-op)
+	#   - re-enable physics so the first _process tick (drag snap, wobble) lands before reveal
+	for spr in get_tree().get_nodes_in_group("saved"):
+		if spr.parentId != null:
+			var parents = get_tree().get_nodes_in_group(str(spr.parentId))
+			if parents.size() > 0:
+				spr.get_parent().remove_child(spr)
+				parents[0].sprite.add_child(spr)
+				spr.parentSprite = parents[0]
+				spr.set_owner(parents[0].sprite)
+				spr._force_drag_snap = true
+			else:
+				spr.parentId = null
+				spr.parentSprite = null
+		if spr.frames > 1:
+			spr.remakePolygon()
+		spr.set_process(true)
+
+	# Do remaining heavy post-load setup while the avatar is still hidden and the bar is
 	# at 100% — this keeps the upcoming fade-in free of frame stutters
 	_create_light_gizmo()
 	if data.has("_light"):
 		_apply_light_data(data["_light"])
-
-	# Pre-enable physics so the first-tick snap (drag/wobble) happens during the
-	# dialog hold, not mid-fade
-	for spr in get_tree().get_nodes_in_group("saved"):
-		spr.set_process(true)
 
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
 	await Global.spriteList.updateData()
 
 	onWindowSizeChange()
-	ndi_mark_dirty()
 
-	if _load_dialog != null:
-		_load_dialog.queue_free()
-
-	Global.pushUpdate("Loaded avatar at: " + path)
-
-	# Reveal the finished avatar and fade it in — scale RGB and A together for premult-alpha
-	origin.visible = true
-	var fade = create_tween()
-	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
-
-	# Auto-detect NDI reference layer after sprites finish loading/reparenting
-	await get_tree().create_timer(1.0).timeout
+	# NDI reference auto-detect: now that all sprites are parented correctly we can
+	# pick the ref layer here, behind the progress bar, instead of via a T+1s timer
 	var has_ref = false
 	for spr in get_tree().get_nodes_in_group("saved"):
 		if spr.ndiRefLayer:
@@ -1295,7 +1302,21 @@ func _on_load_dialog_file_selected(path):
 					break
 			if found:
 				break
-	ndi_mark_dirty()
+
+	# Force the NDI viewport's framing recomputation synchronously now instead of
+	# waiting for the 1s debounce — eliminates the framing hitch ~1s after reveal
+	if ndi_manager != null:
+		ndi_manager.recalculate_now()
+
+	if _load_dialog != null:
+		_load_dialog.queue_free()
+
+	Global.pushUpdate("Loaded avatar at: " + path)
+
+	# Reveal the finished avatar and fade it in — scale RGB and A together for premult-alpha
+	origin.visible = true
+	var fade = create_tween()
+	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
 
 func _create_save_progress_dialog() -> Node2D:
 	return _create_progress_dialog("Saving avatar...")

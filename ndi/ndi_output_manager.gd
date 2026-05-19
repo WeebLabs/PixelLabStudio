@@ -111,6 +111,15 @@ func mark_dirty():
 func _on_debounce_timeout():
 	_dirty = true
 
+# Cancel any pending debounce and run framing recomputation synchronously now.
+# Used by the avatar load path so the work happens behind the progress bar
+# instead of as a hitch ~1 second after the avatar appears.
+func recalculate_now():
+	_debounce_timer.stop()
+	_dirty = false
+	if _enabled and ndi_viewport != null:
+		_recalculate_framing()
+
 func _create_ndi_pipeline():
 	if ndi_viewport != null:
 		return

@@ -247,20 +247,24 @@ func _ready():
 	
 	
 	add_to_group(str(id))
-	await get_tree().create_timer(0.1).timeout
-	if parentId != null and not _skip_ready_reparent:
-		var nodes = get_tree().get_nodes_in_group(str(parentId))
-		if nodes.size() > 0:
-			get_parent().remove_child(self)
-			nodes[0].sprite.add_child(self)
-			parentSprite = nodes[0]
-			set_owner(nodes[0].sprite)
-			# Reparent changed our global transform — re-snap the top_level dragger
-			_force_drag_snap = true
-		else:
-			parentId = null
-			parentSprite = null
-	
+
+	# Avatar load handles reparenting synchronously and sets _skip_ready_reparent,
+	# so we don't need to suspend on a timer that does nothing afterwards
+	if not _skip_ready_reparent:
+		await get_tree().create_timer(0.1).timeout
+		if parentId != null:
+			var nodes = get_tree().get_nodes_in_group(str(parentId))
+			if nodes.size() > 0:
+				get_parent().remove_child(self)
+				nodes[0].sprite.add_child(self)
+				parentSprite = nodes[0]
+				set_owner(nodes[0].sprite)
+				# Reparent changed our global transform — re-snap the top_level dragger
+				_force_drag_snap = true
+			else:
+				parentId = null
+				parentSprite = null
+
 	setClip(clipped)
 	
 	
