@@ -216,12 +216,13 @@ func _ready():
 		var collider = CollisionPolygon2D.new()
 		collider.polygon = polygon
 		grabArea.add_child(collider)
-		
+
 		var outline = outlineScene.instantiate()
 		outline.points = polygon
 		outline.add_point(outline.points[0])
+		outline.visibility_layer = 2
 		grabArea.add_child(outline)
-	
+
 	size = imageData.get_size()
 	grabArea.position = size*-0.5
 
@@ -229,9 +230,12 @@ func _ready():
 
 	grabArea.position = (size*-0.5) + offset
 
-	# Selection overlays are off by default; _process toggles them on for the held sprite
+	# Selection overlays are off by default; _process toggles them on for the held sprite.
+	# Layer 2 keeps them on the main camera but out of the NDI camera's cull mask.
 	grabArea.visible = false
+	grabArea.visibility_layer = 2
 	originSprite.visible = false
+	originSprite.visibility_layer = 2
 	
 	changeFrames()
 	setZIndex()
@@ -298,10 +302,11 @@ func replaceSprite(pathNew):
 		var collider = CollisionPolygon2D.new()
 		collider.polygon = polygon
 		grabArea.add_child(collider)
-	
+
 		var outline = outlineScene.instantiate()
 		outline.points = polygon
 		outline.add_point(outline.points[0])
+		outline.visibility_layer = 2
 		grabArea.add_child(outline)
 	size = imageData.get_size()
 
@@ -340,6 +345,7 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 		var outline = outlineScene.instantiate()
 		outline.points = polygon
 		outline.add_point(outline.points[0])
+		outline.visibility_layer = 2
 		grabArea.add_child(outline)
 
 	size = imageData.get_size()
@@ -414,6 +420,9 @@ func talkBlink():
 	var yes = [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value))
 	var a = max(int(yes),faded)
 	sprite.self_modulate = Color(a, a, a, a)
+	# When the sprite is only showing because of the edit-mode faded preview, render
+	# it on layer 2 so the NDI camera (layer 1 only) doesn't pick up the preview frame.
+	sprite.visibility_layer = 2 if (!yes and faded > 0) else 1
 
 func blinkAnimation():
 	if showOnBlink != 3 or frames <= 1:
@@ -617,6 +626,7 @@ func remakePolygon():
 	
 	var p = imageSize.y * 0.5
 	var outline = outlineScene.instantiate()
+	outline.visibility_layer = 2
 	outline.add_point(Vector2(-p,-p))
 	outline.add_point(Vector2(p,-p))
 	outline.add_point(Vector2(p,p))
