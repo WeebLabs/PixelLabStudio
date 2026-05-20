@@ -199,7 +199,9 @@ func _get_opaque_rect_local(sprite_obj) -> Rect2:
 	var img = sprite_obj.imageData
 	if img == null:
 		return Rect2()
-	var used = img.get_used_rect()
+	# Cached: get_used_rect() scans every pixel; calling it once per sprite per recalc
+	# would block the main thread on large avatars
+	var used = sprite_obj.get_image_used_rect()
 	if used.size.x == 0 or used.size.y == 0:
 		return Rect2()
 	var tex_size = Vector2(img.get_size())

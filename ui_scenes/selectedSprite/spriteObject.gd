@@ -76,6 +76,19 @@ var stretchAmount = 0.0
 var ignoreBounce = false
 var staticElement = false
 
+# Cache of imageData.get_used_rect() — set lazily, invalidated when image changes.
+# Image.get_used_rect() scans every pixel, so per-frame NDI framing recomputation
+# was paying that cost N times for an N-sprite avatar.
+var _cached_used_rect: Rect2i = Rect2i(0, 0, -1, -1)
+
+func get_image_used_rect() -> Rect2i:
+	if _cached_used_rect.size.x < 0 and imageData != null:
+		_cached_used_rect = imageData.get_used_rect()
+	return _cached_used_rect
+
+func invalidate_used_rect_cache():
+	_cached_used_rect = Rect2i(0, 0, -1, -1)
+
 #Eye Tracking
 var eyeTrack = false
 var eyeTrackDistance = 20.0
@@ -284,6 +297,7 @@ func replaceSprite(pathNew):
 	path = pathNew
 
 	imageData = img
+	invalidate_used_rect_cache()
 	tex = _make_premultiplied_texture(img)
 
 	# Clear normal if new diffuse has different dimensions
@@ -325,6 +339,7 @@ func replaceSprite(pathNew):
 func replaceSpriteFromData(img: Image, layer_name: String):
 	path = "psd://" + layer_name
 	imageData = img
+	invalidate_used_rect_cache()
 	tex = _make_premultiplied_texture(img)
 
 	# Clear normal if new diffuse has different dimensions
