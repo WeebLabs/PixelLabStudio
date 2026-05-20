@@ -74,6 +74,7 @@ var stretchAmount = 0.0
 
 #Ignore Bounce
 var ignoreBounce = false
+var staticElement = false
 
 #Eye Tracking
 var eyeTrack = false
@@ -375,19 +376,40 @@ func _process(delta):
 		grabArea.visible = false
 		originSprite.visible = false
 	
-	var glob = dragger.global_position
-	if ignoreBounce:
-		glob.y -= Global.main.bounceChange
+	if staticElement:
+		# Follow drag, wobble, rotation, and stretch as normal — but cancel the
+		# avatar-wide bounce by lerping the dragger toward the un-bounced wob
+		# position instead of the bounced one.
+		wobble()
+		var bounce_offset = Global.main.origin.get_parent().position
+		var target = wob.global_position - bounce_offset
+		var glob = dragger.global_position
+		var did_snap = _force_drag_snap
+		if did_snap:
+			_force_drag_snap = false
+			dragger.global_position = target
+		elif dragSpeed == 0:
+			dragger.global_position = target
+		else:
+			dragger.global_position = lerp(dragger.global_position, target, 1.0 / float(dragSpeed))
+		dragOrigin.global_position = dragger.global_position
+		var length = 0.0 if did_snap else (glob.y - dragger.global_position.y)
+		rotationalDrag(length, delta)
+		stretch(length, delta)
+	else:
+		var glob = dragger.global_position
+		if ignoreBounce:
+			glob.y -= Global.main.bounceChange
 
-	# A snap-frame teleports the dragger; don't let that feed stretch/rotation
-	var did_snap = _force_drag_snap
-	drag(delta)
-	wobble()
+		# A snap-frame teleports the dragger; don't let that feed stretch/rotation
+		var did_snap = _force_drag_snap
+		drag(delta)
+		wobble()
 
-	var length = 0.0 if did_snap else (glob.y - dragger.global_position.y)
+		var length = 0.0 if did_snap else (glob.y - dragger.global_position.y)
 
-	rotationalDrag(length,delta)
-	stretch(length,delta)
+		rotationalDrag(length,delta)
+		stretch(length,delta)
 	
 	if grabDelay > 0:
 		grabDelay -= 1

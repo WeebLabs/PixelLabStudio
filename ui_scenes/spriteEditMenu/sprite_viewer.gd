@@ -108,6 +108,18 @@ func _ready():
 	Global.make_slider_resettable($RotationalLimits/rotLimitMax, 180)
 	Global.make_slider_resettable($Animation/animSpeed, 0)
 	Global.make_slider_resettable($Animation/animFrames, 1)
+	# Static-element toggle — sits directly beneath ClipLinked in $Buttons.
+	# When on, the sprite ignores all bounce/drag/wobble/rotation/stretch.
+	var static_check = CheckBox.new()
+	static_check.name = "StaticElement"
+	static_check.text = "Static element"
+	static_check.offset_left = $Buttons/ClipLinked.offset_left
+	static_check.offset_top = $Buttons/ClipLinked.offset_bottom - 5
+	static_check.offset_right = $Buttons/ClipLinked.offset_right
+	static_check.offset_bottom = static_check.offset_top + 31
+	$Buttons.add_child(static_check)
+	static_check.toggled.connect(_on_static_element_toggled)
+
 	var ndi_ref_check = CheckBox.new()
 	ndi_ref_check.name = "NdiRefLayer"
 	ndi_ref_check.text = "NDI reference layer"
@@ -119,7 +131,7 @@ func _ready():
 	_buttons = [
 		$Buttons/Speaking/speaking, $Buttons/Blinking/blinking,
 		$Buttons/Trash/trash, $Buttons/Unlink/unlink,
-		$Buttons/CheckBox, $Buttons/ClipLinked, ndi_ref_check,
+		$Buttons/CheckBox, $Buttons/ClipLinked, static_check, ndi_ref_check,
 	]
 	# Sections to dim when no sprite is selected
 	_sections = [
@@ -455,6 +467,7 @@ func setImage():
 
 	$Buttons/CheckBox.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
 	$Buttons/ClipLinked.set_pressed_no_signal(Global.heldSprite.clipped)
+	$Buttons/StaticElement.set_pressed_no_signal(Global.heldSprite.staticElement)
 	$Buttons/NdiRefLayer.set_pressed_no_signal(Global.heldSprite.ndiRefLayer)
 
 	$Animation/animSpeedLabel.text = "animation speed: " + str(Global.heldSprite.animSpeed)
@@ -833,6 +846,15 @@ func _on_clip_linked_toggled(button_pressed):
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	Global.heldSprite.setClip(button_pressed)
+
+
+func _on_static_element_toggled(button_pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.staticElement = button_pressed
+	# Re-snap the dragger when toggling off so physics resumes from the rest pose
+	if not button_pressed:
+		Global.heldSprite._force_drag_snap = true
 
 
 func _on_delete_pressed():

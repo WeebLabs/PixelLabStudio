@@ -1202,6 +1202,8 @@ func _on_load_dialog_file_selected(path):
 			sprite.stretchAmount = data[item]["stretchAmount"]
 		if data[item].has("ignoreBounce"):
 			sprite.ignoreBounce = data[item]["ignoreBounce"]
+		if data[item].has("staticElement"):
+			sprite.staticElement = data[item]["staticElement"]
 		if data[item].has("frames"):
 			sprite.frames = data[item]["frames"]
 		if data[item].has("animSpeed"):
@@ -1806,6 +1808,7 @@ func _on_save_dialog_file_selected(path):
 			data[id]["stretchAmount"] = child.stretchAmount
 
 			data[id]["ignoreBounce"] = child.ignoreBounce
+			data[id]["staticElement"] = child.staticElement
 
 			data[id]["frames"] = child.frames
 			data[id]["animSpeed"] = child.animSpeed

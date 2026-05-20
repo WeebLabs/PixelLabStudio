@@ -48,6 +48,7 @@ func _snapshot() -> Dictionary:
 			data[idx]["costumeLayers"] = var_to_str(child.costumeLayers)
 			data[idx]["stretchAmount"] = child.stretchAmount
 			data[idx]["ignoreBounce"] = child.ignoreBounce
+			data[idx]["staticElement"] = child.staticElement
 			data[idx]["frames"] = child.frames
 			data[idx]["animSpeed"] = child.animSpeed
 			data[idx]["clipped"] = child.clipped
@@ -184,6 +185,8 @@ func _restore(data: Dictionary):
 			sprite.stretchAmount = d["stretchAmount"]
 		if d.has("ignoreBounce"):
 			sprite.ignoreBounce = d["ignoreBounce"]
+		if d.has("staticElement"):
+			sprite.staticElement = d["staticElement"]
 		if d.has("frames"):
 			var old_frames = sprite.frames
 			sprite.frames = d["frames"]
@@ -258,6 +261,7 @@ func _add_sprite_from_data(d: Dictionary):
 				sprite.costumeLayers.append(1)
 	if d.has("stretchAmount"): sprite.stretchAmount = d["stretchAmount"]
 	if d.has("ignoreBounce"): sprite.ignoreBounce = d["ignoreBounce"]
+	if d.has("staticElement"): sprite.staticElement = d["staticElement"]
 	if d.has("frames"): sprite.frames = d["frames"]
 	if d.has("animSpeed"): sprite.animSpeed = d["animSpeed"]
 	if d.has("imageData"): sprite.loadedImage = d["imageData"]
