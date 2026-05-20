@@ -310,6 +310,7 @@ func _create_eye_tracking():
 	_eye_dist_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 	_eye_section.add_child(_eye_dist_slider)
+	Global.make_slider_resettable(_eye_dist_slider, 20.0)
 	y += 22
 
 	_eye_speed_label = Label.new()
@@ -337,6 +338,7 @@ func _create_eye_tracking():
 	_eye_speed_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 	_eye_section.add_child(_eye_speed_slider)
+	Global.make_slider_resettable(_eye_speed_slider, 0.15)
 
 func _create_vis_toggle():
 	_divider4 = ColorRect.new()

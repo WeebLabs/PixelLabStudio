@@ -95,6 +95,19 @@ func _ready():
 		$RotationalLimits/rotLimitMin, $RotationalLimits/rotLimitMax,
 		$Animation/animSpeed, $Animation/animFrames,
 	]
+
+	# Right-click resets each sprite-property slider to spriteObject.gd's factory default
+	Global.make_slider_resettable($Slider/DragSlider, 0)
+	Global.make_slider_resettable($WobbleControl/xFrq, 0)
+	Global.make_slider_resettable($WobbleControl/xAmp, 0)
+	Global.make_slider_resettable($WobbleControl/yFrq, 0)
+	Global.make_slider_resettable($WobbleControl/yAmp, 0)
+	Global.make_slider_resettable($Rotation/rDrag, 0)
+	Global.make_slider_resettable($Rotation/squash, 0)
+	Global.make_slider_resettable($RotationalLimits/rotLimitMin, -180)
+	Global.make_slider_resettable($RotationalLimits/rotLimitMax, 180)
+	Global.make_slider_resettable($Animation/animSpeed, 0)
+	Global.make_slider_resettable($Animation/animFrames, 1)
 	var ndi_ref_check = CheckBox.new()
 	ndi_ref_check.name = "NdiRefLayer"
 	ndi_ref_check.text = "NDI reference layer"

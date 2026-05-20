@@ -66,6 +66,31 @@ var updatePusherNode = null
 
 var rand = RandomNumberGenerator.new()
 
+# Right-click a slider to reset it to its registered default. Stores the default
+# in node metadata and attaches a one-shot gui_input listener; calling again on
+# the same slider just updates the default without double-connecting.
+func make_slider_resettable(slider: Range, default_value):
+	if slider == null:
+		return
+	slider.set_meta("_reset_default", default_value)
+	if slider.has_meta("_reset_registered"):
+		return
+	slider.set_meta("_reset_registered", true)
+	slider.gui_input.connect(func(event: InputEvent):
+		if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed):
+			return
+		if not is_instance_valid(slider):
+			return
+		slider.accept_event()
+		var default = slider.get_meta("_reset_default")
+		# Skip if already at default so we don't push a redundant undo snapshot via
+		# the slider's value_changed handler
+		if is_equal_approx(slider.value, default):
+			pushUpdate("Already at default.")
+			return
+		slider.value = default
+		pushUpdate("Reset to default."))
+
 func _ready():
 	spectrum = AudioServer.get_bus_effect_instance(1, 1)
 	

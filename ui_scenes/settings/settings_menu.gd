@@ -53,6 +53,13 @@ func setvalues():
 	_build_recording_section()
 	_update_recording_ui()
 
+	# Right-click resets each slider to its factory default
+	Global.make_slider_resettable($MaxFPS/fpsDrag, 60)
+	Global.make_slider_resettable($BounceForce/bounceForce, 250)
+	Global.make_slider_resettable($BounceGravity/bounceGravity, 1000)
+	Global.make_slider_resettable($BlinkSpeed/blinkSpeed, 1)
+	Global.make_slider_resettable($BlinkChance/blinkChance, 200)
+
 	var costumeLabels = [$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton1/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton2/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton3/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton4/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton5/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton6/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton7/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton8/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton9/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton10/Label,]
 	var tag = 1
 	for label in costumeLabels:

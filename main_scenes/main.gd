@@ -215,6 +215,10 @@ func _style_control_sliders():
 		s.add_theme_constant_override("grabber_offset", 0)
 		s.add_theme_constant_override("center_grabber", 1)
 
+	# Right-click resets to factory defaults from autoload/saving.gd
+	Global.make_slider_resettable($ControlPanel/volumeSlider, 0.185)
+	Global.make_slider_resettable($ControlPanel/sensitiveSlider, 0.25)
+
 	# Align sliders vertically with their meter bars, and inset horizontally by the
 	# grabber radius so the disc stops at each end of the bar instead of overshooting
 	$ControlPanel/volumeSlider.offset_top = -40

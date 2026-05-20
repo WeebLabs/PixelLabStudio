@@ -85,7 +85,7 @@ func _restore(data: Dictionary):
 
 	var snapshot_ids = {}
 	for item in data:
-		if item == "_light":
+		if str(item) == "_light":
 			continue
 		snapshot_ids[data[item]["identification"]] = true
 
@@ -115,7 +115,7 @@ func _restore(data: Dictionary):
 
 	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
 	for item in data:
-		if item == "_light":
+		if str(item) == "_light":
 			continue
 		var d = data[item]
 		if !current_ids.has(d["identification"]):
@@ -125,7 +125,7 @@ func _restore(data: Dictionary):
 	# 3. Update existing sprites' properties and reparent if needed
 	var reparented = false
 	for item in data:
-		if item == "_light":
+		if str(item) == "_light":
 			continue
 		var d = data[item]
 		var sprite = current_ids.get(d["identification"])
@@ -280,7 +280,7 @@ func _restore_full(data: Dictionary):
 	_image_cache.clear()
 	_normal_cache.clear()
 	for item in data:
-		if item == "_light":
+		if str(item) == "_light":
 			continue
 		if data[item].has("imageData"):
 			_image_cache[data[item]["identification"]] = data[item]["imageData"]
@@ -294,7 +294,7 @@ func _restore_full(data: Dictionary):
 	main.origin = new_origin
 
 	for item in data:
-		if item == "_light":
+		if str(item) == "_light":
 			continue
 		_add_sprite_from_data(data[item])
 
