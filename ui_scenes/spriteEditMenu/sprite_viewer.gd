@@ -191,7 +191,7 @@ func _ready():
 	$Position/fileTitle.visible = false
 
 	# Restyle checkboxes
-	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked]:
+	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked, $Buttons/StaticElement]:
 		cb.add_theme_font_size_override("font_size", 12)
 		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 
@@ -238,11 +238,17 @@ func _ready():
 	for node in [$Position, $Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
 		node.position.y += _nrml_shift
 
+	# Extra clearance beneath the new StaticElement checkbox so the divider and Wobble
+	# section don't clip into it
+	const STATIC_CHECKBOX_PUSH = 20
+	for node in [$WobbleControl, $RotationalLimits]:
+		node.position.y += STATIC_CHECKBOX_PUSH
+
 	# Add section dividers
 	_create_divider(141 + _nrml_shift)   # between Normal row and Position Info
 	_create_divider(274 + _nrml_shift)   # between Position Info and Animation
-	_create_divider(564 + _nrml_shift)   # between Buttons/Checkboxes and Wobble
-	_create_divider(773 + _nrml_shift)   # between Wobble and Rotational Limits circle
+	_create_divider(564 + _nrml_shift + STATIC_CHECKBOX_PUSH)   # between Buttons/Checkboxes and Wobble
+	_create_divider(773 + _nrml_shift + STATIC_CHECKBOX_PUSH)   # between Wobble and Rotational Limits circle
 
 	_replace_rot_display_textures()
 
