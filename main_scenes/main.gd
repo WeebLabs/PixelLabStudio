@@ -417,8 +417,16 @@ func onWindowSizeChange():
 		return
 	Saving.settings["windowSize"] = var_to_str(get_window().size)
 	var s = get_viewport().get_visible_rect().size
+	var prev_origin = origin.position
 	origin.position = s*0.5
-	
+	# Sprites are children of `origin`; when origin teleports here their
+	# global positions jump too. Snap each sprite's drag/stretch physics so
+	# the next-frame position delta isn't fed into wobble/stretch (which
+	# otherwise scales them wildly when the window is resized or panned).
+	if origin.position != prev_origin:
+		for spr in get_tree().get_nodes_in_group("saved"):
+			spr._force_drag_snap = true
+
 	lines.position = s*0.5
 	lines.drawLine()
 	
