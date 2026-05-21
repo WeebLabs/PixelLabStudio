@@ -16,8 +16,10 @@ var panel_height: float = 630
 const MIN_WIDTH = 310
 const MAX_WIDTH_RATIO = 0.25
 const GRAB_MARGIN = 6
-const DIVIDER_MARGIN = 6
 const CONTROLS_ROW_HEIGHT = 32
+
+# Spacing constants live on Global so both sidebars share one source of truth.
+# Tune Global.UI_ROW_GAP / UI_DIVIDER_PAD to reflow every panel that uses them.
 
 var _bg: ColorRect
 var _divider1: ColorRect
@@ -116,6 +118,12 @@ func _ready():
 	_create_costume_buttons()
 	_create_eye_tracking()
 	_create_vis_toggle()
+
+	# Restore saved sidebar width before the first _apply_size() so all
+	# resizable elements pick up the user's preference on startup.
+	var saved_w = Saving.settings.get("rightSidebarWidth", panel_width)
+	var max_w = get_viewport().get_visible_rect().size.x * MAX_WIDTH_RATIO
+	panel_width = clamp(saved_w, MIN_WIDTH, max_w)
 	_apply_size()
 
 func _create_controls():
@@ -214,7 +222,7 @@ func _create_eye_tracking():
 	# accumulators — VBox handles vertical stacking, HBox handles horizontal.
 	# Width is set in _apply_size; height is auto-fit from children.
 	_eye_section = VBoxContainer.new()
-	_eye_section.add_theme_constant_override("separation", 8)
+	_eye_section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
 	add_child(_eye_section)
 
 	var label_color = Color(0.75, 0.75, 0.8)
@@ -388,7 +396,7 @@ func _create_vis_toggle():
 
 	# Section is a VBoxContainer with a header row and a control row inside.
 	_vis_toggle_section = VBoxContainer.new()
-	_vis_toggle_section.add_theme_constant_override("separation", 4)
+	_vis_toggle_section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
 	add_child(_vis_toggle_section)
 
 	var label_color = Color(0.75, 0.75, 0.8)
@@ -438,59 +446,65 @@ func _apply_size():
 	_bg.position = Vector2(-4, -4)
 	_bg.size = Vector2(panel_width + 8, panel_height + 8)
 
-	# Top controls — HBox auto-arranges; we just give it the full panel width
-	# and let alignment=CENTER do the rest.
-	_controls.position = Vector2(0, 0)
-	_controls.size = Vector2(panel_width, CONTROLS_ROW_HEIGHT)
-	_divider1.position = Vector2(8, CONTROLS_ROW_HEIGHT + 4)
-	_divider1.size.x = panel_width - 16
+	var section_width = panel_width - 20
+	var section_x = (panel_width - section_width) / 2.0
 
-	# Filter field
-	var filter_top = CONTROLS_ROW_HEIGHT + 10
-	_filter_field.position = Vector2(0, filter_top)
+	# === Above the user-draggable scroll divider ===
+	# Sequential layout cursor. Every divider gets Global.UI_DIVIDER_PAD on each side;
+	# non-divider transitions use Global.UI_ROW_GAP. No more per-divider magic offsets.
+	var y = 0.0
+
+	_controls.position = Vector2(0, y)
+	_controls.size = Vector2(panel_width, CONTROLS_ROW_HEIGHT)
+	y += CONTROLS_ROW_HEIGHT
+
+	y += Global.UI_DIVIDER_PAD
+	_divider1.position = Vector2(8, y)
+	_divider1.size.x = panel_width - 16
+	y += Global.UI_DIVIDER_PAD
+
+	_filter_field.position = Vector2(0, y)
 	_filter_field.custom_minimum_size = Vector2(panel_width - 10, 24)
 	_filter_field.size = Vector2(panel_width - 10, 24)
+	y += 24 + Global.UI_ROW_GAP
 
-	# Layer list scroll area
-	var scroll_top = filter_top + 28
-	var scroll_bottom = panel_height * _divider_ratio
-	$ScrollContainer.offset_top = scroll_top
+	$ScrollContainer.offset_top = y
 	$ScrollContainer.offset_right = panel_width - 10
-	$ScrollContainer.offset_bottom = scroll_bottom
 	container.custom_minimum_size.x = panel_width - 20
+	var scroll_bottom = panel_height * _divider_ratio
+	$ScrollContainer.offset_bottom = scroll_bottom
 
-	# Draggable divider (between list and costume)
-	_divider2.position = Vector2(8, scroll_bottom + DIVIDER_MARGIN)
+	# === Draggable scroll divider (centered between scroll and costume) ===
+	y = scroll_bottom + Global.UI_DIVIDER_PAD
+	_divider2.position = Vector2(8, y)
 	_divider2.size.x = panel_width - 16
+	y += Global.UI_DIVIDER_PAD
 
-	# Costume buttons — HBox auto-arranges; centered by alignment=CENTER
-	var costume_y = scroll_bottom + DIVIDER_MARGIN * 2 + 4
-	_costume_section.position = Vector2(0, costume_y)
-	_costume_section.size = Vector2(panel_width, 28)
+	# === Below the draggable divider ===
+	_costume_section.position = Vector2(0, y)
+	_costume_section.size = Vector2(panel_width,
+		_costume_section.get_combined_minimum_size().y)
+	y += _costume_section.size.y
 
-	# Divider between costume and eye tracking
-	var costume_bottom = costume_y + 36
-	_divider3.position = Vector2(8, costume_bottom + 4)
+	y += Global.UI_DIVIDER_PAD
+	_divider3.position = Vector2(8, y)
 	_divider3.size.x = panel_width - 16
+	y += Global.UI_DIVIDER_PAD
 
-	# Eye tracking + visibility-toggle sections — now driven by VBoxContainer
-	# auto-layout. We just place the top-left corner and set the width; both
-	# sections auto-size to their content height, and the row HBoxes inside
-	# distribute children using size flags.
-	var eye_ctrl_width = panel_width - 20
-	var eye_center_x = (panel_width - eye_ctrl_width) / 2.0
-	_eye_section.position = Vector2(eye_center_x, costume_bottom + 14)
-	_eye_section.size = Vector2(eye_ctrl_width, _eye_section.get_combined_minimum_size().y)
+	_eye_section.position = Vector2(section_x, y)
+	_eye_section.size = Vector2(section_width, _eye_section.get_combined_minimum_size().y)
+	y += _eye_section.size.y
 
-	# Place divider and vis-toggle section based on the eye section's actual
-	# laid-out bottom edge — no more hardcoded "+110+32" magic numbers.
-	var eye_bottom_y = _eye_section.position.y + _eye_section.size.y
-	_divider4.position = Vector2(8, eye_bottom_y + 10)
+	y += Global.UI_DIVIDER_PAD
+	_divider4.position = Vector2(8, y)
 	_divider4.size.x = panel_width - 16
-	_vis_toggle_section.position = Vector2(eye_center_x, eye_bottom_y + 18)
-	_vis_toggle_section.size = Vector2(eye_ctrl_width, _vis_toggle_section.get_combined_minimum_size().y)
+	y += Global.UI_DIVIDER_PAD
 
-	# Collision area
+	_vis_toggle_section.position = Vector2(section_x, y)
+	_vis_toggle_section.size = Vector2(section_width,
+		_vis_toggle_section.get_combined_minimum_size().y)
+
+	# Collision area + sidebar anchor
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
 	$Area2D2/CollisionShape2D.position = Vector2(panel_width / 2.0, panel_height / 2.0)
 	position.x = s.x - (panel_width + 3)
@@ -1006,7 +1020,9 @@ func _is_on_left_edge(local: Vector2) -> bool:
 	return true
 
 func _is_on_divider(local: Vector2) -> bool:
-	var divider_y = panel_height * _divider_ratio + DIVIDER_MARGIN
+	# Divider2 lives Global.UI_DIVIDER_PAD below the scroll bottom (= panel_height * _divider_ratio).
+	# Must match the position set in _apply_size().
+	var divider_y = panel_height * _divider_ratio + Global.UI_DIVIDER_PAD
 	if abs(local.y - divider_y) > GRAB_MARGIN:
 		return false
 	if local.x < 0 or local.x > panel_width:
@@ -1036,6 +1052,8 @@ func _input(event):
 		else:
 			if _dragging:
 				_dragging = false
+				Saving.settings["rightSidebarWidth"] = panel_width
+				Saving.write_settings(Saving.settingsPath)
 				get_viewport().set_input_as_handled()
 			if _divider_dragging:
 				_divider_dragging = false

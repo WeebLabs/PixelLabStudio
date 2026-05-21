@@ -64,6 +64,8 @@ var settings = {
 	"ndiRulerY":200.0,
 	"recordingFormat":"webm",
 	"recordingFPS":30,
+	"leftSidebarWidth":265,
+	"rightSidebarWidth":310,
 }
 
 var settingsPath = "user://settings.pngtp"

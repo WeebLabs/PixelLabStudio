@@ -1,5 +1,12 @@
 extends Node
 
+# Shared UI layout constants used by both sidebar panels. ROW_GAP is the
+# baseline vertical distance between adjacent widgets; DIVIDER_PAD is the
+# padding on EACH side of a divider line. Tuning either reflows every panel
+# that uses them, so the two sidebars (and any future panels) stay in sync.
+const UI_ROW_GAP = 8
+const UI_DIVIDER_PAD = 12
+
 #Global Node Reference
 var main = null
 var spriteEdit = null

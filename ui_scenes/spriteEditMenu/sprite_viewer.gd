@@ -13,14 +13,8 @@ var _bg: ColorRect
 var panel_width: float = 265
 var panel_height: float = 630
 
-# Layout constants — single source of truth for all spacing in this panel.
-# ROW_GAP is the baseline vertical distance between every adjacent widget,
-# and between adjacent sections that aren't separated by a divider. DIVIDER_PAD
-# is the padding on each side of a divider, used only at section boundaries
-# that have one — so a divider visibly breathes without affecting any other
-# gap in the panel.
-const ROW_GAP = 8                  # widget→widget, and section→section without divider
-const DIVIDER_PAD = 12             # vertical padding on EACH side of a divider line
+# Spacing constants live on Global so both sidebars share one source of truth.
+# Tune Global.UI_ROW_GAP / UI_DIVIDER_PAD to reflow every panel that uses them.
 const ROT_RADIUS = 105.0           # rotation-circle visualization radius at full panel width
 const ROT_CONTROLS_GAP = 20.0      # gap between the circle and the min/max label rows
 const DEFAULT_PANEL_WIDTH = 265.0  # baseline; preview & rotation circle scale down below this
@@ -245,7 +239,7 @@ func _ready():
 	# the container's bottom is auto-computed and feeds the divider below.
 	_buttons_vbox = VBoxContainer.new()
 	_buttons_vbox.name = "ButtonsVBox"
-	_buttons_vbox.add_theme_constant_override("separation", ROW_GAP)
+	_buttons_vbox.add_theme_constant_override("separation", Global.UI_ROW_GAP)
 	_buttons_vbox.position = Vector2(5, 523)
 	_buttons_vbox.size = Vector2(212, 0)  # height auto-fits below
 	_resizables.append([_buttons_vbox, panel_width - _buttons_vbox.size.x])
@@ -423,6 +417,12 @@ func _ready():
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
 	move_child(_bg, 0)
+
+	# Restore saved sidebar width before the first _apply_size() so every
+	# resizable element gets sized to the user's preference on startup.
+	var saved_w = Saving.settings.get("leftSidebarWidth", panel_width)
+	var max_w = get_viewport().get_visible_rect().size.x * MAX_PANEL_WIDTH_RATIO
+	panel_width = clamp(saved_w, MIN_PANEL_WIDTH, max_w)
 	_apply_size()
 
 func _set_controls_enabled(enabled: bool):
@@ -658,8 +658,8 @@ func _place_section(section: Node2D, content: Control, y: float):
 	section.position.y = y - content.position.y
 
 # Single sequential layout pass for the whole panel. Non-divider transitions
-# (within a section, or between dividerless sections) use ROW_GAP. Section
-# boundaries marked with a divider use DIVIDER_PAD on each side of the divider
+# (within a section, or between dividerless sections) use Global.UI_ROW_GAP. Section
+# boundaries marked with a divider use Global.UI_DIVIDER_PAD on each side of the divider
 # instead, so the divider has visible breathing room without affecting any
 # other gap. No other pixel constants.
 func _layout_panel():
@@ -686,11 +686,11 @@ func _layout_panel():
 		var content: Control = entry[1]
 		var divider_above: bool = entry[2]
 		if divider_above:
-			y += DIVIDER_PAD
+			y += Global.UI_DIVIDER_PAD
 			_create_divider(y)
-			y += DIVIDER_PAD
+			y += Global.UI_DIVIDER_PAD
 		else:
-			y += ROW_GAP
+			y += Global.UI_ROW_GAP
 		if section == null:
 			content.position.y = y
 		else:
@@ -705,7 +705,7 @@ func _build_section_vbox(section: Node, pos: Vector2, vbox_width: float, widgets
 	var vbox = VBoxContainer.new()
 	vbox.name = "VBox"
 	# Uniform per-row spacing across every section in the panel.
-	vbox.add_theme_constant_override("separation", ROW_GAP)
+	vbox.add_theme_constant_override("separation", Global.UI_ROW_GAP)
 	vbox.position = pos
 	vbox.size = Vector2(vbox_width, 0)  # height auto-fits to children
 	section.add_child(vbox)
@@ -793,6 +793,8 @@ func _input(event):
 		else:
 			if _resize_dragging:
 				_resize_dragging = false
+				Saving.settings["leftSidebarWidth"] = panel_width
+				Saving.write_settings(Saving.settingsPath)
 				get_viewport().set_input_as_handled()
 				return
 
