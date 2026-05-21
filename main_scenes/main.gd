@@ -1134,7 +1134,8 @@ func _on_load_dialog_file_selected(path):
 	# Build ordered key list (skip non-sprite metadata)
 	_load_keys = []
 	for _it in data:
-		if _it == "_light":
+		var _it_s = str(_it)
+		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled":
 			continue
 		_load_keys.append(_it)
 	var _load_total = _load_keys.size()
@@ -1220,6 +1221,10 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackSpeed = data[item]["eyeTrackSpeed"]
 		if data[item].has("eyeTrackInvert"):
 			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
+		if data[item].has("eyeTrackMode"):
+			sprite.eyeTrackMode = data[item]["eyeTrackMode"]
+		if data[item].has("eyeTrackTargetId"):
+			sprite.eyeTrackTargetId = data[item]["eyeTrackTargetId"]
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
 		if data[item].has("normalPath"):
@@ -1278,6 +1283,9 @@ func _on_load_dialog_file_selected(path):
 	_create_light_gizmo()
 	if data.has("_light"):
 		_apply_light_data(data["_light"])
+
+	# Restore the global eye-tracking kill switch (legacy avatars default to on)
+	Global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
 
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
@@ -1821,6 +1829,8 @@ func _on_save_dialog_file_selected(path):
 			data[id]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[id]["eyeTrackSpeed"] = child.eyeTrackSpeed
 			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
+			data[id]["eyeTrackMode"] = child.eyeTrackMode
+			data[id]["eyeTrackTargetId"] = child.eyeTrackTargetId
 			data[id]["ndiRefLayer"] = child.ndiRefLayer
 
 			data[id]["normalPath"] = child.normalPath
@@ -1838,6 +1848,9 @@ func _on_save_dialog_file_selected(path):
 			"range": _light_gizmo.light_range,
 			"enabled": _light_gizmo.light_enabled
 		}
+
+	# Save the global eye-tracking kill switch
+	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
 
 	Saving.settings["lastAvatar"] = path
 
@@ -2232,6 +2245,8 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrackDistance = Global.heldSprite.eyeTrackDistance
 	sprite.eyeTrackSpeed = Global.heldSprite.eyeTrackSpeed
 	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
+	sprite.eyeTrackMode = Global.heldSprite.eyeTrackMode
+	sprite.eyeTrackTargetId = Global.heldSprite.eyeTrackTargetId
 
 	origin.add_child(sprite)
 

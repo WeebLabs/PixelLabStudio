@@ -94,6 +94,8 @@ var eyeTrack = false
 var eyeTrackDistance = 20.0
 var eyeTrackSpeed = 0.15
 var eyeTrackInvert = false
+var eyeTrackMode = 0  # 0 = cursor, 1 = layer
+var eyeTrackTargetId = null  # int sprite id when eyeTrackMode == 1
 var _eyeTrackOffset = Vector2.ZERO
 
 #Blink Animation
@@ -616,10 +618,25 @@ func wobble():
 	wob.position.x = sin(tick*xFrq)*xAmp
 	wob.position.y = sin(tick*yFrq)*yAmp
 
-	if eyeTrack and not (Global.main.editMode and Global.heldSprite == self):
-		var cursor_pos = Global.cursorWorldPos
+	# Look-at target: either the cursor (mode 0) or another sprite's live position (mode 1).
+	# Global.eyeTrackingGloballyEnabled is the kill switch from global-scope UI; sprite-level
+	# eyeTrack flag is the per-sprite enable. Both must be on to track.
+	var target_world_pos = Vector2.ZERO
+	var have_target = false
+	if eyeTrack and Global.eyeTrackingGloballyEnabled and not (Global.main.editMode and Global.heldSprite == self):
+		if eyeTrackMode == 1:
+			if eyeTrackTargetId != null:
+				var nodes = get_tree().get_nodes_in_group(str(eyeTrackTargetId))
+				if nodes.size() > 0 and nodes[0] != self:
+					target_world_pos = nodes[0].global_position
+					have_target = true
+		else:
+			target_world_pos = Global.cursorWorldPos
+			have_target = true
+
+	if have_target:
 		var rest_pos = global_position
-		var direction = cursor_pos - rest_pos
+		var direction = target_world_pos - rest_pos
 		if eyeTrackInvert:
 			direction = -direction
 		var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)

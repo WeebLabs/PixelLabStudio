@@ -16,6 +16,14 @@ var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 var _image_cache: Dictionary = {}
 var _normal_cache: Dictionary = {}
 
+# Snapshot dicts mix integer sprite-id keys with a handful of special string
+# keys ("_light", "_eyeTrackingGloballyEnabled"). Iteration sites that operate
+# only on sprite entries must skip these. Comparison via str() because int
+# vs String == raises in Godot 4 GDScript.
+func _is_meta_key(item) -> bool:
+	var s = str(item)
+	return s == "_light" or s == "_eyeTrackingGloballyEnabled"
+
 func _snapshot() -> Dictionary:
 	var data = {}
 	var nodes = get_tree().get_nodes_in_group("saved")
@@ -57,6 +65,8 @@ func _snapshot() -> Dictionary:
 			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
 			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
 			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
+			data[idx]["eyeTrackMode"] = child.eyeTrackMode
+			data[idx]["eyeTrackTargetId"] = child.eyeTrackTargetId
 
 			if child.normalImageData != null:
 				if !_normal_cache.has(child.id):
@@ -76,6 +86,9 @@ func _snapshot() -> Dictionary:
 			"enabled": g.light_enabled
 		}
 
+	# Global eye-tracking kill switch
+	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
+
 	return data
 
 func _restore(data: Dictionary):
@@ -86,7 +99,7 @@ func _restore(data: Dictionary):
 
 	var snapshot_ids = {}
 	for item in data:
-		if str(item) == "_light":
+		if _is_meta_key(item):
 			continue
 		snapshot_ids[data[item]["identification"]] = true
 
@@ -116,7 +129,7 @@ func _restore(data: Dictionary):
 
 	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
 	for item in data:
-		if str(item) == "_light":
+		if _is_meta_key(item):
 			continue
 		var d = data[item]
 		if !current_ids.has(d["identification"]):
@@ -126,7 +139,7 @@ func _restore(data: Dictionary):
 	# 3. Update existing sprites' properties and reparent if needed
 	var reparented = false
 	for item in data:
-		if str(item) == "_light":
+		if _is_meta_key(item):
 			continue
 		var d = data[item]
 		var sprite = current_ids.get(d["identification"])
@@ -206,6 +219,10 @@ func _restore(data: Dictionary):
 			sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
 		if d.has("eyeTrackInvert"):
 			sprite.eyeTrackInvert = d["eyeTrackInvert"]
+		if d.has("eyeTrackMode"):
+			sprite.eyeTrackMode = d["eyeTrackMode"]
+		if d.has("eyeTrackTargetId"):
+			sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
 
 		if d.has("normalImageData") and d["normalImageData"] != null:
 			if sprite.normalImageData != d["normalImageData"]:
@@ -235,6 +252,10 @@ func _restore(data: Dictionary):
 	# Restore light gizmo
 	if data.has("_light") and Global.main and Global.main._light_gizmo:
 		Global.main._apply_light_data(data["_light"])
+
+	# Restore global eye-tracking kill switch
+	if data.has("_eyeTrackingGloballyEnabled"):
+		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
 # Instantiate a single sprite from snapshot data and add to origin.
 func _add_sprite_from_data(d: Dictionary):
@@ -271,6 +292,8 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
 	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
 	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
+	if d.has("eyeTrackMode"): sprite.eyeTrackMode = d["eyeTrackMode"]
+	if d.has("eyeTrackTargetId"): sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
 	if d.has("normalImageData") and d["normalImageData"] != null:
 		sprite.loadedNormalImage = d["normalImageData"]
 		sprite.normalPath = d.get("normalPath", "")
@@ -284,7 +307,7 @@ func _restore_full(data: Dictionary):
 	_image_cache.clear()
 	_normal_cache.clear()
 	for item in data:
-		if str(item) == "_light":
+		if _is_meta_key(item):
 			continue
 		if data[item].has("imageData"):
 			_image_cache[data[item]["identification"]] = data[item]["imageData"]
@@ -298,7 +321,7 @@ func _restore_full(data: Dictionary):
 	main.origin = new_origin
 
 	for item in data:
-		if str(item) == "_light":
+		if _is_meta_key(item):
 			continue
 		_add_sprite_from_data(data[item])
 
@@ -306,6 +329,10 @@ func _restore_full(data: Dictionary):
 	main._create_light_gizmo()
 	if data.has("_light"):
 		main._apply_light_data(data["_light"])
+
+	# Restore global eye-tracking kill switch
+	if data.has("_eyeTrackingGloballyEnabled"):
+		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
 	Global.main.changeCostume(Global.main.costume)
 	Global.spriteList.updateData()

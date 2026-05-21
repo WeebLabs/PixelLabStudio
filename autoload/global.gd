@@ -31,6 +31,19 @@ var lastArray = []
 var i = 0
 
 var reparentMode = false
+
+# Eye-tracking layer pick mode: active while the user is whip-picking a target
+# layer for the held sprite's eye tracking. Source sprite is captured at pick start.
+var eyeTrackPickMode: bool = false
+var eyeTrackPickSource = null
+# When true, the next picked sprite broadcasts to every sprite with eyeTrack on.
+# When false, only eyeTrackPickSource is assigned.
+var eyeTrackPickBroadcast: bool = false
+
+# Global kill switch for eye tracking. Toggled from the eye section's enable
+# checkbox while in global scope (no sprite selected, ≥1 sprite has eyeTrack on).
+# Sprite-level eyeTrack flags are never modified by this switch.
+var eyeTrackingGloballyEnabled: bool = true
 var originMode = false
 var awaitingToggleBind = false
 var _origin_press_time = 0
@@ -192,7 +205,7 @@ func _process(delta):
 	if main.editMode:
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color(0.18, 0.25, 0.35))
-		elif originMode:
+		elif originMode or eyeTrackPickMode:
 			RenderingServer.set_default_clear_color(Color(0.25, 0.18, 0.3))
 		else:
 			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))
@@ -390,6 +403,11 @@ func _input(event):
 			pushUpdate("Linking cancelled.")
 			get_viewport().set_input_as_handled()
 			return
+		if eyeTrackPickMode:
+			_clear_eye_track_pick()
+			pushUpdate("Eye target pick cancelled.")
+			get_viewport().set_input_as_handled()
+			return
 	if !Input.is_action_pressed("control"):
 		# Skip scroll accumulation when cursor is over the left sidebar
 		if event is InputEventMouseButton:
@@ -402,14 +420,22 @@ func _input(event):
 			_scroll_input -= 1
 
 func select(areas):
-	
+
 	if main.fileSystemOpen:
 		return
-	
+
 	for area in areas:
 		if area.is_in_group("penis"):
 			return
-	
+
+	# Eye-track pick mode consumes the click; empty clicks are a no-op so the user
+	# doesn't accidentally deselect the source sprite mid-pick. Right-click cancels.
+	if eyeTrackPickMode:
+		if areas.size() > 0:
+			var picked = areas[0].get_parent().get_parent().get_parent()
+			_finish_eye_track_pick(picked)
+		return
+
 	var prevSpr = heldSprite
 	if areas.size() <= 0:
 		heldSprite = null
@@ -449,6 +475,46 @@ func select(areas):
 	lastArray = areas.duplicate()
 	
 	spriteEdit.setImage()
+
+func _finish_eye_track_pick(target):
+	if target == null or (not eyeTrackPickBroadcast and eyeTrackPickSource == null):
+		_clear_eye_track_pick()
+		return
+	if not eyeTrackPickBroadcast and target == eyeTrackPickSource:
+		pushUpdate("A sprite can't eye-track itself.")
+		_clear_eye_track_pick()
+		return
+	UndoManager.save_state()
+	if eyeTrackPickBroadcast:
+		var assigned = 0
+		for spr in get_tree().get_nodes_in_group("saved"):
+			if spr.eyeTrack and spr != target:
+				spr.eyeTrackTargetId = target.id
+				assigned += 1
+		pushUpdate("Eye target set on " + str(assigned) + " layer(s).")
+	else:
+		eyeTrackPickSource.eyeTrackTargetId = target.id
+		pushUpdate("Eye target set to \"" + target.path.get_file() + "\".")
+	_flash_pink(target)
+	_clear_eye_track_pick()
+	if spriteList != null:
+		spriteList.refreshEyeUI()
+
+# Brief pink flash on a sprite — used to confirm an eye-track target pick.
+# Color matches the layer panel's slider fill so the visual cue is consistent.
+func _flash_pink(target):
+	if not is_instance_valid(target):
+		return
+	target.modulate = Color(1.0, 0.7, 0.8)
+	var tween = create_tween()
+	tween.tween_property(target, "modulate", Color.WHITE, 0.4)
+
+func _clear_eye_track_pick():
+	eyeTrackPickMode = false
+	eyeTrackPickSource = null
+	eyeTrackPickBroadcast = false
+	if spriteList != null:
+		spriteList.refreshEyePickWhip()
 
 func linkSprite(sprite,newParent):
 	if sprite == newParent:

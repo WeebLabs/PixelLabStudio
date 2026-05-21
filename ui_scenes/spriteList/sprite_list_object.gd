@@ -14,6 +14,7 @@ var _thumbnail: TextureRect
 var _name_label: Label
 var _vis_btn: Button
 var _normal_badge: Label
+var _eye_target_badge: Label
 var _indent_spacer: Control
 var _hovered = false
 var _was_selected = false
@@ -100,6 +101,18 @@ func _ready():
 	_normal_badge.visible = sprite.hasNormalMap()
 	hbox.add_child(_normal_badge)
 
+	# Eye-tracking target indicator (shown when any other sprite has this one as target)
+	_eye_target_badge = Label.new()
+	_eye_target_badge.text = "👁"
+	_eye_target_badge.add_theme_font_size_override("font_size", 11)
+	_eye_target_badge.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
+	_eye_target_badge.custom_minimum_size = Vector2(16, 14)
+	_eye_target_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_eye_target_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_eye_target_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_eye_target_badge.visible = false
+	hbox.add_child(_eye_target_badge)
+
 	# Visibility toggle — pinned to right edge
 	_vis_btn = Button.new()
 	_vis_btn.flat = true
@@ -175,6 +188,12 @@ func _gui_input(event: InputEvent):
 		accept_event()
 
 func _select():
+	# Eye-tracking pick mode: consume the click as a target assignment, don't
+	# change selection.
+	if Global.eyeTrackPickMode:
+		Global._finish_eye_track_pick(sprite)
+		return
+
 	if Global.heldSprite != null and Global.reparentMode:
 		UndoManager.save_state()
 		Global.linkSprite(Global.heldSprite, sprite)
@@ -207,6 +226,13 @@ func _process(_delta):
 		_was_selected = is_selected
 		_update_style()
 	_normal_badge.visible = sprite.hasNormalMap()
+	_eye_target_badge.visible = _is_eye_track_target()
+
+func _is_eye_track_target() -> bool:
+	for spr in get_tree().get_nodes_in_group("saved"):
+		if spr.eyeTrackMode == 1 and spr.eyeTrackTargetId == sprite.id:
+			return true
+	return false
 
 func updateChildren():
 	if childrenTags.size() > 0:

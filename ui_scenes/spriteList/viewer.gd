@@ -41,12 +41,20 @@ var _eye_dist_slider: HSlider
 var _eye_speed_label: Label
 var _eye_speed_slider: HSlider
 var _eye_invert: CheckBox
+var _eye_mode_option: OptionButton
+var _eye_pick_btn: Button
+var _eye_whip_line: Line2D
+var _eye_mode_tooltip_label: Label
+var _eye_mode_tooltip_timer: Timer
 
 var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
 var _slider_enabled_state: bool = true
+# Tracks the previous _eye_scope() result so we only reset values to neutral
+# on transitions into a scope, not on every per-frame refresh.
+var _prev_eye_scope: String = ""
 
 var _vis_toggle_section: Node2D
 var _vis_toggle_btn: Button
@@ -265,6 +273,79 @@ func _create_eye_tracking():
 
 	y += 32
 
+	# Mode dropdown + (conditional) pick button beside it. Pick sits flush right
+	# of the dropdown, both 22px tall sharing the same row.
+	const PICK_BTN_WIDTH = 50
+	const PICK_BTN_GAP = 2
+	var mode_label = Label.new()
+	mode_label.text = "mode:"
+	mode_label.add_theme_font_size_override("font_size", 12)
+	mode_label.add_theme_color_override("font_color", label_color)
+	mode_label.position = Vector2(ctrl_left, y + 3)
+	_eye_section.add_child(mode_label)
+
+	_eye_mode_option = OptionButton.new()
+	_eye_mode_option.add_item("Cursor", 0)
+	_eye_mode_option.add_item("Layer", 1)
+	_eye_mode_option.add_theme_font_size_override("font_size", 12)
+	_eye_mode_option.position = Vector2(ctrl_left + 44, y)
+	_eye_mode_option.size = Vector2(ctrl_width - 44 - PICK_BTN_WIDTH - PICK_BTN_GAP, 22)
+	_eye_mode_option.item_selected.connect(_on_eye_track_mode_selected)
+	_eye_mode_option.mouse_entered.connect(_on_eye_mode_option_hover)
+	_eye_mode_option.mouse_exited.connect(_on_eye_mode_option_unhover)
+	# Right-click while in Layer mode clears the target; Cursor mode no-op so
+	# accidental right-clicks don't trash unrelated state.
+	_eye_mode_option.gui_input.connect(_on_eye_mode_option_gui_input)
+	_eye_section.add_child(_eye_mode_option)
+
+	# Custom hover tooltip — shows the full target name after a 2s dwell, since
+	# Godot's built-in tooltip delay is global (0.5s) and not per-control.
+	_eye_mode_tooltip_label = Label.new()
+	_eye_mode_tooltip_label.add_theme_font_size_override("font_size", 12)
+	_eye_mode_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.95, 1))
+	var tip_bg = StyleBoxFlat.new()
+	tip_bg.bg_color = Color(0.1, 0.1, 0.12, 0.95)
+	tip_bg.content_margin_left = 6
+	tip_bg.content_margin_right = 6
+	tip_bg.content_margin_top = 3
+	tip_bg.content_margin_bottom = 3
+	tip_bg.set_corner_radius_all(3)
+	_eye_mode_tooltip_label.add_theme_stylebox_override("normal", tip_bg)
+	_eye_mode_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_eye_mode_tooltip_label.visible = false
+	_eye_mode_tooltip_label.z_index = 4095
+	add_child(_eye_mode_tooltip_label)
+
+	_eye_mode_tooltip_timer = Timer.new()
+	_eye_mode_tooltip_timer.one_shot = true
+	_eye_mode_tooltip_timer.wait_time = 2.0
+	_eye_mode_tooltip_timer.timeout.connect(_on_eye_mode_tooltip_show)
+	add_child(_eye_mode_tooltip_timer)
+
+	_eye_pick_btn = Button.new()
+	_eye_pick_btn.text = "Pick"
+	_eye_pick_btn.flat = true
+	_eye_pick_btn.add_theme_font_size_override("font_size", 12)
+	_eye_pick_btn.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	_eye_pick_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	# Flush right of the dropdown, slight nudge (-2, -4) so the button text
+	# visually centers against the dropdown rather than its render rect.
+	_eye_pick_btn.position = Vector2(ctrl_left + 44 + (ctrl_width - 44 - PICK_BTN_WIDTH - PICK_BTN_GAP) + PICK_BTN_GAP - 4, y - 4)
+	_eye_pick_btn.size = Vector2(PICK_BTN_WIDTH, 22)
+	_eye_pick_btn.pressed.connect(_on_eye_track_pick_pressed)
+	_eye_pick_btn.visible = false
+	_eye_section.add_child(_eye_pick_btn)
+
+	y += 32
+
+	# Whip line — invisible until pick mode is active; draws from anchor to cursor
+	_eye_whip_line = Line2D.new()
+	_eye_whip_line.width = 2.0
+	_eye_whip_line.default_color = Color(1.0, 0.85, 0.35, 0.9)
+	_eye_whip_line.visible = false
+	_eye_whip_line.z_index = 4090
+	add_child(_eye_whip_line)
+
 	_eye_dist_label = Label.new()
 	_eye_dist_label.text = "tracking distance: 20.0"
 	_eye_dist_label.add_theme_font_size_override("font_size", 12)
@@ -443,8 +524,10 @@ func _apply_size():
 	_eye_invert.position.x = eye_ctrl_width / 2
 	_eye_invert.size.x = eye_ctrl_width / 2
 
-	# Visibility Toggle section (below eye tracking)
-	var eye_bottom = costume_bottom + 14 + 110
+	# Visibility Toggle section (below eye tracking).
+	# +32 covers the new "mode" row plus the extra padding above (between toggle
+	# row and dropdown) and below (between dropdown and tracking-distance label).
+	var eye_bottom = costume_bottom + 14 + 110 + 32
 	_divider4.position = Vector2(8, eye_bottom + 4)
 	_divider4.size.x = panel_width - 16
 	_vis_toggle_section.position = Vector2(eye_center_x, eye_bottom + 14)
@@ -456,6 +539,12 @@ func _apply_size():
 	position.x = s.x - (panel_width + 3)
 
 func _process(_delta):
+	# Whip line follows the cursor while pick mode is active
+	refreshEyePickWhip()
+	# Keep eye-tracking section in sync with the current scope. Cheap: a single
+	# group iteration when no sprite is selected, no-op otherwise.
+	refreshEyeUI()
+
 	var no_sprite = Global.heldSprite == null
 	var dim = Color(0.3, 0.3, 0.35)
 	var normal = Color(1, 1, 1)
@@ -476,11 +565,8 @@ func _process(_delta):
 		btn.modulate = dim if no_sprite else normal
 	_costume_select.visible = !no_sprite
 
-	# Eye tracking
-	_eye_toggle.disabled = no_sprite
-	_eye_dist_slider.editable = !no_sprite
-	_eye_speed_slider.editable = !no_sprite
-	_eye_invert.disabled = no_sprite
+	# Eye-tracking control enable/disable is handled by refreshEyeUI() above
+	# based on scope (per_layer / global / dead); don't blanket-disable here.
 
 	# Visibility Toggle
 	_vis_toggle_btn.disabled = no_sprite
@@ -490,8 +576,9 @@ func _process(_delta):
 	elif not Global.awaitingToggleBind:
 		_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 
-	# Swap slider styles when enabled state changes
-	var slider_should_enable = !no_sprite
+	# Swap slider styles to "enabled" appearance whenever the eye-tracking
+	# scope is interactive (per_layer or global), "disabled" only in dead scope.
+	var slider_should_enable = _prev_eye_scope != "dead"
 	if slider_should_enable != _slider_enabled_state:
 		_slider_enabled_state = slider_should_enable
 		var fill = _slider_fill_enabled if slider_should_enable else _slider_fill_disabled
@@ -536,6 +623,7 @@ func scroll_to_sprite(target_sprite):
 
 func updateControls():
 	if Global.heldSprite == null:
+		refreshEyeUI()
 		return
 	_eye_toggle.set_pressed_no_signal(Global.heldSprite.eyeTrack)
 	_eye_dist_label.text = "tracking distance: " + str(Global.heldSprite.eyeTrackDistance)
@@ -544,6 +632,7 @@ func updateControls():
 	_eye_speed_slider.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
 	_eye_invert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
 	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
+	refreshEyeUI()
 
 # --- Top control handlers ---
 
@@ -603,30 +692,322 @@ func _on_costume_btn_pressed(index: int):
 # --- Eye tracking handlers ---
 
 func _on_eye_track_toggled(pressed):
-	if Global.heldSprite == null:
-		return
-	UndoManager.save_state()
-	Global.heldSprite.eyeTrack = pressed
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state()
+		Global.heldSprite.eyeTrack = pressed
+	elif scope == "global":
+		# Global scope: this is the kill switch, NOT a per-sprite toggle.
+		# Per-sprite eyeTrack flags stay exactly as they are.
+		UndoManager.save_state()
+		Global.eyeTrackingGloballyEnabled = pressed
 
 func _on_eye_track_dist_changed(value):
-	if Global.heldSprite == null:
-		return
-	UndoManager.save_state_continuous()
-	_eye_dist_label.text = "tracking distance: " + str(value)
-	Global.heldSprite.eyeTrackDistance = value
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state_continuous()
+		_eye_dist_label.text = "tracking distance: " + str(value)
+		Global.heldSprite.eyeTrackDistance = value
+	elif scope == "global":
+		UndoManager.save_state_continuous()
+		_eye_dist_label.text = "tracking distance: " + str(value)
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackDistance = value
 
 func _on_eye_track_speed_changed(value):
-	if Global.heldSprite == null:
-		return
-	UndoManager.save_state_continuous()
-	_eye_speed_label.text = "tracking speed: " + str(value)
-	Global.heldSprite.eyeTrackSpeed = value
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state_continuous()
+		_eye_speed_label.text = "tracking speed: " + str(value)
+		Global.heldSprite.eyeTrackSpeed = value
+	elif scope == "global":
+		UndoManager.save_state_continuous()
+		_eye_speed_label.text = "tracking speed: " + str(value)
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackSpeed = value
+
+# --- Scope helpers ---
+# Eye-tracking controls operate in one of three scopes:
+#   "per_layer" — a sprite is selected; everything edits that sprite
+#   "global"    — no selection but ≥1 sprite has eyeTrack on; controls broadcast
+#                 to every eyeTrack-on sprite; enable checkbox toggles the global
+#                 kill switch (Global.eyeTrackingGloballyEnabled) without
+#                 touching per-sprite eyeTrack flags
+#   "dead"      — no selection and no sprite has eyeTrack on; all disabled
+
+func _eye_scope() -> String:
+	if Global.heldSprite != null:
+		return "per_layer"
+	for spr in get_tree().get_nodes_in_group("saved"):
+		if spr.eyeTrack:
+			return "global"
+	return "dead"
+
+func _eye_tracked_sprites() -> Array:
+	var out = []
+	for spr in get_tree().get_nodes_in_group("saved"):
+		if spr.eyeTrack:
+			out.append(spr)
+	return out
+
+# --- Eye tracking handlers (scope-aware) ---
 
 func _on_eye_track_invert_toggled(pressed):
-	if Global.heldSprite == null:
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state()
+		Global.heldSprite.eyeTrackInvert = pressed
+	elif scope == "global":
+		UndoManager.save_state()
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackInvert = pressed
+
+func _on_eye_track_mode_selected(idx):
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state()
+		Global.heldSprite.eyeTrackMode = idx
+	elif scope == "global":
+		UndoManager.save_state()
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackMode = idx
+	# Switching mode while a pick is in progress cancels the pick
+	if Global.eyeTrackPickMode:
+		Global._clear_eye_track_pick()
+	refreshEyeUI()
+
+func _on_eye_track_pick_pressed():
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		Global.eyeTrackPickMode = true
+		Global.eyeTrackPickSource = Global.heldSprite
+		Global.eyeTrackPickBroadcast = false
+		Global.pushUpdate("Click a layer to track (right-click to cancel).")
+	elif scope == "global":
+		Global.eyeTrackPickMode = true
+		Global.eyeTrackPickSource = null
+		Global.eyeTrackPickBroadcast = true
+		Global.pushUpdate("Click a layer to broadcast as target (right-click to cancel).")
+	refreshEyePickWhip()
+
+func _on_eye_track_target_clear():
+	# No-op if there's nothing to clear (avoids spurious undo snapshots)
+	if _full_eye_target_name() == "":
 		return
-	UndoManager.save_state()
-	Global.heldSprite.eyeTrackInvert = pressed
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state()
+		Global.heldSprite.eyeTrackTargetId = null
+	elif scope == "global":
+		UndoManager.save_state()
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackTargetId = null
+	refreshEyeUI()
+
+# Right-click on the mode dropdown: in Layer mode, clear the picked target.
+# In Cursor mode, do nothing so a stray right-click doesn't lose state the
+# user can't see while Cursor is selected.
+func _on_eye_mode_option_gui_input(event: InputEvent):
+	if not (event is InputEventMouseButton):
+		return
+	if event.button_index != MOUSE_BUTTON_RIGHT or not event.pressed:
+		return
+	if _eye_mode_option.selected != 1:
+		return
+	_eye_mode_option.accept_event()
+	_on_eye_track_target_clear()
+
+# Sync the eye-track UI state to the current scope. Called from _process so the
+# scope re-evaluates as the user toggles things, plus from updateControls() on
+# selection change for an immediate refresh. Tracks scope transitions so
+# global-scope values reset to neutral only on first entry, not every frame.
+func refreshEyeUI():
+	var scope = _eye_scope()
+	var transitioned = scope != _prev_eye_scope
+	_prev_eye_scope = scope
+	if scope == "per_layer":
+		_refresh_eye_ui_per_layer()
+	elif scope == "global":
+		_refresh_eye_ui_global(transitioned)
+	else:
+		_refresh_eye_ui_dead()
+
+func _refresh_eye_ui_per_layer():
+	var spr = Global.heldSprite
+	_eye_toggle.disabled = false
+	_eye_toggle.set_pressed_no_signal(spr.eyeTrack)
+	_eye_mode_option.disabled = false
+	_eye_mode_option.selected = spr.eyeTrackMode
+	_eye_invert.disabled = false
+	_eye_invert.set_pressed_no_signal(spr.eyeTrackInvert)
+	_eye_dist_slider.editable = true
+	_eye_speed_slider.editable = true
+	_eye_dist_slider.set_value_no_signal(spr.eyeTrackDistance)
+	_eye_speed_slider.set_value_no_signal(spr.eyeTrackSpeed)
+	_eye_dist_label.text = "tracking distance: " + str(spr.eyeTrackDistance)
+	_eye_speed_label.text = "tracking speed: " + str(spr.eyeTrackSpeed)
+	var layer_mode = spr.eyeTrackMode == 1
+	_eye_pick_btn.visible = layer_mode
+	_eye_pick_btn.disabled = false
+	# Layer-item text shows the target name (truncated) when one is picked.
+	# Right-clicking the dropdown in Layer mode clears the target.
+	_update_layer_item_label()
+
+func _refresh_eye_ui_global(_reset_values: bool):
+	# Enable checkbox reflects the global kill switch (interactable, NOT per-sprite)
+	_eye_toggle.disabled = false
+	_eye_toggle.set_pressed_no_signal(Global.eyeTrackingGloballyEnabled)
+	_eye_mode_option.disabled = false
+	_eye_invert.disabled = false
+	_eye_dist_slider.editable = true
+	_eye_speed_slider.editable = true
+
+	# Always sync the UI to the agreed state across eye-tracking sprites. This
+	# avoids drift where the dropdown lies about the actual per-sprite mode
+	# (e.g. sprites at Layer but UI stuck on Cursor from an old "reset on
+	# transition" code path). When sprites disagree, fall back to neutral.
+	var agreed_mode = _agreed_eye_value("eyeTrackMode")
+	var agreed_invert = _agreed_eye_value("eyeTrackInvert")
+	var agreed_dist = _agreed_eye_value("eyeTrackDistance")
+	var agreed_speed = _agreed_eye_value("eyeTrackSpeed")
+	_eye_mode_option.selected = (agreed_mode if agreed_mode != null else 0)
+	_eye_invert.set_pressed_no_signal(agreed_invert if agreed_invert != null else false)
+	_eye_dist_slider.set_value_no_signal(agreed_dist if agreed_dist != null else _eye_dist_slider.min_value)
+	_eye_speed_slider.set_value_no_signal(agreed_speed if agreed_speed != null else _eye_speed_slider.min_value)
+
+	_eye_dist_label.text = "tracking distance: " + str(_eye_dist_slider.value)
+	_eye_speed_label.text = "tracking speed: " + str(_eye_speed_slider.value)
+	# Pick button only relevant when mode is Layer
+	_eye_pick_btn.visible = _eye_mode_option.selected == 1
+	_eye_pick_btn.disabled = false
+	# Right-clicking the dropdown in Layer mode broadcasts a clear, which restores
+	# the dropdown's "Layer" label.
+	_update_layer_item_label()
+
+# Return the value of `prop` if every eye-tracking sprite has the same value,
+# null when mixed or there are no eye-tracking sprites.
+func _agreed_eye_value(prop: String):
+	var first = true
+	var agreed = null
+	for s in get_tree().get_nodes_in_group("saved"):
+		if not s.eyeTrack:
+			continue
+		if first:
+			agreed = s.get(prop)
+			first = false
+		elif s.get(prop) != agreed:
+			return null
+	return agreed
+
+func _refresh_eye_ui_dead():
+	_eye_toggle.disabled = true
+	_eye_toggle.set_pressed_no_signal(false)
+	_eye_mode_option.disabled = true
+	_eye_mode_option.selected = 0
+	_eye_invert.disabled = true
+	_eye_invert.set_pressed_no_signal(false)
+	_eye_dist_slider.editable = false
+	_eye_speed_slider.editable = false
+	_eye_dist_slider.set_value_no_signal(_eye_dist_slider.min_value)
+	_eye_speed_slider.set_value_no_signal(_eye_speed_slider.min_value)
+	_eye_dist_label.text = "tracking distance: —"
+	_eye_speed_label.text = "tracking speed: —"
+	_eye_pick_btn.visible = false
+	_eye_mode_option.set_item_text(1, "Layer")
+
+# Resolve the eye-track target name for the current scope/state. Returns "" when
+# there's nothing single to display:
+#   per-layer scope — sprite's target if in Layer mode, else ""
+#   global scope    — broadcast target if every eyeTrack sprite shares the same
+#                     non-null targetId (the state right after a global Pick),
+#                     else ""
+func _full_eye_target_name() -> String:
+	if Global.heldSprite != null:
+		var spr = Global.heldSprite
+		if spr.eyeTrackMode != 1 or spr.eyeTrackTargetId == null:
+			return ""
+		var nodes = get_tree().get_nodes_in_group(str(spr.eyeTrackTargetId))
+		if nodes.size() == 0:
+			return ""
+		return _display_target_name(nodes[0])
+
+	# Global scope: only show a name if every eye-tracking sprite points at the
+	# same target. Mixed targets or any null target → no unambiguous label.
+	var target_id = null
+	var initialized = false
+	for s in get_tree().get_nodes_in_group("saved"):
+		if not s.eyeTrack:
+			continue
+		if not initialized:
+			target_id = s.eyeTrackTargetId
+			initialized = true
+		elif s.eyeTrackTargetId != target_id:
+			return ""
+	if not initialized or target_id == null:
+		return ""
+	var t_nodes = get_tree().get_nodes_in_group(str(target_id))
+	if t_nodes.size() == 0:
+		return ""
+	return _display_target_name(t_nodes[0])
+
+# Update the dropdown's "Layer" item text to show the target name (truncated to
+# 8 chars + ellipsis) when one is set in per-layer scope. Reverts to "Layer"
+# in all other cases.
+func _update_layer_item_label():
+	var full = _full_eye_target_name()
+	if full == "":
+		_eye_mode_option.set_item_text(1, "Layer")
+		return
+	var truncated = full if full.length() <= 8 else full.substr(0, 8) + "…"
+	_eye_mode_option.set_item_text(1, truncated)
+
+func _on_eye_mode_option_hover():
+	if _full_eye_target_name() == "":
+		return
+	_eye_mode_tooltip_timer.start()
+
+func _on_eye_mode_option_unhover():
+	_eye_mode_tooltip_timer.stop()
+	if _eye_mode_tooltip_label != null:
+		_eye_mode_tooltip_label.visible = false
+
+func _on_eye_mode_tooltip_show():
+	var full = _full_eye_target_name()
+	if full == "":
+		return
+	_eye_mode_tooltip_label.text = full
+	# Position just below the dropdown
+	_eye_mode_tooltip_label.position = _eye_section.position + _eye_mode_option.position + Vector2(0, _eye_mode_option.size.y + 4)
+	_eye_mode_tooltip_label.visible = true
+
+func _display_target_name(target_sprite) -> String:
+	var p = target_sprite.path
+	if p == null:
+		return "(unnamed)"
+	var leaf = p.get_file()
+	if leaf == "":
+		leaf = p
+	# Trim file extension if present
+	var dot = leaf.rfind(".")
+	if dot > 0:
+		leaf = leaf.substr(0, dot)
+	return leaf
+
+# Update the eye-pick whip visual. Called from main.gd's _process so the line
+# follows the cursor while pick mode is active.
+func refreshEyePickWhip():
+	if _eye_whip_line == null:
+		return
+	if Global.eyeTrackPickMode and _eye_pick_btn != null and _eye_pick_btn.visible:
+		var anchor_global = _eye_pick_btn.global_position + _eye_pick_btn.size * 0.5
+		var anchor_local = to_local(anchor_global)
+		var mouse_local = to_local(get_global_mouse_position())
+		_eye_whip_line.clear_points()
+		_eye_whip_line.add_point(anchor_local)
+		_eye_whip_line.add_point(mouse_local)
+		_eye_whip_line.visible = true
+	else:
+		_eye_whip_line.visible = false
 
 # --- Visibility Toggle handlers ---
 
