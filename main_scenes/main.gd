@@ -17,7 +17,7 @@ var editMode = true
 @onready var loadDialog = $LoadDialog
 @onready var psdImportDialog = $PSDImportDialog
 
-@onready var lines = $UILayer/Lines
+@onready var lines = $Lines
 
 @onready var settingsMenu = $UILayer/ControlPanel/SettingsMenu
 
@@ -448,8 +448,10 @@ func zoomScene():
 	$UILayer/ControlPanel/ZoomLabel.modulate.a = lerp($UILayer/ControlPanel/ZoomLabel.modulate.a,0.0,0.02)
 	
 func changeZoom():
-	# Every HUD node now lives on UILayer (CanvasLayer), which doesn't inherit
-	# the camera's zoom — no scale compensation needed for any of them.
+	# HUD nodes on UILayer (CanvasLayer) don't need zoom compensation, but the
+	# crosshair Lines node is in world space (it draws through the world origin)
+	# and still needs to be scaled inversely so it stays a constant screen size.
+	lines.scale = Vector2(1.0, 1.0) / camera.zoom
 
 	$UILayer/ControlPanel/ZoomLabel.modulate.a = 6.0
 	$UILayer/ControlPanel/ZoomLabel.text = "Zoom : " + str(scaleOverall) + "%"

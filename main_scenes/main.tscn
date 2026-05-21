@@ -14202,16 +14202,16 @@ script = ExtResource("1_06alx")
 z_index = 4090
 position = Vector2(-200, -28)
 
-[node name="Lines" type="Node2D" parent="UILayer" unique_id=693934637]
+[node name="Lines" type="Node2D" parent="." unique_id=693934637]
 z_index = -4096
 z_as_relative = false
 script = ExtResource("7_2u7em")
 
-[node name="v" type="Line2D" parent="UILayer/Lines" unique_id=1174385757]
+[node name="v" type="Line2D" parent="Lines" unique_id=1174385757]
 width = 2.0
 default_color = Color(0.137255, 0.137255, 0.137255, 1)
 
-[node name="h" type="Line2D" parent="UILayer/Lines" unique_id=1971360491]
+[node name="h" type="Line2D" parent="Lines" unique_id=1971360491]
 width = 2.0
 default_color = Color(0.137255, 0.137255, 0.137255, 1)
 
