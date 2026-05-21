@@ -120,11 +120,17 @@ func _ready():
 	$Buttons.add_child(static_check)
 	static_check.toggled.connect(_on_static_element_toggled)
 
+	# NDI reference checkbox — sits directly under the static-element checkbox,
+	# matching the same overlap pattern that static_check uses against ClipLinked.
 	var ndi_ref_check = CheckBox.new()
 	ndi_ref_check.name = "NdiRefLayer"
 	ndi_ref_check.text = "NDI reference layer"
 	ndi_ref_check.add_theme_font_size_override("font_size", 12)
 	ndi_ref_check.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+	ndi_ref_check.offset_left = $Buttons/ClipLinked.offset_left
+	ndi_ref_check.offset_right = $Buttons/ClipLinked.offset_right
+	ndi_ref_check.offset_top = static_check.offset_bottom - 5
+	ndi_ref_check.offset_bottom = ndi_ref_check.offset_top + 31
 	$Buttons.add_child(ndi_ref_check)
 	ndi_ref_check.toggled.connect(_on_ndi_ref_layer_toggled)
 
@@ -191,9 +197,14 @@ func _ready():
 	$Position/fileTitle.visible = false
 
 	# Restyle checkboxes
-	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked, $Buttons/StaticElement]:
+	# Restyle the column of checkboxes. Both edges shifted left by 15 px from
+	# the prior right-aligned-to-slider layout.
+	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked, $Buttons/StaticElement, $Buttons/NdiRefLayer]:
 		cb.add_theme_font_size_override("font_size", 12)
 		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
+		cb.offset_left -= 15
+		cb.offset_right = 232 - 15
+		cb.alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 	# Normal Map section — below preview, above Position
 	var _nrml_y = 133
@@ -240,7 +251,11 @@ func _ready():
 
 	# Extra clearance beneath the new StaticElement checkbox so the divider and Wobble
 	# section don't clip into it
-	const STATIC_CHECKBOX_PUSH = 20
+	# Push the divider + Wobble/Rotational sections past the bottom of the new
+	# checkboxes (Static + NDI ref). Each adds ~26 px below ClipLinked using the
+	# same -5 overlap pattern; total ~52 px of new content, with a bit of
+	# breathing room before the divider.
+	const STATIC_CHECKBOX_PUSH = 50
 	for node in [$WobbleControl, $RotationalLimits]:
 		node.position.y += STATIC_CHECKBOX_PUSH
 
