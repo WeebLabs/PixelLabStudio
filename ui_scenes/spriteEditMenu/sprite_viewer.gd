@@ -717,10 +717,12 @@ func _build_section_vbox(section: Node, pos: Vector2, vbox_width: float, widgets
 	return vbox
 
 func _create_divider(y_pos: float) -> ColorRect:
+	# Match the section VBoxes' content frame so dividers line up with the
+	# sliders above/below them: x=11, width=panel_width-42 (= 223 at default).
 	var div = ColorRect.new()
 	div.color = Color(0.3, 0.3, 0.35)
-	div.size = Vector2(panel_width - 16, 1)
-	div.position = Vector2(8, y_pos)
+	div.size = Vector2(panel_width - 42, 1)
+	div.position = Vector2(11, y_pos)
 	div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(div)
 	_dividers.append(div)
@@ -745,7 +747,8 @@ func _apply_size():
 		if control is Container:
 			control.custom_minimum_size.x = w
 	for div in _dividers:
-		div.size.x = panel_width - 16
+		# Match the section VBoxes' content width (margin 42 = 265 - 223).
+		div.size.x = panel_width - 42
 
 	# Scale the layer preview and the rotation circle when the panel is
 	# narrower than its default; both stay at full size when wider. Both are
