@@ -14196,20 +14196,22 @@ font_size = 31
 [node name="Main" type="Node2D" unique_id=216923518]
 script = ExtResource("1_06alx")
 
-[node name="MouseCursor" parent="." unique_id=29390548 instance=ExtResource("8_fd33p")]
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="MouseCursor" parent="UILayer" unique_id=29390548 instance=ExtResource("8_fd33p")]
 z_index = 4090
 position = Vector2(-200, -28)
 
-[node name="Lines" type="Node2D" parent="." unique_id=693934637]
+[node name="Lines" type="Node2D" parent="UILayer" unique_id=693934637]
 z_index = -4096
 z_as_relative = false
 script = ExtResource("7_2u7em")
 
-[node name="v" type="Line2D" parent="Lines" unique_id=1174385757]
+[node name="v" type="Line2D" parent="UILayer/Lines" unique_id=1174385757]
 width = 2.0
 default_color = Color(0.137255, 0.137255, 0.137255, 1)
 
-[node name="h" type="Line2D" parent="Lines" unique_id=1971360491]
+[node name="h" type="Line2D" parent="UILayer/Lines" unique_id=1971360491]
 width = 2.0
 default_color = Color(0.137255, 0.137255, 0.137255, 1)
 
@@ -14218,33 +14220,33 @@ default_color = Color(0.137255, 0.137255, 0.137255, 1)
 [node name="Origin" type="Node2D" parent="OriginMotion" unique_id=1240125665]
 position = Vector2(360, 360)
 
-[node name="ControlPanel" type="Node2D" parent="." unique_id=782465269]
+[node name="ControlPanel" type="Node2D" parent="UILayer" unique_id=782465269]
 z_index = 4090
 position = Vector2(720, 720)
 script = ExtResource("4_5ygs2")
 
-[node name="MicInputSelect" type="Node2D" parent="ControlPanel" unique_id=1136518653]
+[node name="MicInputSelect" type="Node2D" parent="UILayer/ControlPanel" unique_id=1136518653]
 visible = false
 z_index = 4096
 position = Vector2(-313, -585)
 script = ExtResource("26_17y2u")
 
-[node name="ScrollContainer" type="ScrollContainer" parent="ControlPanel/MicInputSelect" unique_id=70250809]
+[node name="ScrollContainer" type="ScrollContainer" parent="UILayer/ControlPanel/MicInputSelect" unique_id=70250809]
 offset_right = 301.0
 offset_bottom = 483.0
 horizontal_scroll_mode = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="ControlPanel/MicInputSelect/ScrollContainer" unique_id=597189314]
+[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/ControlPanel/MicInputSelect/ScrollContainer" unique_id=597189314]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 alignment = 2
 
-[node name="MicButtong" type="Sprite2D" parent="ControlPanel" unique_id=1818907553]
+[node name="MicButtong" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=1818907553]
 position = Vector2(-36, -79)
 texture = ExtResource("5_fo0ai")
 
-[node name="Button" type="Button" parent="ControlPanel/MicButtong" unique_id=1599099737]
+[node name="Button" type="Button" parent="UILayer/ControlPanel/MicButtong" unique_id=1599099737]
 offset_left = -13.0
 offset_top = -12.0
 offset_right = 14.0
@@ -14252,11 +14254,11 @@ offset_bottom = 14.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="SettingsButton" type="Sprite2D" parent="ControlPanel" unique_id=946563311]
+[node name="SettingsButton" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=946563311]
 position = Vector2(-35, -115)
 texture = ExtResource("7_prm87")
 
-[node name="settingsButtons" type="Button" parent="ControlPanel/SettingsButton" unique_id=808985133]
+[node name="settingsButtons" type="Button" parent="UILayer/ControlPanel/SettingsButton" unique_id=808985133]
 offset_left = -13.0
 offset_top = -12.0
 offset_right = 14.0
@@ -14264,17 +14266,17 @@ offset_bottom = 14.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="SettingsMenu" parent="ControlPanel" unique_id=2016009802 instance=ExtResource("25_a76ao")]
+[node name="SettingsMenu" parent="UILayer/ControlPanel" unique_id=2016009802 instance=ExtResource("25_a76ao")]
 visible = false
 z_index = 4096
 position = Vector2(-431, -560)
 
-[node name="Edit" type="Sprite2D" parent="ControlPanel" unique_id=2129510892]
+[node name="Edit" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=2129510892]
 texture_repeat = 2
 position = Vector2(-36, -31)
 texture = ExtResource("4_xenui")
 
-[node name="Button" type="Button" parent="ControlPanel/Edit" unique_id=577897996]
+[node name="Button" type="Button" parent="UILayer/ControlPanel/Edit" unique_id=577897996]
 offset_left = -23.0
 offset_top = -23.0
 offset_right = 23.0
@@ -14282,11 +14284,11 @@ offset_bottom = 23.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="Fancy" type="Sprite2D" parent="ControlPanel/Edit" unique_id=2032429614]
+[node name="Fancy" type="Sprite2D" parent="UILayer/ControlPanel/Edit" unique_id=2032429614]
 texture = ExtResource("5_75a7k")
 hframes = 7
 
-[node name="VolumeBar" type="TextureProgressBar" parent="ControlPanel" unique_id=859369317]
+[node name="VolumeBar" type="TextureProgressBar" parent="UILayer/ControlPanel" unique_id=859369317]
 offset_left = -584.0
 offset_top = -27.0
 offset_right = -72.0
@@ -14300,7 +14302,7 @@ texture_over = ExtResource("7_ldv55")
 texture_progress = ExtResource("9_7p50a")
 script = ExtResource("10_2pg0e")
 
-[node name="Sensitive" type="TextureProgressBar" parent="ControlPanel" unique_id=2133279502]
+[node name="Sensitive" type="TextureProgressBar" parent="UILayer/ControlPanel" unique_id=2133279502]
 offset_left = -584.0
 offset_top = -51.0
 offset_right = -72.0
@@ -14314,7 +14316,7 @@ texture_over = ExtResource("7_ldv55")
 texture_progress = ExtResource("11_u7d58")
 script = ExtResource("12_lhsja")
 
-[node name="volumeSlider" type="HSlider" parent="ControlPanel" unique_id=1257039098]
+[node name="volumeSlider" type="HSlider" parent="UILayer/ControlPanel" unique_id=1257039098]
 offset_left = -595.0
 offset_top = -29.0
 offset_right = -62.0
@@ -14325,7 +14327,7 @@ step = 0.0
 value = 0.185
 script = ExtResource("14_claq4")
 
-[node name="sensitiveSlider" type="HSlider" parent="ControlPanel" unique_id=1347925879]
+[node name="sensitiveSlider" type="HSlider" parent="UILayer/ControlPanel" unique_id=1347925879]
 offset_left = -595.0
 offset_top = -53.0
 offset_right = -62.0
@@ -14336,11 +14338,11 @@ step = 0.0
 value = 0.25
 script = ExtResource("15_jtkeq")
 
-[node name="Links" type="Sprite2D" parent="ControlPanel" unique_id=340814711]
+[node name="Links" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=340814711]
 position = Vector2(-651, -34)
 texture = ExtResource("13_opm22")
 
-[node name="kofi" type="Button" parent="ControlPanel/Links" unique_id=612111262]
+[node name="kofi" type="Button" parent="UILayer/ControlPanel/Links" unique_id=612111262]
 offset_left = -62.0
 offset_top = -28.0
 offset_right = -15.0
@@ -14348,7 +14350,7 @@ offset_bottom = 27.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="twitter" type="Button" parent="ControlPanel/Links" unique_id=1149933682]
+[node name="twitter" type="Button" parent="UILayer/ControlPanel/Links" unique_id=1149933682]
 offset_left = -5.0
 offset_top = -29.0
 offset_right = 61.0
@@ -14356,7 +14358,7 @@ offset_bottom = 27.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="ZoomLabel" type="Label" parent="ControlPanel" unique_id=1194857406]
+[node name="ZoomLabel" type="Label" parent="UILayer/ControlPanel" unique_id=1194857406]
 offset_left = -340.0
 offset_top = -77.0
 offset_right = -74.0
@@ -14364,9 +14366,9 @@ offset_bottom = -51.0
 text = "Zoom : 100%"
 horizontal_alignment = 2
 
-[node name="VersionLabels" type="Node2D" parent="ControlPanel" unique_id=762853000]
+[node name="VersionLabels" type="Node2D" parent="UILayer/ControlPanel" unique_id=762853000]
 
-[node name="Label" type="Label" parent="ControlPanel/VersionLabels" unique_id=1134513424]
+[node name="Label" type="Label" parent="UILayer/ControlPanel/VersionLabels" unique_id=1134513424]
 offset_left = -713.0
 offset_top = -94.0
 offset_right = -575.0
@@ -14374,7 +14376,7 @@ offset_bottom = -60.0
 text = "PNGTuber Plus"
 label_settings = SubResource("LabelSettings_w0f1f")
 
-[node name="Label2" type="Label" parent="ControlPanel/VersionLabels" unique_id=1141394649]
+[node name="Label2" type="Label" parent="UILayer/ControlPanel/VersionLabels" unique_id=1141394649]
 offset_left = -713.0
 offset_top = -123.0
 offset_right = -575.0
@@ -14382,7 +14384,7 @@ offset_bottom = -89.0
 text = "kaiakairos'"
 label_settings = SubResource("LabelSettings_qg0do")
 
-[node name="versionNo" type="Label" parent="ControlPanel/VersionLabels/Label2" unique_id=1684891268]
+[node name="versionNo" type="Label" parent="UILayer/ControlPanel/VersionLabels/Label2" unique_id=1684891268]
 layout_mode = 0
 offset_left = 144.0
 offset_top = 40.0
@@ -14391,55 +14393,55 @@ offset_bottom = 74.0
 text = "v1.4.5"
 label_settings = SubResource("LabelSettings_xvf50")
 
-[node name="EditControls" type="Node2D" parent="." unique_id=1927357329]
+[node name="EditControls" type="Node2D" parent="UILayer" unique_id=1927357329]
 visible = false
 z_index = 4090
 script = ExtResource("17_bf1ic")
 
-[node name="ScreenCover" type="Area2D" parent="EditControls" unique_id=452826157 groups=["penis"]]
+[node name="ScreenCover" type="Area2D" parent="UILayer/EditControls" unique_id=452826157 groups=["penis"]]
 visible = false
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="EditControls/ScreenCover" unique_id=1343517420]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="UILayer/EditControls/ScreenCover" unique_id=1343517420]
 position = Vector2(2132, 928.5)
 shape = SubResource("RectangleShape2D_ebmai")
 disabled = true
 
-[node name="SpriteViewer" parent="EditControls" unique_id=378947714 instance=ExtResource("9_uqv8p")]
+[node name="SpriteViewer" parent="UILayer/EditControls" unique_id=378947714 instance=ExtResource("9_uqv8p")]
 z_index = 4094
 position = Vector2(19, 30)
 
-[node name="MoveMenuUp" type="Area2D" parent="EditControls" unique_id=1544514374]
+[node name="MoveMenuUp" type="Area2D" parent="UILayer/EditControls" unique_id=1544514374]
 collision_layer = 0
 collision_mask = 2048
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="EditControls/MoveMenuUp" unique_id=58104874]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="UILayer/EditControls/MoveMenuUp" unique_id=58104874]
 position = Vector2(122.5, 58)
 shape = SubResource("RectangleShape2D_1hek3")
 
-[node name="MoveMenuDown" type="Area2D" parent="EditControls" unique_id=1102799329]
+[node name="MoveMenuDown" type="Area2D" parent="UILayer/EditControls" unique_id=1102799329]
 position = Vector2(0, 720)
 collision_layer = 0
 collision_mask = 2048
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="EditControls/MoveMenuDown" unique_id=117874317]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="UILayer/EditControls/MoveMenuDown" unique_id=117874317]
 position = Vector2(122, -58)
 shape = SubResource("RectangleShape2D_1hek3")
 
-[node name="SpriteList" parent="EditControls" unique_id=141947900 instance=ExtResource("27_614d2")]
+[node name="SpriteList" parent="UILayer/EditControls" unique_id=141947900 instance=ExtResource("27_614d2")]
 z_index = 4065
 position = Vector2(486, 12)
 
-[node name="Tutorial" type="Node2D" parent="." unique_id=1284482250]
+[node name="Tutorial" type="Node2D" parent="UILayer" unique_id=1284482250]
 z_index = 4096
 position = Vector2(720, 720)
 script = ExtResource("27_ivpmi")
 
-[node name="Info" type="Sprite2D" parent="Tutorial" unique_id=1440907844]
+[node name="Info" type="Sprite2D" parent="UILayer/Tutorial" unique_id=1440907844]
 z_index = -3
 position = Vector2(-19, -21)
 texture = ExtResource("27_og5v1")
 
-[node name="Button" type="Button" parent="Tutorial/Info" unique_id=1401064909]
+[node name="Button" type="Button" parent="UILayer/Tutorial/Info" unique_id=1401064909]
 offset_left = -14.0
 offset_top = -14.0
 offset_right = 14.0
@@ -14447,7 +14449,7 @@ offset_bottom = 14.0
 theme = SubResource("Theme_rv56a")
 flat = true
 
-[node name="NinePatchRect" type="NinePatchRect" parent="Tutorial" unique_id=215169593]
+[node name="NinePatchRect" type="NinePatchRect" parent="UILayer/Tutorial" unique_id=215169593]
 visible = false
 offset_left = -461.0
 offset_top = -407.0
@@ -14462,7 +14464,7 @@ patch_margin_top = 8
 patch_margin_right = 8
 patch_margin_bottom = 8
 
-[node name="Label" type="Label" parent="Tutorial/NinePatchRect" unique_id=1935252843]
+[node name="Label" type="Label" parent="UILayer/Tutorial/NinePatchRect" unique_id=1935252843]
 layout_mode = 0
 offset_left = 15.0
 offset_top = 14.0
@@ -14538,14 +14540,14 @@ text = "MISSING PERMISSION"
 label_settings = SubResource("LabelSettings_5yofs")
 horizontal_alignment = 1
 
-[node name="ViewerArrows" type="Node2D" parent="." unique_id=784664020]
+[node name="ViewerArrows" type="Node2D" parent="UILayer" unique_id=784664020]
 z_index = 4096
 
-[node name="Arrows" type="Sprite2D" parent="ViewerArrows" unique_id=343932311]
+[node name="Arrows" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=343932311]
 position = Vector2(134, 694)
 texture = ExtResource("24_joqmn")
 
-[node name="Arrows2" type="Sprite2D" parent="ViewerArrows" unique_id=1243095641]
+[node name="Arrows2" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=1243095641]
 position = Vector2(122, 35)
 rotation = 3.14159
 texture = ExtResource("24_joqmn")
@@ -14556,7 +14558,7 @@ position = Vector2(360, 360)
 [node name="BackgroundInputCapture" type="BackgroundInputCapture" parent="." unique_id=113626146]
 position = Vector2(-28, -28)
 
-[node name="PushUpdates" parent="." unique_id=221036027 instance=ExtResource("30_q43vl")]
+[node name="PushUpdates" parent="UILayer" unique_id=221036027 instance=ExtResource("30_q43vl")]
 z_index = 4090
 position = Vector2(0, 720)
 
@@ -14564,12 +14566,12 @@ position = Vector2(0, 720)
 modulate = Color(0, 0, 0, 0.478431)
 z_index = -4096
 
-[connection signal="pressed" from="ControlPanel/MicButtong/Button" to="." method="_on_button_pressed"]
-[connection signal="pressed" from="ControlPanel/SettingsButton/settingsButtons" to="." method="_on_settings_buttons_pressed"]
-[connection signal="pressed" from="ControlPanel/Edit/Button" to="." method="swapMode"]
-[connection signal="pressed" from="ControlPanel/Links/kofi" to="." method="_on_kofi_pressed"]
-[connection signal="pressed" from="ControlPanel/Links/twitter" to="." method="_on_twitter_pressed"]
-[connection signal="pressed" from="Tutorial/Info/Button" to="Tutorial" method="_on_button_pressed"]
+[connection signal="pressed" from="UILayer/ControlPanel/MicButtong/Button" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="UILayer/ControlPanel/SettingsButton/settingsButtons" to="." method="_on_settings_buttons_pressed"]
+[connection signal="pressed" from="UILayer/ControlPanel/Edit/Button" to="." method="swapMode"]
+[connection signal="pressed" from="UILayer/ControlPanel/Links/kofi" to="." method="_on_kofi_pressed"]
+[connection signal="pressed" from="UILayer/ControlPanel/Links/twitter" to="." method="_on_twitter_pressed"]
+[connection signal="pressed" from="UILayer/Tutorial/Info/Button" to="UILayer/Tutorial" method="_on_button_pressed"]
 [connection signal="file_selected" from="SaveDialog" to="." method="_on_save_dialog_file_selected"]
 [connection signal="file_selected" from="LoadDialog" to="." method="_on_load_dialog_file_selected"]
 [connection signal="import_cancelled" from="PSDImportDialog" to="." method="_on_psd_import_cancelled"]

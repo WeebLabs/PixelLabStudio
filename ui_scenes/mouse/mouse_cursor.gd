@@ -20,15 +20,20 @@ func _process(delta):
 			visible = true
 		else:
 			visible = false
+		# MouseCursor lives on UILayer (CanvasLayer), so get_global_mouse_position()
+		# returns viewport-space coords — exactly what we want for screen-space
+		# cursor positioning.
 		global_position = get_global_mouse_position()
 		if _click_pending:
 			_click_pending = false
 			if !Global.originMode:
 				var areas = _query_areas_at_mouse()
-				var mouse_pos = get_global_mouse_position()
+				# Sprite areas live in world space — use the world mouse for
+				# pixel-opaque hit-testing, not the viewport coords above.
+				var world_mouse = _world_mouse_position()
 				var opaque = []
 				for a in areas:
-					if !a.is_in_group("penis") and _is_pixel_opaque(a, mouse_pos):
+					if !a.is_in_group("penis") and _is_pixel_opaque(a, world_mouse):
 						opaque.append(a)
 				opaque.sort_custom(_compare_z_descending)
 				# Block click only when over a UI panel with no visible sprite
@@ -39,6 +44,13 @@ func _process(delta):
 		visible = false
 
 	text = ""
+
+# Convert the viewport mouse to world space via the canvas transform — used
+# for sprite-pick queries since sprites live in world space but this node is
+# on a CanvasLayer.
+func _world_mouse_position() -> Vector2:
+	var vp = get_viewport()
+	return vp.get_canvas_transform().affine_inverse() * vp.get_mouse_position()
 
 func _compare_z_descending(a: Area2D, b: Area2D) -> bool:
 	var obj_a = a.get_parent().get_parent().get_parent()
@@ -103,7 +115,8 @@ func _is_over_panel() -> bool:
 func _query_areas_at_mouse() -> Array:
 	var space = get_world_2d().direct_space_state
 	var params = PhysicsPointQueryParameters2D.new()
-	params.position = get_global_mouse_position()
+	# Sprite Area2Ds live in world space, so query with world-mouse coords.
+	params.position = _world_mouse_position()
 	params.collision_mask = area.collision_mask
 	params.collide_with_areas = true
 	params.collide_with_bodies = false

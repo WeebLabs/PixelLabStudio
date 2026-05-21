@@ -5,23 +5,23 @@ var editMode = true
 #Node Reference
 @onready var origin = $OriginMotion/Origin
 @onready var camera = $Camera2D
-@onready var controlPanel = $ControlPanel
-@onready var editControls = $EditControls
-@onready var tutorial = $Tutorial
-@onready var spriteViewer = $EditControls/SpriteViewer
-@onready var viewerArrows = $ViewerArrows
-@onready var spriteList = $EditControls/SpriteList
+@onready var controlPanel = $UILayer/ControlPanel
+@onready var editControls = $UILayer/EditControls
+@onready var tutorial = $UILayer/Tutorial
+@onready var spriteViewer = $UILayer/EditControls/SpriteViewer
+@onready var viewerArrows = $UILayer/ViewerArrows
+@onready var spriteList = $UILayer/EditControls/SpriteList
 
 @onready var replaceReviewDialog = $ReplaceReviewDialog
 @onready var saveDialog = $SaveDialog
 @onready var loadDialog = $LoadDialog
 @onready var psdImportDialog = $PSDImportDialog
 
-@onready var lines = $Lines
+@onready var lines = $UILayer/Lines
 
-@onready var settingsMenu = $ControlPanel/SettingsMenu
+@onready var settingsMenu = $UILayer/ControlPanel/SettingsMenu
 
-@onready var pushUpdates = $PushUpdates
+@onready var pushUpdates = $UILayer/PushUpdates
 
 @onready var shadow = $shadowSprite
 
@@ -97,12 +97,12 @@ func _ready():
 
 	Global.connect("startSpeaking",onSpeak)
 
-	$ControlPanel/MicButtong/Button.gui_input.connect(_on_mic_button_gui_input)
+	$UILayer/ControlPanel/MicButtong/Button.gui_input.connect(_on_mic_button_gui_input)
 
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 	
-	$ControlPanel/VersionLabels.visible = false
-	$ControlPanel/Links.visible = false
+	$UILayer/ControlPanel/VersionLabels.visible = false
+	$UILayer/ControlPanel/Links.visible = false
 
 	# Always try to load the most recently used avatar. If the path is empty,
 	# the file is missing, or parsing fails, _on_load_dialog_file_selected
@@ -114,9 +114,9 @@ func _ready():
 	Saving.settings["newUser"] = false
 
 	if Saving.settings.has("volume"):
-		$ControlPanel/volumeSlider.value = Saving.settings["volume"]
+		$UILayer/ControlPanel/volumeSlider.value = Saving.settings["volume"]
 	if Saving.settings.has("sense"):
-		$ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
+		$UILayer/ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
 	_style_control_sliders()
 
 	if Saving.settings.has("windowSize"):
@@ -194,7 +194,7 @@ func _ready():
 
 	# Put HUD elements on visibility layer 2 so they're excluded from NDI output
 	# (NDI SubViewport only renders layer 1)
-	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $MouseCursor]:
+	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $UILayer/MouseCursor]:
 		hud_node.visibility_layer = 2
 
 func _style_control_sliders():
@@ -212,7 +212,7 @@ func _style_control_sliders():
 				grabber_img.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
 	var grabber_tex = ImageTexture.create_from_image(grabber_img)
 
-	for s in [$ControlPanel/volumeSlider, $ControlPanel/sensitiveSlider]:
+	for s in [$UILayer/ControlPanel/volumeSlider, $UILayer/ControlPanel/sensitiveSlider]:
 		s.add_theme_icon_override("grabber", grabber_tex)
 		s.add_theme_icon_override("grabber_highlight", grabber_tex)
 		s.add_theme_icon_override("grabber_disabled", grabber_tex)
@@ -220,19 +220,19 @@ func _style_control_sliders():
 		s.add_theme_constant_override("center_grabber", 1)
 
 	# Right-click resets to factory defaults from autoload/saving.gd
-	Global.make_slider_resettable($ControlPanel/volumeSlider, 0.185)
-	Global.make_slider_resettable($ControlPanel/sensitiveSlider, 0.25)
+	Global.make_slider_resettable($UILayer/ControlPanel/volumeSlider, 0.185)
+	Global.make_slider_resettable($UILayer/ControlPanel/sensitiveSlider, 0.25)
 
 	# Align sliders vertically with their meter bars, and inset horizontally by the
 	# grabber radius so the disc stops at each end of the bar instead of overshooting
-	$ControlPanel/volumeSlider.offset_top = -40
-	$ControlPanel/volumeSlider.offset_bottom = -8
-	$ControlPanel/volumeSlider.offset_left = -574
-	$ControlPanel/volumeSlider.offset_right = -82
-	$ControlPanel/sensitiveSlider.offset_top = -64
-	$ControlPanel/sensitiveSlider.offset_bottom = -32
-	$ControlPanel/sensitiveSlider.offset_left = -574
-	$ControlPanel/sensitiveSlider.offset_right = -82
+	$UILayer/ControlPanel/volumeSlider.offset_top = -40
+	$UILayer/ControlPanel/volumeSlider.offset_bottom = -8
+	$UILayer/ControlPanel/volumeSlider.offset_left = -574
+	$UILayer/ControlPanel/volumeSlider.offset_right = -82
+	$UILayer/ControlPanel/sensitiveSlider.offset_top = -64
+	$UILayer/ControlPanel/sensitiveSlider.offset_bottom = -32
+	$UILayer/ControlPanel/sensitiveSlider.offset_left = -574
+	$UILayer/ControlPanel/sensitiveSlider.offset_right = -82
 
 	# Replace level meter textures with clean shapes
 	var bar_w = 512
@@ -250,11 +250,11 @@ func _style_control_sliders():
 	blue_img.fill(Color(0.55, 0.78, 1.0))
 	var blue_tex = ImageTexture.create_from_image(blue_img)
 
-	for bar in [$ControlPanel/VolumeBar, $ControlPanel/Sensitive]:
+	for bar in [$UILayer/ControlPanel/VolumeBar, $UILayer/ControlPanel/Sensitive]:
 		bar.texture_under = under_tex
 		bar.texture_over = null
-	$ControlPanel/Sensitive.texture_progress = pink_tex
-	$ControlPanel/VolumeBar.texture_progress = blue_tex
+	$UILayer/ControlPanel/Sensitive.texture_progress = pink_tex
+	$UILayer/ControlPanel/VolumeBar.texture_progress = blue_tex
 
 func _init_ndi():
 	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
@@ -423,14 +423,13 @@ func onWindowSizeChange():
 	lines.drawLine()
 	
 	camera.position = origin.position + _pan_offset
-	controlPanel.position = camera.position + (s/(camera.zoom*2.0))
+	# All HUD lives on UILayer (CanvasLayer) — positions are viewport-relative
+	# directly, no camera offset needed.
+	controlPanel.position = s  # bottom-right anchor; children use negative offsets
 	tutorial.position = controlPanel.position
-	editControls.position = camera.position - (s/(camera.zoom*2.0))
-	viewerArrows.position = editControls.position
 	spriteList.position.y = editControls.MENU_BAR_HEIGHT + 2
 	spriteList._apply_size()
-	pushUpdates.position.y = controlPanel.position.y
-	pushUpdates.position.x = editControls.position.x
+	pushUpdates.position = Vector2(0, s.y)  # bottom-left anchor
 
 func zoomScene():
 	#Handles Zooming
@@ -446,20 +445,14 @@ func zoomScene():
 				scaleOverall -= 10
 				changeZoom()
 	
-	$ControlPanel/ZoomLabel.modulate.a = lerp($ControlPanel/ZoomLabel.modulate.a,0.0,0.02)
+	$UILayer/ControlPanel/ZoomLabel.modulate.a = lerp($UILayer/ControlPanel/ZoomLabel.modulate.a,0.0,0.02)
 	
 func changeZoom():
-	var newZoom = Vector2(1.0,1.0) / camera.zoom
-	controlPanel.scale = newZoom
-	tutorial.scale = newZoom
-	editControls.scale = newZoom
-	viewerArrows.scale = newZoom
-	lines.scale = newZoom
-	pushUpdates.scale = newZoom
-	Global.mouse.scale = newZoom
+	# Every HUD node now lives on UILayer (CanvasLayer), which doesn't inherit
+	# the camera's zoom — no scale compensation needed for any of them.
 
-	$ControlPanel/ZoomLabel.modulate.a = 6.0
-	$ControlPanel/ZoomLabel.text = "Zoom : " + str(scaleOverall) + "%"
+	$UILayer/ControlPanel/ZoomLabel.modulate.a = 6.0
+	$UILayer/ControlPanel/ZoomLabel.text = "Zoom : " + str(scaleOverall) + "%"
 	
 	Global.pushUpdate("Set zoom to " + str(scaleOverall) + "%")
 	onWindowSizeChange()
@@ -2320,8 +2313,8 @@ func moveSpriteMenu(delta):
 
 	var windowLength = 1150
 
-	$ViewerArrows/Arrows.visible = false
-	$ViewerArrows/Arrows2.visible = false
+	viewerArrows.get_node("Arrows").visible = false
+	viewerArrows.get_node("Arrows2").visible = false
 
 	if !Global.spriteEdit.visible:
 		return
@@ -2339,17 +2332,17 @@ func moveSpriteMenu(delta):
 	
 #UNAMED BUT THIS IS THE MICROPHONE MENU BUTTON
 func _on_button_pressed():
-	$ControlPanel/MicInputSelect.visible = !$ControlPanel/MicInputSelect.visible
+	$UILayer/ControlPanel/MicInputSelect.visible = !$UILayer/ControlPanel/MicInputSelect.visible
 	settingsMenu.visible = false
 
 func _on_mic_button_gui_input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		Global.micMuted = !Global.micMuted
 		if Global.micMuted:
-			$ControlPanel/MicButtong.modulate = Color(1, 0.3, 0.3)
+			$UILayer/ControlPanel/MicButtong.modulate = Color(1, 0.3, 0.3)
 			Global.pushUpdate("Microphone muted.")
 		else:
-			$ControlPanel/MicButtong.modulate = Color(1, 1, 1)
+			$UILayer/ControlPanel/MicButtong.modulate = Color(1, 1, 1)
 			Global.pushUpdate("Microphone unmuted.")
 
 
