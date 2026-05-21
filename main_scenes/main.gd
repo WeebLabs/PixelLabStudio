@@ -63,6 +63,17 @@ var saveLoaded = false
 #Motion
 var yVel = 0
 var bounceSlider = 250
+
+# Window-resize freeze. While the window is being resized, sprites halt
+# (see spriteObject._process). After the viewport size stays put for
+# RESIZE_COOLDOWN_FRAMES consecutive frames we clear the flag and force one
+# drag-snap so the resumed physics don't react to the cumulative position
+# delta. _last_viewport_size tracks the previous frame's size for change
+# detection.
+const RESIZE_COOLDOWN_FRAMES = 5
+var resize_active: bool = false
+var _resize_cooldown: int = 0
+var _last_viewport_size: Vector2 = Vector2.ZERO
 var bounceGravity = 1000
 
 #Costumes
@@ -305,6 +316,8 @@ func ndi_mark_dirty():
 		ndi_manager.mark_dirty()
 
 func _process(delta):
+	_update_resize_state()
+
 	# Freeze bounce while dragging NDI ruler
 	var ruler_frozen = ndi_manager != null and ndi_manager.ruler_dragging
 	if ruler_frozen:
@@ -412,20 +425,35 @@ func _notification(what):
 		30:
 			onWindowSizeChange()
 
+# Drives the resize-freeze: while the viewport size changes between frames,
+# `resize_active` is true and sprites halt entirely. When the size has been
+# stable for RESIZE_COOLDOWN_FRAMES frames we clear the flag and force a
+# one-shot drag-snap on every sprite so they resume cleanly from the new
+# origin without feeding the cumulative position delta into stretch().
+func _update_resize_state():
+	var s = get_viewport().get_visible_rect().size
+	if s != _last_viewport_size:
+		_last_viewport_size = s
+		resize_active = true
+		_resize_cooldown = RESIZE_COOLDOWN_FRAMES
+		return
+	if _resize_cooldown > 0:
+		_resize_cooldown -= 1
+		if _resize_cooldown == 0:
+			resize_active = false
+			for spr in get_tree().get_nodes_in_group("saved"):
+				spr._force_drag_snap = true
+
 func onWindowSizeChange():
 	if !saveLoaded:
 		return
 	Saving.settings["windowSize"] = var_to_str(get_window().size)
 	var s = get_viewport().get_visible_rect().size
-	var prev_origin = origin.position
 	origin.position = s*0.5
-	# Sprites are children of `origin`; when origin teleports here their
-	# global positions jump too. Snap each sprite's drag/stretch physics so
-	# the next-frame position delta isn't fed into wobble/stretch (which
-	# otherwise scales them wildly when the window is resized or panned).
-	if origin.position != prev_origin:
-		for spr in get_tree().get_nodes_in_group("saved"):
-			spr._force_drag_snap = true
+	# Sprites are children of `origin` and would otherwise stretch/glitch when
+	# origin teleports. We don't snap here — _update_resize_state() freezes
+	# sprite _process while the window is mid-resize and force-snaps each
+	# sprite once when the viewport size stabilizes.
 
 	lines.position = s*0.5
 	lines.drawLine()

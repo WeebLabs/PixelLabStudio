@@ -378,6 +378,14 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 		remakePolygon()
 
 func _process(delta):
+	# While the window is being resized, freeze the avatar entirely: don't
+	# advance wobble/animation/drag, since the viewport size and origin position
+	# are mid-flight and feeding partial deltas into physics produces visible
+	# glitches and stretches. main.gd flips Global.main.resize_active to true
+	# when size changes and back to false (with a one-shot drag-snap) when it
+	# stabilizes.
+	if Global.main != null and Global.main.resize_active:
+		return
 	tick += 1
 	if Global.heldSprite == self:
 
