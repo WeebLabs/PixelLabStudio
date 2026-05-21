@@ -13,8 +13,11 @@ var editMode = true
 @onready var spriteList = $UILayer/EditControls/SpriteList
 
 @onready var replaceReviewDialog = $ReplaceReviewDialog
-@onready var saveDialog = $SaveDialog
-@onready var loadDialog = $LoadDialog
+# Save/Load FileDialogs are created in code (see _create_save_load_dialogs)
+# rather than in the scene because scene-tree FileDialogs don't reliably
+# route to the OS native dialog even with use_native_dialog=true set.
+var saveDialog: FileDialog = null
+var loadDialog: FileDialog = null
 @onready var psdImportDialog = $PSDImportDialog
 
 @onready var lines = $Lines
@@ -103,6 +106,8 @@ signal fatfuckingballs
 func _ready():
 	Global.main = self
 	Global.fail = $Failed
+
+	_create_save_load_dialogs()
 
 	screen_scale = DisplayServer.screen_get_scale()
 
@@ -1139,11 +1144,14 @@ func _import_png_files(paths: Array):
 	_save_post_import_snapshot()
 
 func _on_save_button_pressed():
-	$SaveDialog.visible = true
-	
+	# popup_file_dialog() is the FileDialog-specific show method that routes
+	# through DisplayServer to the OS native picker when use_native_dialog=true.
+	# Generic popup() / popup_centered() / setting .visible don't reliably
+	# trigger the native path (see godotengine/godot#82531).
+	saveDialog.popup_file_dialog()
 
 func _on_load_button_pressed():
-	$LoadDialog.visible = true
+	loadDialog.popup_file_dialog()
 
 #LOAD AVATAR
 func _on_load_dialog_file_selected(path):
@@ -1194,14 +1202,14 @@ func _on_load_dialog_file_selected(path):
 			await get_tree().process_frame
 			var now = Time.get_ticks_msec()
 			if _load_dialog == null and now - _load_start_ms >= BAR_SHOW_DELAY_MS:
+				# _create_progress_dialog attaches the dialog to UILayer itself.
 				_load_dialog = _create_progress_dialog("Loading avatar...")
-				add_child(_load_dialog)
 				_load_bar = _load_dialog.get_node("ProgressBar")
 			if _load_dialog != null and now - _last_bar_ms >= 100:
 				_last_bar_ms = now
 				var done = WorkerThreadPool.get_group_processed_element_count(group_id)
 				_load_bar.value = float(done) / float(_load_total)
-				_load_dialog.position = camera.position
+				_load_dialog.position = get_viewport().get_visible_rect().size * 0.5
 		WorkerThreadPool.wait_for_group_task_completion(group_id)
 		if _load_bar != null:
 			_load_bar.value = 1.0
@@ -1376,22 +1384,34 @@ func _create_save_progress_dialog() -> Node2D:
 	return _create_progress_dialog("Saving avatar...")
 
 func _create_progress_dialog(status_text: String) -> Node2D:
+	# Builds a modal progress dialog on UILayer (viewport-space), with a
+	# fullscreen dimmer + click-blocker behind it. Centered on the viewport.
+	# Caller does NOT need to add_child or update position — this function
+	# attaches to UILayer; recentering on resize is handled in _process.
 	var dialog = Node2D.new()
-	dialog.z_index = 4095
-	dialog.visibility_layer = 2
-	dialog.position = camera.position
+	dialog.z_index = 100
+	dialog.position = get_viewport().get_visible_rect().size * 0.5
+
+	# Backdrop dimmer + input blocker covering the whole viewport.
+	# Oversized so it covers any plausible viewport without needing resize updates.
+	var blocker = ColorRect.new()
+	blocker.position = Vector2(-5000, -5000)
+	blocker.size = Vector2(10000, 10000)
+	blocker.color = Color(0, 0, 0, 0.35)
+	blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	dialog.add_child(blocker)
 
 	var bg = ColorRect.new()
-	bg.position = Vector2(-160, -50)
-	bg.size = Vector2(320, 100)
-	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	bg.position = Vector2(-180, -55)
+	bg.size = Vector2(360, 110)
+	bg.color = Color(0.13, 0.13, 0.15, 1.0)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dialog.add_child(bg)
 
 	var label = Label.new()
 	label.name = "StatusLabel"
-	label.position = Vector2(-150, -40)
-	label.size = Vector2(300, 24)
+	label.position = Vector2(-170, -42)
+	label.size = Vector2(340, 24)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.text = status_text
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1399,22 +1419,14 @@ func _create_progress_dialog(status_text: String) -> Node2D:
 
 	var bar = ProgressBar.new()
 	bar.name = "ProgressBar"
-	bar.position = Vector2(-140, 0)
-	bar.size = Vector2(280, 24)
+	bar.position = Vector2(-160, 5)
+	bar.size = Vector2(320, 24)
 	bar.min_value = 0.0
 	bar.max_value = 1.0
 	bar.value = 0.0
 	dialog.add_child(bar)
 
-	var blocker = Area2D.new()
-	blocker.add_to_group("penis")
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(3840, 2160)
-	col.shape = shape
-	blocker.add_child(col)
-	dialog.add_child(blocker)
-
+	$UILayer.add_child(dialog)
 	return dialog
 
 func takeScreenshot():
@@ -1455,6 +1467,25 @@ func takeScreenshot():
 	var timestamp = Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "_")
 	_screenshot_dialog.current_file = "screenshot_" + timestamp + ".png"
 	_screenshot_dialog.popup_centered(Vector2i(600, 400))
+
+func _create_save_load_dialogs():
+	saveDialog = FileDialog.new()
+	saveDialog.title = "Save Avatar"
+	saveDialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	saveDialog.access = FileDialog.ACCESS_FILESYSTEM
+	saveDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
+	saveDialog.use_native_dialog = true
+	saveDialog.file_selected.connect(_on_save_dialog_file_selected)
+	add_child(saveDialog)
+
+	loadDialog = FileDialog.new()
+	loadDialog.title = "Load Avatar"
+	loadDialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	loadDialog.access = FileDialog.ACCESS_FILESYSTEM
+	loadDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
+	loadDialog.use_native_dialog = true
+	loadDialog.file_selected.connect(_on_load_dialog_file_selected)
+	add_child(loadDialog)
 
 func _create_screenshot_dialog():
 	_screenshot_dialog = FileDialog.new()
@@ -1811,7 +1842,8 @@ func _process_save_thread(_delta):
 	if _save_thread == null or _save_progress_dialog == null:
 		return
 	_save_progress_dialog.get_node("ProgressBar").value = _save_progress
-	_save_progress_dialog.position = camera.position
+	# Recenter on viewport — handles window resize while saving.
+	_save_progress_dialog.position = get_viewport().get_visible_rect().size * 0.5
 
 #SAVE AVATAR
 func _on_save_dialog_file_selected(path):
@@ -1897,8 +1929,8 @@ func _on_save_dialog_file_selected(path):
 	Saving.write_settings(Saving.settingsPath)
 
 	_save_progress = 0.0
+	# _create_save_progress_dialog attaches the dialog to UILayer itself.
 	_save_progress_dialog = _create_save_progress_dialog()
-	add_child(_save_progress_dialog)
 
 	_save_thread = Thread.new()
 	_save_thread.start(_save_worker.bind(data, path))
@@ -1907,14 +1939,18 @@ func _save_worker(data: Dictionary, path: String):
 	var total = data.size()
 	var done = 0
 	for id in data:
-		if data[id].has("_image_ref"):
-			var img: Image = data[id]["_image_ref"]
-			data[id]["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
-			data[id].erase("_image_ref")
-		if data[id].has("_normal_image_ref"):
-			var nrml_img: Image = data[id]["_normal_image_ref"]
-			data[id]["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
-			data[id].erase("_normal_image_ref")
+		# Some keys (e.g. "_eyeTrackingGloballyEnabled") hold plain values
+		# rather than per-sprite dicts; skip them so .has() doesn't fail.
+		var entry = data[id]
+		if entry is Dictionary:
+			if entry.has("_image_ref"):
+				var img: Image = entry["_image_ref"]
+				entry["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
+				entry.erase("_image_ref")
+			if entry.has("_normal_image_ref"):
+				var nrml_img: Image = entry["_normal_image_ref"]
+				entry["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
+				entry.erase("_normal_image_ref")
 		done += 1
 		_save_progress = float(done) / float(total)
 	var file = FileAccess.open(path, FileAccess.WRITE)
@@ -1931,6 +1967,46 @@ func _on_save_finished(path: String, data: Dictionary):
 		_save_progress_dialog.queue_free()
 		_save_progress_dialog = null
 	Global.pushUpdate("Save complete: " + path.get_file())
+	_show_save_confirmation(path.get_file())
+
+# Visible save-success toast on UILayer that lingers ~2 seconds, fades out
+# over half a second, and dismisses on click. More prominent than the
+# transient pushUpdate notification.
+func _show_save_confirmation(filename: String):
+	var dialog = Node2D.new()
+	dialog.z_index = 100
+	dialog.position = get_viewport().get_visible_rect().size * 0.5
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-200, -32)
+	bg.size = Vector2(400, 64)
+	bg.color = Color(0.13, 0.16, 0.13, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(func(event):
+		if event is InputEventMouseButton and event.pressed:
+			dialog.queue_free()
+	)
+	dialog.add_child(bg)
+
+	var label = Label.new()
+	label.position = Vector2(-190, -22)
+	label.size = Vector2(380, 44)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.text = "✓ Saved: " + filename
+	label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75))
+	label.add_theme_font_size_override("font_size", 14)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(label)
+
+	$UILayer.add_child(dialog)
+
+	# Hold 2s, fade out 0.5s, free. Tween is bound to the dialog so it
+	# auto-dies if the user clicks-to-dismiss earlier.
+	var tween = dialog.create_tween()
+	tween.tween_interval(2.0)
+	tween.tween_property(dialog, "modulate:a", 0.0, 0.5)
+	tween.tween_callback(dialog.queue_free)
 
 func _on_link_button_pressed():
 	Global.reparentMode = true

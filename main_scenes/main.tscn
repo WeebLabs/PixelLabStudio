@@ -14485,27 +14485,6 @@ text = "-Mouse click or scroll to select sprite
 "
 label_settings = SubResource("LabelSettings_iu6ix")
 
-[node name="SaveDialog" type="FileDialog" parent="." unique_id=372210116]
-title = "Save Avatar"
-position = Vector2i(161, 160)
-size = Vector2i(392, 360)
-mode_overrides_title = false
-access = 1
-filters = PackedStringArray("*.save")
-use_native_dialog = true
-
-[node name="LoadDialog" type="FileDialog" parent="." unique_id=851814113]
-title = "Load Avatar"
-position = Vector2i(180, 160)
-size = Vector2i(360, 360)
-ok_button_text = "Open"
-mode_overrides_title = false
-file_mode = 0
-access = 1
-filters = PackedStringArray("*.save")
-show_hidden_files = true
-use_native_dialog = true
-
 [node name="PSDImportDialog" parent="." unique_id=679721683 instance=ExtResource("31_psdim")]
 
 [node name="ReplaceReviewDialog" parent="." unique_id=1201067964 instance=ExtResource("32_rrdlg")]
@@ -14572,8 +14551,6 @@ z_index = -4096
 [connection signal="pressed" from="UILayer/ControlPanel/Links/kofi" to="." method="_on_kofi_pressed"]
 [connection signal="pressed" from="UILayer/ControlPanel/Links/twitter" to="." method="_on_twitter_pressed"]
 [connection signal="pressed" from="UILayer/Tutorial/Info/Button" to="UILayer/Tutorial" method="_on_button_pressed"]
-[connection signal="file_selected" from="SaveDialog" to="." method="_on_save_dialog_file_selected"]
-[connection signal="file_selected" from="LoadDialog" to="." method="_on_load_dialog_file_selected"]
 [connection signal="import_cancelled" from="PSDImportDialog" to="." method="_on_psd_import_cancelled"]
 [connection signal="import_confirmed" from="PSDImportDialog" to="." method="_on_psd_import_confirmed"]
 [connection signal="replace_cancelled" from="ReplaceReviewDialog" to="." method="_on_replace_cancelled"]
