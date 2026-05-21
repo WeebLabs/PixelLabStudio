@@ -14922,10 +14922,6 @@ offset_right = 225.0
 offset_bottom = 132.0
 text = "Invert direction"
 
-[connection signal="pressed" from="Buttons/Speaking/speaking" to="." method="_on_speaking_pressed"]
-[connection signal="pressed" from="Buttons/Blinking/blinking" to="." method="_on_blinking_pressed"]
-[connection signal="pressed" from="Buttons/Trash/trash" to="." method="_on_trash_pressed"]
-[connection signal="pressed" from="Buttons/Unlink/unlink" to="." method="_on_unlink_pressed"]
 [connection signal="toggled" from="Buttons/CheckBox" to="." method="_on_check_box_toggled"]
 [connection signal="toggled" from="Buttons/ClipLinked" to="." method="_on_clip_linked_toggled"]
 [connection signal="value_changed" from="Slider/DragSlider" to="." method="_on_drag_slider_value_changed"]

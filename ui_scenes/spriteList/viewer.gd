@@ -23,18 +23,19 @@ var _bg: ColorRect
 var _divider1: ColorRect
 var _divider2: ColorRect
 var _divider3: ColorRect
-var _controls: Node2D
+var _controls: HBoxContainer
 var _speaking_spr: Sprite2D
 var _blinking_spr: Sprite2D
 var _unlink_spr: Sprite2D
 var _trash_spr: Sprite2D
 var _link_btn: Button
 
-var _costume_section: Node2D
+var _costume_section: HBoxContainer
+var _costume_btn_widgets: Array = []  # Buttons holding each costume sprite, for layout queries
 var _costume_btns: Array = []
 var _costume_select: Sprite2D
 
-var _eye_section: Node2D
+var _eye_section: VBoxContainer
 var _eye_toggle: CheckBox
 var _eye_dist_label: Label
 var _eye_dist_slider: HSlider
@@ -56,7 +57,7 @@ var _slider_enabled_state: bool = true
 # on transitions into a scope, not on every per-frame refresh.
 var _prev_eye_scope: String = ""
 
-var _vis_toggle_section: Node2D
+var _vis_toggle_section: VBoxContainer
 var _vis_toggle_btn: Button
 var _vis_toggle_label: Label
 var _vis_toggle_delete_btn: Button
@@ -133,173 +134,153 @@ func _create_controls():
 	_divider3.size = Vector2(panel_width - 16, 1)
 	add_child(_divider3)
 
-	_controls = Node2D.new()
+	# Top controls row: speaking/blinking/link/unlink/trash. HBox distributes them
+	# horizontally and centers the row in _apply_size.
+	_controls = HBoxContainer.new()
+	_controls.add_theme_constant_override("separation", 8)
+	_controls.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(_controls)
 
 	var icon_scale = Vector2(0.65, 0.65)
-	var spacing = 40
-	var start_x = 10
 
-	# Speaking
-	_speaking_spr = Sprite2D.new()
-	_speaking_spr.texture = speaking_tex
-	_speaking_spr.hframes = 3
-	_speaking_spr.scale = icon_scale
-	_speaking_spr.position = Vector2(start_x, 16)
-	_controls.add_child(_speaking_spr)
-	var speaking_btn = Button.new()
-	speaking_btn.flat = true
-	speaking_btn.offset_left = -16
-	speaking_btn.offset_top = -16
-	speaking_btn.offset_right = 16
-	speaking_btn.offset_bottom = 16
-	speaking_btn.pressed.connect(_on_speaking_pressed)
-	_speaking_spr.add_child(speaking_btn)
+	_speaking_spr = _build_icon_button(speaking_tex, icon_scale, _on_speaking_pressed, 3)
+	_blinking_spr = _build_icon_button(blink_tex, icon_scale, _on_blinking_pressed, 4)
 
-	# Blinking
-	_blinking_spr = Sprite2D.new()
-	_blinking_spr.texture = blink_tex
-	_blinking_spr.hframes = 4
-	_blinking_spr.scale = icon_scale
-	_blinking_spr.position = Vector2(start_x + spacing, 16)
-	_controls.add_child(_blinking_spr)
-	var blink_btn = Button.new()
-	blink_btn.flat = true
-	blink_btn.offset_left = -16
-	blink_btn.offset_top = -16
-	blink_btn.offset_right = 16
-	blink_btn.offset_bottom = 16
-	blink_btn.pressed.connect(_on_blinking_pressed)
-	_blinking_spr.add_child(blink_btn)
-
-	# Link (text button)
 	_link_btn = Button.new()
 	_link_btn.text = "Link"
 	_link_btn.flat = true
 	_link_btn.add_theme_font_size_override("font_size", 12)
 	_link_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	_link_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	_link_btn.position = Vector2(start_x + spacing * 2 - 8, 4)
 	_link_btn.pressed.connect(_on_link_pressed)
 	_controls.add_child(_link_btn)
 
-	# Unlink
-	_unlink_spr = Sprite2D.new()
-	_unlink_spr.texture = unlink_tex
-	_unlink_spr.scale = icon_scale
-	_unlink_spr.position = Vector2(start_x + spacing * 3 + 10, 16)
-	_controls.add_child(_unlink_spr)
-	var unlink_btn = Button.new()
-	unlink_btn.flat = true
-	unlink_btn.offset_left = -16
-	unlink_btn.offset_top = -16
-	unlink_btn.offset_right = 16
-	unlink_btn.offset_bottom = 16
-	unlink_btn.pressed.connect(_on_unlink_pressed)
-	_unlink_spr.add_child(unlink_btn)
+	_unlink_spr = _build_icon_button(unlink_tex, icon_scale, _on_unlink_pressed, 1)
+	_trash_spr = _build_icon_button(trash_tex, icon_scale, _on_trash_pressed, 1)
 
-	# Trash
-	_trash_spr = Sprite2D.new()
-	_trash_spr.texture = trash_tex
-	_trash_spr.scale = icon_scale
-	_trash_spr.position = Vector2(start_x + spacing * 4 + 20, 16)
-	_controls.add_child(_trash_spr)
-	var trash_btn = Button.new()
-	trash_btn.flat = true
-	trash_btn.offset_left = -16
-	trash_btn.offset_top = -16
-	trash_btn.offset_right = 16
-	trash_btn.offset_bottom = 16
-	trash_btn.pressed.connect(_on_trash_pressed)
-	_trash_spr.add_child(trash_btn)
+# Build an icon-style button (Button + Sprite2D inside) and add to _controls.
+# Returns the inner Sprite2D so callers can tint/animate it.
+func _build_icon_button(tex: Texture2D, icon_scale: Vector2, on_pressed: Callable, hframes: int) -> Sprite2D:
+	var btn = Button.new()
+	btn.flat = true
+	btn.custom_minimum_size = Vector2(32, 32)
+	btn.pressed.connect(on_pressed)
+	_controls.add_child(btn)
+
+	var spr = Sprite2D.new()
+	spr.texture = tex
+	if hframes > 1:
+		spr.hframes = hframes
+	spr.scale = icon_scale
+	spr.position = Vector2(16, 16)  # center of 32x32 button
+	btn.add_child(spr)
+	return spr
 
 func _create_costume_buttons():
-	_costume_section = Node2D.new()
+	# 10 costume icons in a centered row. HBox handles horizontal layout;
+	# each icon is a Button with a Sprite2D inside for tinting/visibility.
+	_costume_section = HBoxContainer.new()
+	_costume_section.add_theme_constant_override("separation", 1)
+	_costume_section.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(_costume_section)
 
 	var icon_scale = Vector2(0.4, 0.4)
-	var spacing_x = 29
 
 	for i in range(10):
+		var btn = Button.new()
+		btn.flat = true
+		btn.custom_minimum_size = Vector2(28, 28)
+		btn.pressed.connect(_on_costume_btn_pressed.bind(i))
+		_costume_section.add_child(btn)
+		_costume_btn_widgets.append(btn)
+
 		var spr = Sprite2D.new()
 		spr.texture = layer_textures[i]
 		spr.scale = icon_scale
-		spr.position = Vector2(i * spacing_x, 14)
-		_costume_section.add_child(spr)
-
-		var btn = Button.new()
-		btn.flat = true
-		btn.offset_left = -14
-		btn.offset_top = -14
-		btn.offset_right = 14
-		btn.offset_bottom = 14
-		btn.pressed.connect(_on_costume_btn_pressed.bind(i))
-		spr.add_child(btn)
+		spr.position = Vector2(14, 14)  # center of 28x28 button
+		btn.add_child(spr)
 		_costume_btns.append(spr)
 
+	# Selection indicator — free-floating sprite repositioned in _process from
+	# whichever button is currently active.
 	_costume_select = Sprite2D.new()
 	_costume_select.texture = select_tex
 	_costume_select.scale = icon_scale
 	_costume_select.visible = false
-	_costume_section.add_child(_costume_select)
+	add_child(_costume_select)
 
 func _create_eye_tracking():
-	_eye_section = Node2D.new()
+	# Section is a VBoxContainer; rows are HBoxContainers. No manual `y += ...`
+	# accumulators — VBox handles vertical stacking, HBox handles horizontal.
+	# Width is set in _apply_size; height is auto-fit from children.
+	_eye_section = VBoxContainer.new()
+	_eye_section.add_theme_constant_override("separation", 8)
 	add_child(_eye_section)
 
-	var ctrl_left = 0
-	var ctrl_width = 200
-	var y = 0
 	var label_color = Color(0.75, 0.75, 0.8)
+
+	# Row: eye-track toggle + invert direction
+	var toggle_row = HBoxContainer.new()
+	toggle_row.add_theme_constant_override("separation", 4)
+	_eye_section.add_child(toggle_row)
 
 	_eye_toggle = CheckBox.new()
 	_eye_toggle.text = "Eye tracking"
 	_eye_toggle.add_theme_font_size_override("font_size", 12)
 	_eye_toggle.add_theme_color_override("font_color", label_color)
-	_eye_toggle.position = Vector2(ctrl_left, y)
-	_eye_toggle.size = Vector2(ctrl_width / 2, 20)
+	_eye_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_eye_toggle.toggled.connect(_on_eye_track_toggled)
-	_eye_section.add_child(_eye_toggle)
+	toggle_row.add_child(_eye_toggle)
 
-	# Invert checkbox - positioned on the right, same row as eye tracking
 	_eye_invert = CheckBox.new()
 	_eye_invert.text = "Invert direction"
 	_eye_invert.add_theme_font_size_override("font_size", 12)
 	_eye_invert.add_theme_color_override("font_color", label_color)
-	_eye_invert.position = Vector2(ctrl_width / 2, y)
-	_eye_invert.size = Vector2(ctrl_width / 2, 20)
+	_eye_invert.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
-	_eye_section.add_child(_eye_invert)
+	toggle_row.add_child(_eye_invert)
 
-	y += 32
+	# Row: mode label + dropdown + pick button
+	var mode_row = HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 6)
+	_eye_section.add_child(mode_row)
 
-	# Mode dropdown + (conditional) pick button beside it. Pick sits flush right
-	# of the dropdown, both 22px tall sharing the same row.
-	const PICK_BTN_WIDTH = 50
-	const PICK_BTN_GAP = 2
 	var mode_label = Label.new()
 	mode_label.text = "mode:"
 	mode_label.add_theme_font_size_override("font_size", 12)
 	mode_label.add_theme_color_override("font_color", label_color)
-	mode_label.position = Vector2(ctrl_left, y + 3)
-	_eye_section.add_child(mode_label)
+	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	mode_row.add_child(mode_label)
 
 	_eye_mode_option = OptionButton.new()
 	_eye_mode_option.add_item("Cursor", 0)
 	_eye_mode_option.add_item("Layer", 1)
 	_eye_mode_option.add_theme_font_size_override("font_size", 12)
-	_eye_mode_option.position = Vector2(ctrl_left + 44, y)
-	_eye_mode_option.size = Vector2(ctrl_width - 44 - PICK_BTN_WIDTH - PICK_BTN_GAP, 22)
+	# Width auto-fits the longest item text (recomputed dynamically when the
+	# Layer item is renamed to a target's truncated name)
+	_eye_mode_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_eye_mode_option.custom_minimum_size = Vector2(0, 22)
 	_eye_mode_option.item_selected.connect(_on_eye_track_mode_selected)
 	_eye_mode_option.mouse_entered.connect(_on_eye_mode_option_hover)
 	_eye_mode_option.mouse_exited.connect(_on_eye_mode_option_unhover)
 	# Right-click while in Layer mode clears the target; Cursor mode no-op so
 	# accidental right-clicks don't trash unrelated state.
 	_eye_mode_option.gui_input.connect(_on_eye_mode_option_gui_input)
-	_eye_section.add_child(_eye_mode_option)
+	mode_row.add_child(_eye_mode_option)
 
-	# Custom hover tooltip — shows the full target name after a 2s dwell, since
-	# Godot's built-in tooltip delay is global (0.5s) and not per-control.
+	_eye_pick_btn = Button.new()
+	_eye_pick_btn.text = "Pick"
+	_eye_pick_btn.flat = true
+	_eye_pick_btn.add_theme_font_size_override("font_size", 12)
+	_eye_pick_btn.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	_eye_pick_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_eye_pick_btn.custom_minimum_size = Vector2(50, 22)
+	_eye_pick_btn.pressed.connect(_on_eye_track_pick_pressed)
+	_eye_pick_btn.visible = false
+	mode_row.add_child(_eye_pick_btn)
+
+	# Custom hover tooltip — shows the full target name after a 2s dwell. Free-
+	# floating; not part of the section's vertical layout.
 	_eye_mode_tooltip_label = Label.new()
 	_eye_mode_tooltip_label.add_theme_font_size_override("font_size", 12)
 	_eye_mode_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.95, 1))
@@ -322,23 +303,7 @@ func _create_eye_tracking():
 	_eye_mode_tooltip_timer.timeout.connect(_on_eye_mode_tooltip_show)
 	add_child(_eye_mode_tooltip_timer)
 
-	_eye_pick_btn = Button.new()
-	_eye_pick_btn.text = "Pick"
-	_eye_pick_btn.flat = true
-	_eye_pick_btn.add_theme_font_size_override("font_size", 12)
-	_eye_pick_btn.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_eye_pick_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	# Flush right of the dropdown, slight nudge (-2, -4) so the button text
-	# visually centers against the dropdown rather than its render rect.
-	_eye_pick_btn.position = Vector2(ctrl_left + 44 + (ctrl_width - 44 - PICK_BTN_WIDTH - PICK_BTN_GAP) + PICK_BTN_GAP - 4, y - 4)
-	_eye_pick_btn.size = Vector2(PICK_BTN_WIDTH, 22)
-	_eye_pick_btn.pressed.connect(_on_eye_track_pick_pressed)
-	_eye_pick_btn.visible = false
-	_eye_section.add_child(_eye_pick_btn)
-
-	y += 32
-
-	# Whip line — invisible until pick mode is active; draws from anchor to cursor
+	# Whip line — invisible until pick mode is active; free-floating
 	_eye_whip_line = Line2D.new()
 	_eye_whip_line.width = 2.0
 	_eye_whip_line.default_color = Color(1.0, 0.85, 0.35, 0.9)
@@ -346,24 +311,7 @@ func _create_eye_tracking():
 	_eye_whip_line.z_index = 4090
 	add_child(_eye_whip_line)
 
-	_eye_dist_label = Label.new()
-	_eye_dist_label.text = "tracking distance: 20.0"
-	_eye_dist_label.add_theme_font_size_override("font_size", 12)
-	_eye_dist_label.add_theme_color_override("font_color", label_color)
-	_eye_dist_label.position = Vector2(ctrl_left, y)
-	_eye_section.add_child(_eye_dist_label)
-	y += 16
-
-	_eye_dist_slider = HSlider.new()
-	_eye_dist_slider.min_value = 1.0
-	_eye_dist_slider.max_value = 200.0
-	_eye_dist_slider.step = 1.0
-	_eye_dist_slider.value = 20.0
-	_eye_dist_slider.position = Vector2(ctrl_left, y)
-	_eye_dist_slider.size = Vector2(ctrl_width, 16)
-	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
-
-	# Build shared slider style resources (once)
+	# Build shared slider style resources (once, before either slider attaches them)
 	_slider_fill_enabled = StyleBoxFlat.new()
 	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
 	_slider_fill_disabled = StyleBoxFlat.new()
@@ -383,52 +331,64 @@ func _create_eye_tracking():
 	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
 	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
 
+	# Distance label + slider
+	_eye_dist_label = Label.new()
+	_eye_dist_label.text = "tracking distance: 20.0"
+	_eye_dist_label.add_theme_font_size_override("font_size", 12)
+	_eye_dist_label.add_theme_color_override("font_color", label_color)
+	_eye_section.add_child(_eye_dist_label)
+
+	_eye_dist_slider = HSlider.new()
+	_eye_dist_slider.min_value = 1.0
+	_eye_dist_slider.max_value = 200.0
+	_eye_dist_slider.step = 1.0
+	_eye_dist_slider.value = 20.0
+	_eye_dist_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_eye_dist_slider.custom_minimum_size = Vector2(0, 16)
+	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
 	_eye_dist_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
 	_eye_dist_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
 	_eye_dist_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
 	_eye_dist_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
 	_eye_dist_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
-	_eye_dist_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
-
 	_eye_section.add_child(_eye_dist_slider)
 	Global.make_slider_resettable(_eye_dist_slider, 20.0)
-	y += 22
 
+	# Speed label + slider
 	_eye_speed_label = Label.new()
 	_eye_speed_label.text = "tracking speed: 0.15"
 	_eye_speed_label.add_theme_font_size_override("font_size", 12)
 	_eye_speed_label.add_theme_color_override("font_color", label_color)
-	_eye_speed_label.position = Vector2(ctrl_left, y)
 	_eye_section.add_child(_eye_speed_label)
-	y += 16
 
 	_eye_speed_slider = HSlider.new()
 	_eye_speed_slider.min_value = 0.01
 	_eye_speed_slider.max_value = 1.0
 	_eye_speed_slider.step = 0.01
 	_eye_speed_slider.value = 0.15
-	_eye_speed_slider.position = Vector2(ctrl_left, y)
-	_eye_speed_slider.size = Vector2(ctrl_width, 16)
+	_eye_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_eye_speed_slider.custom_minimum_size = Vector2(0, 16)
 	_eye_speed_slider.value_changed.connect(_on_eye_track_speed_changed)
-
 	_eye_speed_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
 	_eye_speed_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
 	_eye_speed_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
 	_eye_speed_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
 	_eye_speed_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
-	_eye_speed_slider.modulate = Color(1.0, 1.0, 1.0, 1.0)
-
 	_eye_section.add_child(_eye_speed_slider)
 	Global.make_slider_resettable(_eye_speed_slider, 0.15)
 
 func _create_vis_toggle():
+	# Divider above the vis-toggle section — kept as a ColorRect for now since
+	# it's positioned independently from both sections.
 	_divider4 = ColorRect.new()
 	_divider4.color = Color(0.3, 0.3, 0.35)
 	_divider4.size = Vector2(panel_width - 16, 1)
 	_divider4.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_divider4)
 
-	_vis_toggle_section = Node2D.new()
+	# Section is a VBoxContainer with a header row and a control row inside.
+	_vis_toggle_section = VBoxContainer.new()
+	_vis_toggle_section.add_theme_constant_override("separation", 4)
 	add_child(_vis_toggle_section)
 
 	var label_color = Color(0.75, 0.75, 0.8)
@@ -438,38 +398,39 @@ func _create_vis_toggle():
 	header.text = "Visibility Toggle"
 	header.add_theme_font_size_override("font_size", 12)
 	header.add_theme_color_override("font_color", label_color)
-	header.position = Vector2(0, 0)
 	_vis_toggle_section.add_child(header)
 
-	# Set Key button
+	# Control row: [Set Key] [toggle: "..."]  ...  [x]
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_vis_toggle_section.add_child(row)
+
 	_vis_toggle_btn = Button.new()
 	_vis_toggle_btn.text = "Set Key"
 	_vis_toggle_btn.flat = true
 	_vis_toggle_btn.add_theme_font_size_override("font_size", 12)
 	_vis_toggle_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	_vis_toggle_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	_vis_toggle_btn.position = Vector2(0, 20)
 	_vis_toggle_btn.pressed.connect(_on_set_toggle_pressed)
-	_vis_toggle_section.add_child(_vis_toggle_btn)
+	row.add_child(_vis_toggle_btn)
 
-	# Toggle label
 	_vis_toggle_label = Label.new()
 	_vis_toggle_label.text = "toggle: \"null\""
 	_vis_toggle_label.add_theme_font_size_override("font_size", 12)
 	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_vis_toggle_label.position = Vector2(70, 24)
-	_vis_toggle_section.add_child(_vis_toggle_label)
+	_vis_toggle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_vis_toggle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_vis_toggle_label)
 
-	# Delete button
 	_vis_toggle_delete_btn = Button.new()
 	_vis_toggle_delete_btn.text = "x"
 	_vis_toggle_delete_btn.flat = true
 	_vis_toggle_delete_btn.add_theme_font_size_override("font_size", 11)
 	_vis_toggle_delete_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
 	_vis_toggle_delete_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.45, 0.5))
-	_vis_toggle_delete_btn.position = Vector2(0, 20)
+	_vis_toggle_delete_btn.custom_minimum_size = Vector2(20, 0)
 	_vis_toggle_delete_btn.pressed.connect(_on_vis_toggle_delete_pressed)
-	_vis_toggle_section.add_child(_vis_toggle_delete_btn)
+	row.add_child(_vis_toggle_delete_btn)
 
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
@@ -477,9 +438,10 @@ func _apply_size():
 	_bg.position = Vector2(-4, -4)
 	_bg.size = Vector2(panel_width + 8, panel_height + 8)
 
-	# Top controls
-	var controls_center_x = (panel_width - 200.0) / 2.0
-	_controls.position = Vector2(controls_center_x, 0)
+	# Top controls — HBox auto-arranges; we just give it the full panel width
+	# and let alignment=CENTER do the rest.
+	_controls.position = Vector2(0, 0)
+	_controls.size = Vector2(panel_width, CONTROLS_ROW_HEIGHT)
 	_divider1.position = Vector2(8, CONTROLS_ROW_HEIGHT + 4)
 	_divider1.size.x = panel_width - 16
 
@@ -501,37 +463,32 @@ func _apply_size():
 	_divider2.position = Vector2(8, scroll_bottom + DIVIDER_MARGIN)
 	_divider2.size.x = panel_width - 16
 
-	# Costume buttons
+	# Costume buttons — HBox auto-arranges; centered by alignment=CENTER
 	var costume_y = scroll_bottom + DIVIDER_MARGIN * 2 + 4
-	var costume_span_x = 29.0 * 9  # 261px span for 10 buttons in one row
-	var costume_center_x = (panel_width - costume_span_x) / 2.0
-	_costume_section.position = Vector2(costume_center_x, costume_y)
+	_costume_section.position = Vector2(0, costume_y)
+	_costume_section.size = Vector2(panel_width, 28)
 
 	# Divider between costume and eye tracking
 	var costume_bottom = costume_y + 36
 	_divider3.position = Vector2(8, costume_bottom + 4)
 	_divider3.size.x = panel_width - 16
 
-	# Eye tracking section (centered)
+	# Eye tracking + visibility-toggle sections — now driven by VBoxContainer
+	# auto-layout. We just place the top-left corner and set the width; both
+	# sections auto-size to their content height, and the row HBoxes inside
+	# distribute children using size flags.
 	var eye_ctrl_width = panel_width - 20
 	var eye_center_x = (panel_width - eye_ctrl_width) / 2.0
 	_eye_section.position = Vector2(eye_center_x, costume_bottom + 14)
+	_eye_section.size = Vector2(eye_ctrl_width, _eye_section.get_combined_minimum_size().y)
 
-	# Update slider and checkbox widths to fill available space
-	_eye_dist_slider.size.x = eye_ctrl_width
-	_eye_speed_slider.size.x = eye_ctrl_width
-	_eye_toggle.size.x = eye_ctrl_width / 2
-	_eye_invert.position.x = eye_ctrl_width / 2
-	_eye_invert.size.x = eye_ctrl_width / 2
-
-	# Visibility Toggle section (below eye tracking).
-	# +32 covers the new "mode" row plus the extra padding above (between toggle
-	# row and dropdown) and below (between dropdown and tracking-distance label).
-	var eye_bottom = costume_bottom + 14 + 110 + 32
-	_divider4.position = Vector2(8, eye_bottom + 4)
+	# Place divider and vis-toggle section based on the eye section's actual
+	# laid-out bottom edge — no more hardcoded "+110+32" magic numbers.
+	var eye_bottom_y = _eye_section.position.y + _eye_section.size.y
+	_divider4.position = Vector2(8, eye_bottom_y + 10)
 	_divider4.size.x = panel_width - 16
-	_vis_toggle_section.position = Vector2(eye_center_x, eye_bottom + 14)
-	_vis_toggle_delete_btn.position.x = eye_ctrl_width - 20
+	_vis_toggle_section.position = Vector2(eye_center_x, eye_bottom_y + 18)
+	_vis_toggle_section.size = Vector2(eye_ctrl_width, _vis_toggle_section.get_combined_minimum_size().y)
 
 	# Collision area
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
@@ -600,10 +557,13 @@ func _process(_delta):
 			else:
 				_costume_btns[i].self_modulate = Color(0.5, 0.5, 0.5, 0.7)
 
-		# Costume select position
+		# Costume select position — _costume_select is parented to the viewer
+		# (free-floating), so we translate the active button's center into
+		# viewer-local coordinates.
 		var costume_idx = Global.main.costume - 1
-		if costume_idx >= 0 and costume_idx < 10:
-			_costume_select.position = _costume_btns[costume_idx].position
+		if costume_idx >= 0 and costume_idx < 10 and costume_idx < _costume_btn_widgets.size():
+			var btn = _costume_btn_widgets[costume_idx]
+			_costume_select.position = to_local(btn.global_position + btn.size * 0.5)
 
 func scroll_to_selected():
 	if Global.heldSprite == null:
@@ -976,8 +936,10 @@ func _on_eye_mode_tooltip_show():
 	if full == "":
 		return
 	_eye_mode_tooltip_label.text = full
-	# Position just below the dropdown
-	_eye_mode_tooltip_label.position = _eye_section.position + _eye_mode_option.position + Vector2(0, _eye_mode_option.size.y + 4)
+	# Position just below the dropdown — use global_position because the
+	# dropdown lives inside nested containers now, not directly in _eye_section.
+	var anchor_global = _eye_mode_option.global_position + Vector2(0, _eye_mode_option.size.y + 4)
+	_eye_mode_tooltip_label.position = to_local(anchor_global)
 	_eye_mode_tooltip_label.visible = true
 
 func _display_target_name(target_sprite) -> String:

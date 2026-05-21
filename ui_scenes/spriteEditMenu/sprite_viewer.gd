@@ -12,6 +12,39 @@ var _parent_label: Label
 var _bg: ColorRect
 var panel_width: float = 265
 var panel_height: float = 630
+
+# Layout constants — single source of truth for all spacing in this panel.
+# ROW_GAP is the baseline vertical distance between every adjacent widget,
+# and between adjacent sections that aren't separated by a divider. DIVIDER_PAD
+# is the padding on each side of a divider, used only at section boundaries
+# that have one — so a divider visibly breathes without affecting any other
+# gap in the panel.
+const ROW_GAP = 8                  # widget→widget, and section→section without divider
+const DIVIDER_PAD = 12             # vertical padding on EACH side of a divider line
+const ROT_RADIUS = 105.0           # rotation-circle visualization radius at full panel width
+const ROT_CONTROLS_GAP = 20.0      # gap between the circle and the min/max label rows
+const DEFAULT_PANEL_WIDTH = 265.0  # baseline; preview & rotation circle scale down below this
+# Maximum preview-thumbnail rect at full panel width; both axes scale together
+# with the panel width once it drops below DEFAULT_PANEL_WIDTH.
+const PREVIEW_MAX_W = 240.0
+const PREVIEW_MAX_H = 120.0
+const PREVIEW_Y = 65.0             # preview center-y (top half of panel)
+
+# Resize handle
+const MIN_PANEL_WIDTH = 220        # minimum sidebar width (clamps the drag)
+const MAX_PANEL_WIDTH_RATIO = 0.4  # max sidebar width as a fraction of the viewport
+const GRAB_MARGIN = 6              # pixels of horizontal grab tolerance around the right edge
+
+var _resize_dragging: bool = false
+var _resize_drag_start_x: float = 0.0
+var _resize_drag_start_width: float = 0.0
+var _resize_hover: bool = false
+
+# Width-dependent UI elements tracked so _apply_size() can reflow on resize.
+# Each entry: [control, margin] where the control's width is kept at
+# (panel_width - margin), so the right padding it had at creation is preserved.
+var _resizables: Array = []
+var _dividers: Array = []
 var _controls_enabled: bool = false
 var _sliders: Array = []
 var _buttons: Array = []
@@ -29,8 +62,72 @@ var _normal_import_btn: Button
 var _normal_clear_btn: Button
 var _normal_dialog: FileDialog
 
+# Buttons section (checkbox column) — replaces the scene-defined $Buttons layout
+# with a VBoxContainer so the checkboxes auto-stack and the divider below them
+# can be computed from the container's actual bottom instead of magic numbers.
+var _buttons_vbox: VBoxContainer
+var _cb_ignore_bounce: CheckBox
+var _cb_clip_linked: CheckBox
+var _cb_static: CheckBox
+var _cb_ndi_ref: CheckBox
+
+# WobbleControl section — 4 label+slider pairs (xFrq/xAmp/yFrq/yAmp) reparented
+# into a VBoxContainer for auto-layout. Cached refs replace $WobbleControl/...
+# node paths.
+var _wobble_vbox: VBoxContainer
+var _xfrq_label: Label
+var _xfrq_slider: HSlider
+var _xamp_label: Label
+var _xamp_slider: HSlider
+var _yfrq_label: Label
+var _yfrq_slider: HSlider
+var _yamp_label: Label
+var _yamp_slider: HSlider
+
+# Slider section — single label + DragSlider, reparented into VBox.
+var _slider_vbox: VBoxContainer
+var _drag_label: Label
+var _drag_slider: HSlider
+
+# Rotation section — squash + rDrag pairs.
+var _rotation_vbox: VBoxContainer
+var _squash_label: Label
+var _squash_slider: HSlider
+var _rdrag_label: Label
+var _rdrag_slider: HSlider
+
+# Animation section — animFrames + animSpeed pairs.
+var _animation_vbox: VBoxContainer
+var _anim_frames_label: Label
+var _anim_frames_slider: HSlider
+var _anim_speed_label: Label
+var _anim_speed_slider: HSlider
+
+# Position section — parent label + 3 info labels (position / offset / layer).
+var _position_vbox: VBoxContainer
+var _pos_label: Label
+var _offset_label: Label
+var _layer_label: Label
+
+# RotationalLimits — circle visualization at top + a VBox of min/max
+# label+slider rows below. The bounds Control wraps both so the layout pass
+# can place the section like any other.
+var _rot_bounds: Control
+var _rot_controls_vbox: VBoxContainer
+var _rot_min_label: Label
+var _rot_min_slider: HSlider
+var _rot_max_label: Label
+var _rot_max_slider: HSlider
+# Preview thumbnail base scale (the value setImage() computes from the texture
+# size assuming full panel width); _apply_size() multiplies this by the
+# current panel-width factor to get the actual scale.
+var _preview_base_scale: float = 1.0
+
 func _ready():
 	Global.spriteEdit = self
+	# Legacy icon sprites — kept hidden because the .tscn still has them at
+	# fixed positions that would overlap the wobble sliders. Real controls
+	# moved to viewer.gd's right sidebar.
 	$Buttons/Speaking.visible = false
 	$Buttons/Blinking.visible = false
 	$Buttons/Trash.visible = false
@@ -51,93 +148,132 @@ func _ready():
 	_preview.position = Vector2(123, 65)
 	add_child(_preview)
 
-	# Create parent label in the Position section (above position label)
+	# Position section — parent label + 3 info labels in a VBoxContainer.
+	# Replaces the prior offset-by-hand layout (and the offset shifts that used
+	# to push Label/Label2/Label3 down to make room for _parent_label).
 	_parent_label = Label.new()
-	_parent_label.offset_left = 10.0
-	_parent_label.offset_top = 155.0
-	_parent_label.offset_right = 236.0
-	_parent_label.offset_bottom = 179.0
 	_parent_label.text = "Root Element"
-	$Position.add_child(_parent_label)
+	_pos_label = get_node("Position/Label")
+	_offset_label = get_node("Position/Label2")
+	_layer_label = get_node("Position/Label3")
+	_position_vbox = _build_section_vbox($Position, Vector2(10, 155), 226,
+		[_parent_label, _pos_label, _offset_label, _layer_label])
 
-	# Shift position/offset/layer labels down for parent label
-	$Position/Label.offset_top = 179.0
-	$Position/Label.offset_bottom = 205.0
-	$Position/Label2.offset_top = 203.0
-	$Position/Label2.offset_bottom = 229.0
-	$Position/Label3.offset_top = 225.0
-	$Position/Label3.offset_bottom = 251.0
-
-	# Shift all sections below Position down to accommodate parent label
-	for node in [$Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
-		node.position.y += 24
-	# Pull Wobble and Rotational Limits up to sit just below checkboxes
-	for node in [$WobbleControl, $RotationalLimits]:
-		node.position.y -= 83
-	# Increase spacing after section dividers
-	for node in [$Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
-		node.position.y += 8
-	for node in [$WobbleControl, $RotationalLimits]:
-		node.position.y += 8
-	$RotationalLimits.position.y += 8
+	# (Section position shifts are consolidated into a single block below the
+	# VBox creation — see "Section layout" comment further down.)
 
 	# Hide sections moved to right sidebar
 	$Layers.visible = false
 	$EyeTracking.visible = false
 	$VisToggle.visible = false
 
+	# Containerize the label+slider sections. Each scene-defined section node
+	# (Slider, WobbleControl, Rotation, Animation) gets a VBoxContainer placed
+	# at the original first-widget offset; the section's existing children are
+	# reparented into it in display order, sliders set to SIZE_EXPAND_FILL.
+
+	# Slider — single drag label + DragSlider
+	_drag_label = get_node("Slider/Label")
+	_drag_slider = get_node("Slider/DragSlider")
+	_slider_vbox = _build_section_vbox($Slider, Vector2(9, 155), 223,
+		[_drag_label, _drag_slider])
+
+	# WobbleControl — 4 label+slider pairs (xFrq, xAmp, yFrq, yAmp). Stacked
+	# uniformly with no extra mid-section spacer, so the section's internal
+	# spacing matches every other section.
+	_xfrq_label = $WobbleControl/xFrqLabel
+	_xfrq_slider = $WobbleControl/xFrq
+	_xamp_label = $WobbleControl/xAmpLabel
+	_xamp_slider = $WobbleControl/xAmp
+	_yfrq_label = $WobbleControl/yFrqLabel
+	_yfrq_slider = $WobbleControl/yFrq
+	_yamp_label = $WobbleControl/yAmpLabel
+	_yamp_slider = $WobbleControl/yAmp
+	_wobble_vbox = _build_section_vbox($WobbleControl, Vector2(12, 240), 223,
+		[_xfrq_label, _xfrq_slider, _xamp_label, _xamp_slider,
+		 _yfrq_label, _yfrq_slider, _yamp_label, _yamp_slider])
+
+	# Rotation — squash + rDrag (note: scene order has squash first visually)
+	_squash_label = get_node("Rotation/squashlabel")
+	_squash_slider = get_node("Rotation/squash")
+	_rdrag_label = get_node("Rotation/rDragLabel")
+	_rdrag_slider = get_node("Rotation/rDrag")
+	_rotation_vbox = _build_section_vbox($Rotation, Vector2(11, 156), 223,
+		[_squash_label, _squash_slider, _rdrag_label, _rdrag_slider])
+
+	# Animation — animFrames + animSpeed
+	_anim_frames_label = get_node("Animation/animFramesLabel")
+	_anim_frames_slider = get_node("Animation/animFrames")
+	_anim_speed_label = get_node("Animation/animSpeedLabel")
+	_anim_speed_slider = get_node("Animation/animSpeed")
+	_animation_vbox = _build_section_vbox($Animation, Vector2(10, 984), 223,
+		[_anim_frames_label, _anim_frames_slider, _anim_speed_label, _anim_speed_slider])
+
+	# RotationalLimits min/max widgets — cached here so the _sliders array and
+	# make_slider_resettable calls can reference them. The actual VBox is
+	# constructed below alongside _rot_bounds.
+	_rot_min_label = get_node("RotationalLimits/RotLimitMin")
+	_rot_min_slider = get_node("RotationalLimits/rotLimitMin")
+	_rot_max_label = get_node("RotationalLimits/RotLimitMax")
+	_rot_max_slider = get_node("RotationalLimits/rotLimitMax")
+
 	# Collect interactive controls for enable/disable toggling
 	_sliders = [
-		$Slider/DragSlider,
-		$WobbleControl/xFrq, $WobbleControl/xAmp,
-		$WobbleControl/yFrq, $WobbleControl/yAmp,
-		$Rotation/rDrag, $Rotation/squash,
-		$RotationalLimits/rotLimitMin, $RotationalLimits/rotLimitMax,
-		$Animation/animSpeed, $Animation/animFrames,
+		_drag_slider,
+		_xfrq_slider, _xamp_slider,
+		_yfrq_slider, _yamp_slider,
+		_rdrag_slider, _squash_slider,
+		_rot_min_slider, _rot_max_slider,
+		_anim_speed_slider, _anim_frames_slider,
 	]
 
 	# Right-click resets each sprite-property slider to spriteObject.gd's factory default
-	Global.make_slider_resettable($Slider/DragSlider, 0)
-	Global.make_slider_resettable($WobbleControl/xFrq, 0)
-	Global.make_slider_resettable($WobbleControl/xAmp, 0)
-	Global.make_slider_resettable($WobbleControl/yFrq, 0)
-	Global.make_slider_resettable($WobbleControl/yAmp, 0)
-	Global.make_slider_resettable($Rotation/rDrag, 0)
-	Global.make_slider_resettable($Rotation/squash, 0)
-	Global.make_slider_resettable($RotationalLimits/rotLimitMin, -180)
-	Global.make_slider_resettable($RotationalLimits/rotLimitMax, 180)
-	Global.make_slider_resettable($Animation/animSpeed, 0)
-	Global.make_slider_resettable($Animation/animFrames, 1)
-	# Static-element toggle — sits directly beneath ClipLinked in $Buttons.
-	# When on, the sprite ignores all bounce/drag/wobble/rotation/stretch.
-	var static_check = CheckBox.new()
-	static_check.name = "StaticElement"
-	static_check.text = "Static element"
-	static_check.offset_left = $Buttons/ClipLinked.offset_left
-	static_check.offset_top = $Buttons/ClipLinked.offset_bottom - 5
-	static_check.offset_right = $Buttons/ClipLinked.offset_right
-	static_check.offset_bottom = static_check.offset_top + 31
-	$Buttons.add_child(static_check)
-	static_check.toggled.connect(_on_static_element_toggled)
+	Global.make_slider_resettable(_drag_slider, 0)
+	Global.make_slider_resettable(_xfrq_slider, 0)
+	Global.make_slider_resettable(_xamp_slider, 0)
+	Global.make_slider_resettable(_yfrq_slider, 0)
+	Global.make_slider_resettable(_yamp_slider, 0)
+	Global.make_slider_resettable(_rdrag_slider, 0)
+	Global.make_slider_resettable(_squash_slider, 0)
+	Global.make_slider_resettable(_rot_min_slider, -180)
+	Global.make_slider_resettable(_rot_max_slider, 180)
+	Global.make_slider_resettable(_anim_speed_slider, 0)
+	Global.make_slider_resettable(_anim_frames_slider, 1)
+	# Buttons section column — VBoxContainer auto-stacks the 4 checkboxes.
+	# Position is set to match where the original CheckBox (Ignore bounce) sat
+	# (scene-y 523 ≈ $Buttons.position.y 85 + CheckBox.offset_top 438), but
+	# the container's bottom is auto-computed and feeds the divider below.
+	_buttons_vbox = VBoxContainer.new()
+	_buttons_vbox.name = "ButtonsVBox"
+	_buttons_vbox.add_theme_constant_override("separation", ROW_GAP)
+	_buttons_vbox.position = Vector2(5, 523)
+	_buttons_vbox.size = Vector2(212, 0)  # height auto-fits below
+	_resizables.append([_buttons_vbox, panel_width - _buttons_vbox.size.x])
+	add_child(_buttons_vbox)
 
-	# NDI reference checkbox — sits directly under the static-element checkbox,
-	# matching the same overlap pattern that static_check uses against ClipLinked.
-	var ndi_ref_check = CheckBox.new()
-	ndi_ref_check.name = "NdiRefLayer"
-	ndi_ref_check.text = "NDI reference layer"
-	ndi_ref_check.add_theme_font_size_override("font_size", 12)
-	ndi_ref_check.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
-	ndi_ref_check.offset_left = $Buttons/ClipLinked.offset_left
-	ndi_ref_check.offset_right = $Buttons/ClipLinked.offset_right
-	ndi_ref_check.offset_top = static_check.offset_bottom - 5
-	ndi_ref_check.offset_bottom = ndi_ref_check.offset_top + 31
-	$Buttons.add_child(ndi_ref_check)
-	ndi_ref_check.toggled.connect(_on_ndi_ref_layer_toggled)
+	# Reparent the two scene-defined checkboxes into the VBox; their existing
+	# scene signal connections (toggled → handler) survive the reparent.
+	_cb_ignore_bounce = $Buttons/CheckBox
+	_cb_clip_linked = $Buttons/ClipLinked
+	_cb_ignore_bounce.reparent(_buttons_vbox)
+	_cb_clip_linked.reparent(_buttons_vbox)
+
+	# Static-element toggle — when on, sprite ignores all bounce/drag/wobble/etc.
+	_cb_static = CheckBox.new()
+	_cb_static.name = "StaticElement"
+	_cb_static.text = "Static element"
+	_cb_static.toggled.connect(_on_static_element_toggled)
+	_buttons_vbox.add_child(_cb_static)
+
+	# NDI reference checkbox
+	_cb_ndi_ref = CheckBox.new()
+	_cb_ndi_ref.name = "NdiRefLayer"
+	_cb_ndi_ref.text = "NDI reference layer"
+	_cb_ndi_ref.toggled.connect(_on_ndi_ref_layer_toggled)
+	_buttons_vbox.add_child(_cb_ndi_ref)
 
 	_buttons = [
-		$Buttons/Speaking/speaking, $Buttons/Blinking/blinking,
-		$Buttons/Trash/trash, $Buttons/Unlink/unlink,
-		$Buttons/CheckBox, $Buttons/ClipLinked, static_check, ndi_ref_check,
+		_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref,
 	]
 	# Sections to dim when no sprite is selected
 	_sections = [
@@ -145,8 +281,8 @@ func _ready():
 		$Position, $Buttons, $Slider, $WobbleControl,
 		$Rotation, $RotationalLimits, $Animation,
 	]
-	$WobbleControl/xAmp.max_value = 512.0
-	$WobbleControl/yAmp.max_value = 512.0
+	_xamp_slider.max_value = 512.0
+	_yamp_slider.max_value = 512.0
 
 	_set_controls_enabled(false)
 	setImage()
@@ -181,13 +317,13 @@ func _ready():
 
 	# Restyle labels to match right sidebar
 	var _labels = [
-		$Slider/Label,
-		$WobbleControl/xFrqLabel, $WobbleControl/xAmpLabel,
-		$WobbleControl/yFrqLabel, $WobbleControl/yAmpLabel,
-		$Rotation/rDragLabel, $Rotation/squashlabel,
-		$RotationalLimits/RotLimitMin, $RotationalLimits/RotLimitMax,
-		$Animation/animFramesLabel, $Animation/animSpeedLabel,
-		$Position/Label, $Position/Label2, $Position/Label3,
+		_drag_label,
+		_xfrq_label, _xamp_label,
+		_yfrq_label, _yamp_label,
+		_rdrag_label, _squash_label,
+		_rot_min_label, _rot_max_label,
+		_anim_frames_label, _anim_speed_label,
+		_pos_label, _offset_label, _layer_label,
 		_parent_label,
 	]
 	for label in _labels:
@@ -197,73 +333,86 @@ func _ready():
 	$Position/fileTitle.visible = false
 
 	# Restyle checkboxes
-	# Restyle the column of checkboxes. Both edges shifted left by 15 px from
-	# the prior right-aligned-to-slider layout.
-	for cb in [$Buttons/CheckBox, $Buttons/ClipLinked, $Buttons/StaticElement, $Buttons/NdiRefLayer]:
+	# Restyle the column of checkboxes. Width is set by the VBoxContainer.
+	for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
 		cb.add_theme_font_size_override("font_size", 12)
 		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
-		cb.offset_left -= 15
-		cb.offset_right = 232 - 15
 		cb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		cb.size_flags_horizontal = Control.SIZE_FILL
 
-	# Normal Map section — below preview, above Position
-	var _nrml_y = 133
-	_normal_section = Control.new()
-	_normal_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Normal Map row — below preview, above Position. HBoxContainer auto-arranges
+	# status label (expanding) + Normal button + Clear button.
+	const NRML_Y = 132
+	const NRML_ROW_HEIGHT = 24
+	_normal_section = HBoxContainer.new()
+	_normal_section.position = Vector2(10, NRML_Y)
+	_normal_section.size = Vector2(panel_width - 20, NRML_ROW_HEIGHT)
+	_normal_section.add_theme_constant_override("separation", 4)
 	add_child(_normal_section)
+	_resizables.append([_normal_section, 20])
 
 	_normal_status = Label.new()
 	_normal_status.text = "(none)"
 	_normal_status.add_theme_font_size_override("font_size", 11)
 	_normal_status.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
-	_normal_status.position = Vector2(10, _nrml_y)
-	_normal_status.size = Vector2(panel_width - 100, 20)
+	_normal_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_normal_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_normal_status.clip_text = true
 	_normal_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	add_child(_normal_status)
+	_normal_section.add_child(_normal_status)
 
 	_normal_import_btn = Button.new()
 	_normal_import_btn.text = "Normal"
 	_normal_import_btn.custom_minimum_size = Vector2(70, 22)
-	_normal_import_btn.position = Vector2(panel_width - 155, _nrml_y - 1)
 	_normal_import_btn.add_theme_font_size_override("font_size", 11)
 	_normal_import_btn.pressed.connect(_on_normal_import)
-	add_child(_normal_import_btn)
+	_normal_section.add_child(_normal_import_btn)
 
 	_normal_clear_btn = Button.new()
 	_normal_clear_btn.text = "Clear"
 	_normal_clear_btn.custom_minimum_size = Vector2(60, 22)
-	_normal_clear_btn.position = Vector2(panel_width - 80, _nrml_y - 1)
 	_normal_clear_btn.add_theme_font_size_override("font_size", 11)
 	_normal_clear_btn.disabled = true
 	_normal_clear_btn.pressed.connect(_on_normal_clear)
-	add_child(_normal_clear_btn)
+	_normal_section.add_child(_normal_clear_btn)
 
 	_sections.append(_normal_section)
 	_sections.append(_normal_status)
 	_buttons.append(_normal_import_btn)
 	_buttons.append(_normal_clear_btn)
 
-	# Push everything below preview down to make room for normal row
-	var _nrml_shift = 26
-	for node in [$Position, $Animation, $Slider, $Rotation, $Buttons, $WobbleControl, $RotationalLimits]:
-		node.position.y += _nrml_shift
+	# RotationalLimits has no VBox (the rotation circle uses angular geometry).
+	# Wrap it in a Control whose bounds match the visible content extent so the
+	# layout pass can place it like every other section.
+	_rot_bounds = Control.new()
+	_rot_bounds.name = "Bounds"
+	_rot_bounds.position = Vector2.ZERO
+	# Height is finalized below once _rot_controls_vbox is built.
+	_rot_bounds.custom_minimum_size = Vector2(panel_width - 16, 0)
+	_rot_bounds.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	$RotationalLimits.add_child(_rot_bounds)
+	_resizables.append([_rot_bounds, 16])
 
-	# Extra clearance beneath the new StaticElement checkbox so the divider and Wobble
-	# section don't clip into it
-	# Push the divider + Wobble/Rotational sections past the bottom of the new
-	# checkboxes (Static + NDI ref). Each adds ~26 px below ClipLinked using the
-	# same -5 overlap pattern; total ~52 px of new content, with a bit of
-	# breathing room before the divider.
-	const STATIC_CHECKBOX_PUSH = 50
-	for node in [$WobbleControl, $RotationalLimits]:
-		node.position.y += STATIC_CHECKBOX_PUSH
+	# Position the circle at the top of the section's local space (will be
+	# repositioned/rescaled in _apply_size() based on panel width).
+	$RotationalLimits/RotBack.position.y = ROT_RADIUS
+	$RotationalLimits/RotBorder.position.y = ROT_RADIUS
 
-	# Add section dividers
-	_create_divider(141 + _nrml_shift)   # between Normal row and Position Info
-	_create_divider(274 + _nrml_shift)   # between Position Info and Animation
-	_create_divider(564 + _nrml_shift + STATIC_CHECKBOX_PUSH)   # between Buttons/Checkboxes and Wobble
-	_create_divider(773 + _nrml_shift + STATIC_CHECKBOX_PUSH)   # between Wobble and Rotational Limits circle
+	# Build the controls VBox using the same position/width as every other
+	# section (left x=11, width=223 at default panel_width), so the sliders
+	# match the others above and resize identically.
+	_rot_controls_vbox = _build_section_vbox($RotationalLimits,
+		Vector2(11, ROT_RADIUS * 2 + ROT_CONTROLS_GAP), 223,
+		[_rot_min_label, _rot_min_slider, _rot_max_label, _rot_max_slider])
+
+	# Now that the controls VBox exists, set the bounds Control's full height.
+	_rot_bounds.custom_minimum_size.y = (ROT_RADIUS * 2 + ROT_CONTROLS_GAP
+		+ _rot_controls_vbox.get_combined_minimum_size().y)
+
+	# Lay out the panel: sections stack sequentially below the normal-map row,
+	# each section sized to its own content height; dividers fall in the
+	# inter-section gaps automatically.
+	_layout_panel()
 
 	_replace_rot_display_textures()
 
@@ -294,10 +443,12 @@ func _set_controls_enabled(enabled: bool):
 		slider.add_theme_icon_override("grabber_highlight", grab)
 	
 func _replace_rot_display_textures():
+	# Textures-only: positions for RotBack / RotBorder / RotLimit* are handled
+	# in _ready before _layout_panel so the section's bounds Control is correct.
 	var size = 260
 	var cx = 130.0
 	var cy = 130.0
-	var radius = 105.0
+	var radius = ROT_RADIUS
 	var fill_color = Color(0.18, 0.18, 0.18)
 	var border_color = Color(0.4, 0.4, 0.4, 0.6)
 	var border_width = 2.0
@@ -369,36 +520,21 @@ func _replace_rot_display_textures():
 	bar.offset_bottom = radius
 	bar.pivot_offset = Vector2(radius, radius)
 
-	# Move circle up to reduce gap with previous section
-	$RotationalLimits/RotBack.position.y = 698
-	$RotationalLimits/RotBorder.position.y = 698
-
-	# Move labels and sliders below the circle
-	var controls_top = 698 + radius + 20
-	$RotationalLimits/RotLimitMin.offset_top = controls_top
-	$RotationalLimits/RotLimitMin.offset_bottom = controls_top + 26
-	$RotationalLimits/rotLimitMin.offset_top = controls_top + 24
-	$RotationalLimits/rotLimitMin.offset_bottom = controls_top + 44
-	$RotationalLimits/RotLimitMax.offset_top = controls_top + 49
-	$RotationalLimits/RotLimitMax.offset_bottom = controls_top + 75
-	$RotationalLimits/rotLimitMax.offset_top = controls_top + 73
-	$RotationalLimits/rotLimitMax.offset_bottom = controls_top + 93
-
 func setImage():
 	if Global.heldSprite == null:
 		_preview.texture = null
 		_parent_label.text = ""
-		$Position/Label.text = ""
-		$Position/Label2.text = ""
-		$Position/Label3.text = ""
-		$Slider/Label.text = ""
+		_pos_label.text = ""
+		_offset_label.text = ""
+		_layer_label.text = ""
+		_drag_label.text = ""
 		spriteRotDisplay.texture = null
 		spriteRotDisplay.rotation_degrees = 0
 		$RotationalLimits/RotBack/RotLineDisplay3.rotation_degrees = 0
-		$RotationalLimits/rotLimitMin.set_value_no_signal(-180)
-		$RotationalLimits/rotLimitMax.set_value_no_signal(180)
-		$RotationalLimits/RotLimitMin.text = "rotational limit min: -180"
-		$RotationalLimits/RotLimitMax.text = "rotational limit max: 180"
+		_rot_min_slider.set_value_no_signal(-180)
+		_rot_max_slider.set_value_no_signal(180)
+		_rot_min_label.text = "rotational limit min: -180"
+		_rot_max_label.text = "rotational limit max: 180"
 		$RotationalLimits/RotBack/rotLimitBar.value = 360
 		$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = -180 + 90
 		$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = -180
@@ -426,13 +562,14 @@ func setImage():
 		atlas.region = content_rect
 		_preview.texture = atlas
 		_preview.hframes = 1
-		var preview_scale = min(240.0 / content_rect.size.x, 120.0 / content_rect.size.y)
-		_preview.scale = Vector2(preview_scale, preview_scale)
+		_preview_base_scale = min(PREVIEW_MAX_W / content_rect.size.x, PREVIEW_MAX_H / content_rect.size.y)
 	else:
 		_preview.texture = Global.heldSprite.tex
 		_preview.hframes = Global.heldSprite.frames
-		var preview_scale = min(240.0 / frame_w, 120.0 / frame_h)
-		_preview.scale = Vector2(preview_scale, preview_scale)
+		_preview_base_scale = min(PREVIEW_MAX_W / frame_w, PREVIEW_MAX_H / frame_h)
+	# _apply_size() applies the panel-width scale factor on top of the base
+	# scale and re-centers the preview.
+	_apply_size()
 
 	# Update parent label
 	if Global.heldSprite.parentId != null:
@@ -457,45 +594,42 @@ func setImage():
 	else:
 		spriteRotDisplay.scale = Vector2(1, 1) * (target_size / rot_img.get_size().y)
 
-	$Slider/Label.text = "drag: " + str(Global.heldSprite.dragSpeed)
-	$Slider/DragSlider.set_value_no_signal(Global.heldSprite.dragSpeed)
+	_drag_label.text = "drag: " + str(Global.heldSprite.dragSpeed)
+	_drag_slider.set_value_no_signal(Global.heldSprite.dragSpeed)
 
-	$WobbleControl/xFrqLabel.text = "x frequency: " + str(Global.heldSprite.xFrq)
-	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(Global.heldSprite.xAmp)
+	_xfrq_label.text = "x frequency: " + str(Global.heldSprite.xFrq)
+	_xamp_label.text = "x amplitude: " + str(Global.heldSprite.xAmp)
 
-	$WobbleControl/xFrq.set_value_no_signal(Global.heldSprite.xFrq)
-	$WobbleControl/xAmp.set_value_no_signal(Global.heldSprite.xAmp)
+	_xfrq_slider.set_value_no_signal(Global.heldSprite.xFrq)
+	_xamp_slider.set_value_no_signal(Global.heldSprite.xAmp)
 
-	$WobbleControl/yFrqLabel.text = "y frequency: " + str(Global.heldSprite.yFrq)
-	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(Global.heldSprite.yAmp)
+	_yfrq_label.text = "y frequency: " + str(Global.heldSprite.yFrq)
+	_yamp_label.text = "y amplitude: " + str(Global.heldSprite.yAmp)
 
-	$WobbleControl/yFrq.set_value_no_signal(Global.heldSprite.yFrq)
-	$WobbleControl/yAmp.set_value_no_signal(Global.heldSprite.yAmp)
+	_yfrq_slider.set_value_no_signal(Global.heldSprite.yFrq)
+	_yamp_slider.set_value_no_signal(Global.heldSprite.yAmp)
 
-	$Rotation/rDragLabel.text = "rotational drag: " + str(Global.heldSprite.rdragStr)
-	$Rotation/rDrag.set_value_no_signal(Global.heldSprite.rdragStr)
+	_rdrag_label.text = "rotational drag: " + str(Global.heldSprite.rdragStr)
+	_rdrag_slider.set_value_no_signal(Global.heldSprite.rdragStr)
 
-	$Buttons/Speaking.frame = Global.heldSprite.showOnTalk
-	$Buttons/Blinking.frame = Global.heldSprite.showOnBlink
+	_rot_min_slider.set_value_no_signal(Global.heldSprite.rLimitMin)
+	_rot_min_label.text = "rotational limit min: " + str(Global.heldSprite.rLimitMin)
+	_rot_max_slider.set_value_no_signal(Global.heldSprite.rLimitMax)
+	_rot_max_label.text = "rotational limit max: " + str(Global.heldSprite.rLimitMax)
 
-	$RotationalLimits/rotLimitMin.set_value_no_signal(Global.heldSprite.rLimitMin)
-	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(Global.heldSprite.rLimitMin)
-	$RotationalLimits/rotLimitMax.set_value_no_signal(Global.heldSprite.rLimitMax)
-	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(Global.heldSprite.rLimitMax)
+	_squash_label.text = "squash: " + str(Global.heldSprite.stretchAmount)
+	_squash_slider.set_value_no_signal(Global.heldSprite.stretchAmount)
 
-	$Rotation/squashlabel.text = "squash: " + str(Global.heldSprite.stretchAmount)
-	$Rotation/squash.set_value_no_signal(Global.heldSprite.stretchAmount)
+	_cb_ignore_bounce.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
+	_cb_clip_linked.set_pressed_no_signal(Global.heldSprite.clipped)
+	_cb_static.set_pressed_no_signal(Global.heldSprite.staticElement)
+	_cb_ndi_ref.set_pressed_no_signal(Global.heldSprite.ndiRefLayer)
 
-	$Buttons/CheckBox.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
-	$Buttons/ClipLinked.set_pressed_no_signal(Global.heldSprite.clipped)
-	$Buttons/StaticElement.set_pressed_no_signal(Global.heldSprite.staticElement)
-	$Buttons/NdiRefLayer.set_pressed_no_signal(Global.heldSprite.ndiRefLayer)
+	_anim_speed_label.text = "animation speed: " + str(Global.heldSprite.animSpeed)
+	_anim_speed_slider.set_value_no_signal(Global.heldSprite.animSpeed)
 
-	$Animation/animSpeedLabel.text = "animation speed: " + str(Global.heldSprite.animSpeed)
-	$Animation/animSpeed.set_value_no_signal(Global.heldSprite.animSpeed)
-
-	$Animation/animFramesLabel.text = "sprite frames: " + str(Global.heldSprite.frames)
-	$Animation/animFrames.set_value_no_signal(Global.heldSprite.frames)
+	_anim_frames_label.text = "sprite frames: " + str(Global.heldSprite.frames)
+	_anim_frames_slider.set_value_no_signal(Global.heldSprite.frames)
 
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
 
@@ -517,6 +651,71 @@ func setImage():
 		Global.spriteList.scroll_to_selected()
 
 
+# Place a section so its content Control's top edge lands at scene-y `y`. The
+# section is a Node2D; its child Control (a VBox, or the RotationalLimits
+# bounds wrapper) lives at an internal offset — we just translate the parent.
+func _place_section(section: Node2D, content: Control, y: float):
+	section.position.y = y - content.position.y
+
+# Single sequential layout pass for the whole panel. Non-divider transitions
+# (within a section, or between dividerless sections) use ROW_GAP. Section
+# boundaries marked with a divider use DIVIDER_PAD on each side of the divider
+# instead, so the divider has visible breathing room without affecting any
+# other gap. No other pixel constants.
+func _layout_panel():
+	# Layout cursor starts flush with the bottom of the normal-map row; the
+	# loop treats the normal-row → Position transition like every other
+	# divider-marked section boundary.
+	var y = _normal_section.position.y + _normal_section.size.y
+
+	# Each entry: [section_node, content_control, has_divider_above]
+	# Buttons VBox lives at scene root (no Node2D wrapper) → section=null.
+	# RotationalLimits is last; its trailing gap is irrelevant.
+	var sections = [
+		[$Position,         _position_vbox,  true],
+		[$Animation,        _animation_vbox, true],
+		[$Slider,           _slider_vbox,    false],
+		[$Rotation,         _rotation_vbox,  false],
+		[null,              _buttons_vbox,   false],
+		[$WobbleControl,    _wobble_vbox,    true],
+		[$RotationalLimits, _rot_bounds,     true],
+	]
+
+	for entry in sections:
+		var section: Node2D = entry[0]
+		var content: Control = entry[1]
+		var divider_above: bool = entry[2]
+		if divider_above:
+			y += DIVIDER_PAD
+			_create_divider(y)
+			y += DIVIDER_PAD
+		else:
+			y += ROW_GAP
+		if section == null:
+			content.position.y = y
+		else:
+			_place_section(section, content, y)
+		y += content.get_combined_minimum_size().y
+
+# Build a VBoxContainer inside a scene-defined section node, place it at the
+# original first-widget offset, and reparent the section's widgets into it
+# in display order. Sliders auto-fill the VBox width; labels and other Controls
+# use their natural min size.
+func _build_section_vbox(section: Node, pos: Vector2, vbox_width: float, widgets: Array) -> VBoxContainer:
+	var vbox = VBoxContainer.new()
+	vbox.name = "VBox"
+	# Uniform per-row spacing across every section in the panel.
+	vbox.add_theme_constant_override("separation", ROW_GAP)
+	vbox.position = pos
+	vbox.size = Vector2(vbox_width, 0)  # height auto-fits to children
+	section.add_child(vbox)
+	for w in widgets:
+		w.reparent(vbox)
+		if w is HSlider:
+			w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_resizables.append([vbox, panel_width - vbox_width])
+	return vbox
+
 func _create_divider(y_pos: float) -> ColorRect:
 	var div = ColorRect.new()
 	div.color = Color(0.3, 0.3, 0.35)
@@ -524,6 +723,7 @@ func _create_divider(y_pos: float) -> ColorRect:
 	div.position = Vector2(8, y_pos)
 	div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(div)
+	_dividers.append(div)
 	return div
 
 func _apply_size():
@@ -535,15 +735,92 @@ func _apply_size():
 	_bg.position = Vector2(-19, bg_top - round(position.y))
 	_bg.size = Vector2(panel_width + 19, round(s.y) - bg_top)
 
+	# Reflow every width-dependent element to the new panel_width, preserving
+	# the right padding each element had at creation time.
+	for entry in _resizables:
+		var control: Control = entry[0]
+		var margin: float = entry[1]
+		var w = max(0.0, panel_width - margin)
+		control.size.x = w
+		if control is Container:
+			control.custom_minimum_size.x = w
+	for div in _dividers:
+		div.size.x = panel_width - 16
+
+	# Scale the layer preview and the rotation circle when the panel is
+	# narrower than its default; both stay at full size when wider. Both are
+	# centered on the section VBoxes' horizontal midline (which sits ~10px
+	# left of the panel midline due to the VBoxes' asymmetric left/right
+	# padding), so they align with the sliders rather than the panel edges.
+	var f: float = min(1.0, panel_width / DEFAULT_PANEL_WIDTH)
+	var content_center_x: float = panel_width * 0.5
+	if _rot_controls_vbox:
+		content_center_x = _rot_controls_vbox.position.x + _rot_controls_vbox.size.x * 0.5
+	if _preview:
+		_preview.position = Vector2(content_center_x, PREVIEW_Y)
+		_preview.scale = Vector2(_preview_base_scale * f, _preview_base_scale * f)
+	if _rot_controls_vbox:
+		var rot_back: Sprite2D = $RotationalLimits/RotBack
+		var rot_border: Sprite2D = $RotationalLimits/RotBorder
+		var current_radius = ROT_RADIUS * f
+		rot_back.scale = Vector2(f, f)
+		rot_back.position = Vector2(content_center_x, current_radius)
+		rot_border.scale = Vector2(f, f)
+		rot_border.position = Vector2(content_center_x, current_radius)
+		_rot_controls_vbox.position.y = current_radius * 2 + ROT_CONTROLS_GAP
+		_rot_bounds.custom_minimum_size.y = (current_radius * 2 + ROT_CONTROLS_GAP
+			+ _rot_controls_vbox.get_combined_minimum_size().y)
+
+# Returns true when the mouse is within GRAB_MARGIN of the panel's right edge.
+# Local x = panel_width is the visible right edge; the panel extends the full
+# viewport height so no vertical constraint is needed.
+func _is_on_right_edge(local: Vector2) -> bool:
+	return abs(local.x - panel_width) <= GRAB_MARGIN
+
 func _input(event):
-	if Global.main == null or !Global.main.editMode or !visible:
+	if Global.main == null or !visible:
 		return
+
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		var local = get_local_mouse_position()
+		if event.pressed:
+			if _is_on_right_edge(local):
+				_resize_dragging = true
+				_resize_drag_start_x = get_global_mouse_position().x
+				_resize_drag_start_width = panel_width
+				get_viewport().set_input_as_handled()
+				return
+		else:
+			if _resize_dragging:
+				_resize_dragging = false
+				get_viewport().set_input_as_handled()
+				return
+
+	if event is InputEventMouseMotion:
+		if _resize_dragging:
+			var delta_x = get_global_mouse_position().x - _resize_drag_start_x
+			var viewport_w = get_viewport().get_visible_rect().size.x
+			var max_w = viewport_w * MAX_PANEL_WIDTH_RATIO
+			panel_width = clamp(_resize_drag_start_width + delta_x, MIN_PANEL_WIDTH, max_w)
+			_apply_size()
+			get_viewport().set_input_as_handled()
+			return
+		else:
+			var on_edge = _is_on_right_edge(get_local_mouse_position())
+			if on_edge != _resize_hover:
+				_resize_hover = on_edge
+				if on_edge:
+					Input.set_default_cursor_shape(Input.CURSOR_HSIZE)
+				else:
+					Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+
+	# Wheel-scroll the panel vertically when the window is too short to fit it.
 	if !(event is InputEventMouseButton and event.pressed):
 		return
-	# Only handle when cursor is over the sidebar (use viewport coords)
+	if !Global.main.editMode:
+		return
 	if event.position.x > panel_width + 19:
 		return
-	# Only scroll when window is short enough to need it
 	var s = get_viewport().get_visible_rect().size
 	if s.y > 1200:
 		return
@@ -554,8 +831,7 @@ func _input(event):
 		position.y -= step
 	else:
 		return
-	# Clamp to same bounds as moveSpriteMenu()
-	var top_y = 30  # MENU_BAR_HEIGHT + 2
+	var top_y = 30
 	var min_y = s.y - 1150
 	position.y = clamp(position.y, min_y, top_y)
 	get_viewport().set_input_as_handled()
@@ -576,9 +852,9 @@ func _process(delta):
 
 	var obj = Global.heldSprite
 	
-	$Position/Label.text = "position     X : "+str(obj.position.x)+"     Y: " + str(obj.position.y)
-	$Position/Label2.text = "offset         X : "+str(obj.offset.x)+"     Y: " + str(obj.offset.y)
-	$Position/Label3.text = "layer : "+str(obj.z)
+	_pos_label.text = "position     X : "+str(obj.position.x)+"     Y: " + str(obj.position.y)
+	_offset_label.text = "offset         X : "+str(obj.offset.x)+"     Y: " + str(obj.offset.y)
+	_layer_label.text = "layer : "+str(obj.z)
 	
 	#Sprite Rotational Limit Display
 		
@@ -592,21 +868,21 @@ func _process(delta):
 func _on_drag_slider_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$Slider/Label.text = "drag: " + str(value)
+	_drag_label.text = "drag: " + str(value)
 	Global.heldSprite.dragSpeed = value
 
 
 func _on_x_frq_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$WobbleControl/xFrqLabel.text = "x frequency: " + str(value)
+	_xfrq_label.text = "x frequency: " + str(value)
 	Global.heldSprite.xFrq = value
 
 
 func _on_x_amp_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$WobbleControl/xAmpLabel.text = "x amplitude: " + str(value)
+	_xamp_label.text = "x amplitude: " + str(value)
 	Global.heldSprite.xAmp = value
 	Global.main.ndi_mark_dirty()
 
@@ -614,13 +890,13 @@ func _on_x_amp_value_changed(value):
 func _on_y_frq_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$WobbleControl/yFrqLabel.text = "y frequency: " + str(value)
+	_yfrq_label.text = "y frequency: " + str(value)
 	Global.heldSprite.yFrq = value
 
 func _on_y_amp_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$WobbleControl/yAmpLabel.text = "y amplitude: " + str(value)
+	_yamp_label.text = "y amplitude: " + str(value)
 	Global.heldSprite.yAmp = value
 	Global.main.ndi_mark_dirty()
 
@@ -628,53 +904,21 @@ func _on_y_amp_value_changed(value):
 func _on_r_drag_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$Rotation/rDragLabel.text = "rotational drag: " + str(value)
+	_rdrag_label.text = "rotational drag: " + str(value)
 	Global.heldSprite.rdragStr = value
 	Global.main.ndi_mark_dirty()
 
 
-func _on_speaking_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	var f = $Buttons/Speaking.frame
-	f = (f+1) % 3
-
-	$Buttons/Speaking.frame = f
-	Global.heldSprite.showOnTalk = f
-
-
-func _on_blinking_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	var f = $Buttons/Blinking.frame
-	f = (f+1) % 4
-
-	$Buttons/Blinking.frame = f
-	Global.heldSprite.showOnBlink = f
-
-
-func _on_trash_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.unlinkChildren(Global.heldSprite)
-	Global.heldSprite.queue_free()
-	Global.heldSprite = null
-
-	Global.spriteList.updateData()
-
-func _on_unlink_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	if Global.heldSprite.parentId == null:
-		return
-	Global.unlinkSprite()
-	setImage()
+# (Removed: _on_speaking_pressed / _on_blinking_pressed / _on_trash_pressed /
+# _on_unlink_pressed — these were connected to scene buttons inside the now-
+# hidden $Buttons/Speaking, $Buttons/Blinking, $Buttons/Trash, $Buttons/Unlink
+# sprites. The real handlers live in viewer.gd's right sidebar.)
 
 
 func _on_rot_limit_min_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$RotationalLimits/RotLimitMin.text = "rotational limit min: " + str(value)
+	_rot_min_label.text = "rotational limit min: " + str(value)
 	Global.heldSprite.rLimitMin = value
 	Global.main.ndi_mark_dirty()
 
@@ -683,7 +927,7 @@ func _on_rot_limit_min_value_changed(value):
 func _on_rot_limit_max_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$RotationalLimits/RotLimitMax.text = "rotational limit max: " + str(value)
+	_rot_max_label.text = "rotational limit max: " + str(value)
 	Global.heldSprite.rLimitMax = value
 	Global.main.ndi_mark_dirty()
 
@@ -838,7 +1082,7 @@ func layerSelected():
 func _on_squash_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$Rotation/squashlabel.text = "squash: " + str(value)
+	_squash_label.text = "squash: " + str(value)
 	Global.heldSprite.stretchAmount = value
 
 
@@ -851,13 +1095,13 @@ func _on_check_box_toggled(button_pressed):
 func _on_anim_speed_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$Animation/animSpeedLabel.text = "animation speed: " + str(value)
+	_anim_speed_label.text = "animation speed: " + str(value)
 	Global.heldSprite.animSpeed = value
 
 func _on_anim_frames_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
-	$Animation/animFramesLabel.text = "sprite frames: " + str(value)
+	_anim_frames_label.text = "sprite frames: " + str(value)
 	Global.heldSprite.frames = value
 	Global.heldSprite.changeFrames()
 	setImage()
