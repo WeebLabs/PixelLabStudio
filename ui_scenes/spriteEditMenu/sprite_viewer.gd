@@ -12,6 +12,10 @@ var _parent_label: Label
 var _bg: ColorRect
 var panel_width: float = 265
 var panel_height: float = 630
+# Total vertical extent of laid-out content, set by _layout_panel(). The
+# scroll clamp uses this so the user can always scroll to the actual bottom
+# even if sections grow or shrink.
+var content_height: float = 0.0
 
 # Spacing constants live on Global so both sidebars share one source of truth.
 # Tune Global.UI_ROW_GAP / UI_DIVIDER_PAD to reflow every panel that uses them.
@@ -697,6 +701,11 @@ func _layout_panel():
 			_place_section(section, content, y)
 		y += content.get_combined_minimum_size().y
 
+	# Final layout cursor = bottom of the last section. Used by the scroll
+	# clamp so we always allow scrolling all the way to the actual end of
+	# content (the previous hardcoded ~1150 estimate was stale).
+	content_height = y + Global.UI_DIVIDER_PAD  # small bottom padding
+
 # Build a VBoxContainer inside a scene-defined section node, place it at the
 # original first-widget offset, and reparent the section's widgets into it
 # in display order. Sliders auto-fill the VBox width; labels and other Controls
@@ -827,7 +836,9 @@ func _input(event):
 	if event.position.x > panel_width + 19:
 		return
 	var s = get_viewport().get_visible_rect().size
-	if s.y > 1200:
+	# Only enable scroll when the viewport can't fit the whole panel.
+	var top_pad = 30  # menu bar clearance
+	if s.y > content_height + top_pad:
 		return
 	var step = 50
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -837,7 +848,9 @@ func _input(event):
 	else:
 		return
 	var top_y = 30
-	var min_y = s.y - 1150
+	# min_y lets the bottom of content land flush with the bottom of the
+	# viewport — content_height is the actual laid-out extent (see _layout_panel).
+	var min_y = s.y - content_height
 	position.y = clamp(position.y, min_y, top_y)
 	get_viewport().set_input_as_handled()
 

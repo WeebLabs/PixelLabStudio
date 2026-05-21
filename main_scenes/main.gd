@@ -1469,12 +1469,19 @@ func takeScreenshot():
 	_screenshot_dialog.popup_centered(Vector2i(600, 400))
 
 func _create_save_load_dialogs():
+	# OS.get_user_data_dir() resolves the absolute filesystem path that
+	# `user://` maps to — the native picker needs a real path, not Godot's
+	# virtual prefix. After the first navigation FileDialog tracks the user's
+	# last-visited current_dir, so subsequent opens land where they left off.
+	var user_dir = OS.get_user_data_dir()
+
 	saveDialog = FileDialog.new()
 	saveDialog.title = "Save Avatar"
 	saveDialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 	saveDialog.access = FileDialog.ACCESS_FILESYSTEM
 	saveDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
 	saveDialog.use_native_dialog = true
+	saveDialog.current_dir = user_dir
 	saveDialog.file_selected.connect(_on_save_dialog_file_selected)
 	add_child(saveDialog)
 
@@ -1484,6 +1491,7 @@ func _create_save_load_dialogs():
 	loadDialog.access = FileDialog.ACCESS_FILESYSTEM
 	loadDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
 	loadDialog.use_native_dialog = true
+	loadDialog.current_dir = user_dir
 	loadDialog.file_selected.connect(_on_load_dialog_file_selected)
 	add_child(loadDialog)
 
@@ -2425,7 +2433,9 @@ func moveSpriteMenu(delta):
 	var size = get_viewport().get_visible_rect().size
 	var topY = editControls.MENU_BAR_HEIGHT + 2
 
-	var windowLength = 1150
+	# Total panel content extent — computed by sprite_viewer's layout pass.
+	# Falls back to a sane default until the panel finishes its first layout.
+	var windowLength = Global.spriteEdit.content_height if Global.spriteEdit.content_height > 0 else 1150
 
 	viewerArrows.get_node("Arrows").visible = false
 	viewerArrows.get_node("Arrows2").visible = false
