@@ -21,6 +21,9 @@ var _last_cam_pos: Vector2
 var _last_cam_zoom: float
 var _last_vp_size: Vector2
 var _last_node_pos: Vector2
+# Tracks whether we own the current cursor override (to avoid resetting
+# another component's cursor when we leave hover).
+var _set_cursor: bool = false
 
 func _ready():
 	z_index = 100
@@ -32,11 +35,22 @@ func _process(_delta):
 	var origin = Global.main.origin
 	position = origin.global_position + Vector2(0, _get_ruler_y())
 
-	# Update hover state
+	# Update hover state. Hover is only "true" when the cursor is close to the
+	# crop line AND not over either sidebar — sidebars block dragging and the
+	# vertical-resize cursor.
 	var mouse_pos = get_global_mouse_position()
 	var dist = abs(mouse_pos.y - global_position.y)
 	var was_hovered = _hovered
-	_hovered = dist < GRAB_THRESHOLD / Global.main.camera.zoom.x
+	var near_line = dist < GRAB_THRESHOLD / Global.main.camera.zoom.x
+	_hovered = near_line and not _mouse_over_sidebar()
+
+	# Cursor: vertical-resize when over the line outside the sidebars
+	if _hovered:
+		Input.set_default_cursor_shape(Input.CURSOR_VSIZE)
+		_set_cursor = true
+	elif _set_cursor:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		_set_cursor = false
 
 	# Redraw when any value that affects drawing changes
 	var cam = Global.main.camera
@@ -95,6 +109,9 @@ func _unhandled_input(event):
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
+			# Don't let the click start a drag if the cursor is over a sidebar
+			if _mouse_over_sidebar():
+				return
 			var mouse_pos = get_global_mouse_position()
 			var dist = abs(mouse_pos.y - global_position.y)
 			var cam_zoom = Global.main.camera.zoom.x
@@ -145,3 +162,22 @@ func _set_freeze(frozen: bool):
 
 func _save_ruler_y():
 	Global.pushUpdate("NDI crop line moved to Y=" + str(int(_get_ruler_y())))
+
+# Returns true when the mouse is currently over the left (sprite-edit) or
+# right (layer-list) sidebar. Uses viewport-pixel coordinates because the
+# sidebars are HUD-layer Controls positioned in screen space.
+func _mouse_over_sidebar() -> bool:
+	var vp = Global.main.get_viewport()
+	if vp == null:
+		return false
+	var screen_x = vp.get_mouse_position().x
+	if Global.spriteEdit != null and Global.spriteEdit.visible:
+		# Left sidebar — bounds matched to spriteEdit._unhandled_input
+		if screen_x < Global.spriteEdit.panel_width + 19:
+			return true
+	if Global.spriteList != null:
+		# Right sidebar — anchored at viewport_width - (panel_width + 3)
+		var vp_w = vp.get_visible_rect().size.x
+		if screen_x > vp_w - (Global.spriteList.panel_width + 3):
+			return true
+	return false
