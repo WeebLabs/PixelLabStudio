@@ -104,66 +104,70 @@ func _ready():
 	$ControlPanel/VersionLabels.visible = false
 	$ControlPanel/Links.visible = false
 
-	if Saving.settings["newUser"]:
-		_on_load_dialog_file_selected("default")
-		Saving.settings["newUser"] = false
-		saveLoaded = true
-		_style_control_sliders()
-	else:
-		_on_load_dialog_file_selected(Saving.settings["lastAvatar"])
-		
-		$ControlPanel/volumeSlider.value = Saving.settings["volume"]
-		$ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
-		_style_control_sliders()
-		
-		get_window().size = str_to_var(Saving.settings["windowSize"])
-		
-		if Saving.settings.has("bounce"):
-			bounceSlider = Saving.settings["bounce"]
-		else:
-			Saving.settings["bounce"] = 250
-		
-		if Saving.settings.has("maxFPS"):
-			Engine.max_fps = Saving.settings["maxFPS"]
-		else:
-			Saving.settings["maxFPS"] = 60
-		
-		if Saving.settings.has("backgroundColor"):
-			Global.backgroundColor = str_to_var(Saving.settings["backgroundColor"])
-		else:
-			Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
-		
-		if Saving.settings.has("filtering"):
-			Global.filtering = Saving.settings["filtering"]
-		else:
-			Saving.settings["filtering"] = false
-			
-		if Saving.settings.has("gravity"):
-			bounceGravity = Saving.settings["gravity"]
-		else:
-			Saving.settings["gravity"] = 1000
-		
-		if Saving.settings.has("costumeKeys"):
-			costumeKeys = Saving.settings["costumeKeys"]
-		else:
-			Saving.settings["costumeKeys"] = costumeKeys
-		
-		if Saving.settings.has("blinkSpeed"):
-			Global.blinkSpeed = Saving.settings["blinkSpeed"]
-		else:
-			Saving.settings["blinkSpeed"] = 1.0
-		
-		if Saving.settings.has("blinkChance"):
-			Global.blinkChance = Saving.settings["blinkChance"]
-		else:
-			Saving.settings["blinkChance"] = 200
-		
-		if Saving.settings.has("bounceOnCostumeChange"):
-			bounceOnCostumeChange = Saving.settings["bounceOnCostumeChange"]
-		else:
-			Saving.settings["bounceOnCostumeChange"] = false
+	# Always try to load the most recently used avatar. If the path is empty,
+	# the file is missing, or parsing fails, _on_load_dialog_file_selected
+	# returns early and the app comes up to the scene's default empty origin.
+	# (UndoManager.save_state is gated on saveLoaded, so it's a no-op here.)
+	var last_avatar_path = Saving.settings.get("lastAvatar", "")
+	if last_avatar_path != "":
+		_on_load_dialog_file_selected(last_avatar_path)
+	Saving.settings["newUser"] = false
 
-		saveLoaded = true
+	if Saving.settings.has("volume"):
+		$ControlPanel/volumeSlider.value = Saving.settings["volume"]
+	if Saving.settings.has("sense"):
+		$ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
+	_style_control_sliders()
+
+	if Saving.settings.has("windowSize"):
+		get_window().size = str_to_var(Saving.settings["windowSize"])
+
+	if Saving.settings.has("bounce"):
+		bounceSlider = Saving.settings["bounce"]
+	else:
+		Saving.settings["bounce"] = 250
+
+	if Saving.settings.has("maxFPS"):
+		Engine.max_fps = Saving.settings["maxFPS"]
+	else:
+		Saving.settings["maxFPS"] = 60
+
+	if Saving.settings.has("backgroundColor"):
+		Global.backgroundColor = str_to_var(Saving.settings["backgroundColor"])
+	else:
+		Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
+
+	if Saving.settings.has("filtering"):
+		Global.filtering = Saving.settings["filtering"]
+	else:
+		Saving.settings["filtering"] = false
+
+	if Saving.settings.has("gravity"):
+		bounceGravity = Saving.settings["gravity"]
+	else:
+		Saving.settings["gravity"] = 1000
+
+	if Saving.settings.has("costumeKeys"):
+		costumeKeys = Saving.settings["costumeKeys"]
+	else:
+		Saving.settings["costumeKeys"] = costumeKeys
+
+	if Saving.settings.has("blinkSpeed"):
+		Global.blinkSpeed = Saving.settings["blinkSpeed"]
+	else:
+		Saving.settings["blinkSpeed"] = 1.0
+
+	if Saving.settings.has("blinkChance"):
+		Global.blinkChance = Saving.settings["blinkChance"]
+	else:
+		Saving.settings["blinkChance"] = 200
+
+	if Saving.settings.has("bounceOnCostumeChange"):
+		bounceOnCostumeChange = Saving.settings["bounceOnCostumeChange"]
+	else:
+		Saving.settings["bounceOnCostumeChange"] = false
+
+	saveLoaded = true
 
 	if screen_scale > 1.0:
 		var logical_size = Vector2(get_window().size) / screen_scale
@@ -402,6 +406,9 @@ func _notification(what):
 			if _save_progress_dialog != null:
 				_save_progress_dialog.queue_free()
 				_save_progress_dialog = null
+			# Belt-and-suspenders: also persist settings here in case the autoload's
+			# _exit_tree doesn't fire (force-quit, certain Godot/OS paths)
+			Saving.write_settings(Saving.settingsPath)
 		30:
 			onWindowSizeChange()
 
@@ -1289,6 +1296,8 @@ func _on_load_dialog_file_selected(path):
 
 	changeCostume(1)
 	Saving.settings["lastAvatar"] = path
+	# Persist immediately — _exit_tree isn't reliable across all shutdown paths
+	Saving.write_settings(Saving.settingsPath)
 	await Global.spriteList.updateData()
 
 	onWindowSizeChange()
@@ -1853,6 +1862,8 @@ func _on_save_dialog_file_selected(path):
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
 
 	Saving.settings["lastAvatar"] = path
+	# Persist immediately — _exit_tree isn't reliable across all shutdown paths
+	Saving.write_settings(Saving.settingsPath)
 
 	_save_progress = 0.0
 	_save_progress_dialog = _create_save_progress_dialog()
