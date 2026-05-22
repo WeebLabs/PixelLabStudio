@@ -157,6 +157,10 @@ Link button at the top of the right sidebar and connect the child to its
 parent. Eye-tracking layer mode uses a similar pick-and-connect flow from
 the Pick button next to the eye-tracking mode dropdown.
 
+For a full list of keyboard shortcuts (editing, camera, undo/redo,
+recording, costumes, mouse interactions, and the Mac-specific notes on
+modifier keys), see [docs/keyboard_shortcuts.md](docs/keyboard_shortcuts.md).
+
 ### 4. NDI into OBS
 
 1. Open the settings menu (gear icon, bottom-right) and turn on **NDI
