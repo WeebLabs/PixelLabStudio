@@ -386,6 +386,12 @@ tracking, normal maps, PSD import, undo/redo, rotational limits, the
 various toggles and editor ergonomics) are the work of this fork's
 contributors.
 
+Some hardening and feature ideas were adapted from
+[Entrak/PNGTuber-Plus](https://github.com/Entrak/PNGTuber-Plus), another
+fork of the original project. The session auto-save / crash-recovery
+flow in particular (`user://session.pngtp` plus a startup restore prompt)
+was inspired by their `_auto_save_session` implementation.
+
 ## Contributing
 
 Issues and pull requests are welcome. If you're working on UI,

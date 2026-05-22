@@ -77,6 +77,18 @@ const RESIZE_COOLDOWN_FRAMES = 5
 var resize_active: bool = false
 var _resize_cooldown: int = 0
 var _last_viewport_size: Vector2 = Vector2.ZERO
+
+# Session auto-save. Every time the user makes an undoable edit, _session_dirty
+# is flipped on; after SESSION_AUTO_SAVE_INTERVAL seconds the rig is encoded
+# in a background thread and written to SESSION_SAVE_PATH. On the next launch,
+# if the session file is newer than the lastAvatar save, we offer to restore
+# instead of loading the older one.
+const SESSION_SAVE_PATH = "user://session.pngtp"
+const SESSION_AUTO_SAVE_INTERVAL = 60.0
+var _session_dirty: bool = false
+var _session_timer: float = 0.0
+var _session_thread: Thread = null
+var _session_recovery_dialog: Node2D = null
 var bounceGravity = 1000
 
 #Costumes
@@ -120,12 +132,19 @@ func _ready():
 	$UILayer/ControlPanel/VersionLabels.visible = false
 	$UILayer/ControlPanel/Links.visible = false
 
-	# Always try to load the most recently used avatar. If the path is empty,
-	# the file is missing, or parsing fails, _on_load_dialog_file_selected
-	# returns early and the app comes up to the scene's default empty origin.
-	# (UndoManager.save_state is gated on saveLoaded, so it's a no-op here.)
+	# Hook every undoable edit to the session-dirty flag so the auto-save tick
+	# in _process knows there's unsaved work to capture.
+	UndoManager.state_saved.connect(_on_undo_state_saved)
+
+	# Startup load: if a session-recovery file exists and is newer than the
+	# lastAvatar save, prompt the user to restore it instead of loading the
+	# older file. Otherwise fall back to the normal lastAvatar restore.
+	# (UndoManager.save_state is gated on saveLoaded, so any state captures
+	# during load itself are no-ops.)
 	var last_avatar_path = Saving.settings.get("lastAvatar", "")
-	if last_avatar_path != "":
+	if _has_recoverable_session(last_avatar_path):
+		_show_session_recovery_dialog(last_avatar_path)
+	elif last_avatar_path != "":
 		_on_load_dialog_file_selected(last_avatar_path)
 	Saving.settings["newUser"] = false
 
@@ -351,6 +370,7 @@ func _process(delta):
 	_process_import_thread(delta)
 	_process_anim_thread(delta)
 	_process_save_thread(delta)
+	_process_session_save(delta)
 	_process_recording(delta)
 	panCamera()
 	followShadow()
@@ -1334,9 +1354,13 @@ func _on_load_dialog_file_selected(path):
 	Global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
 
 	changeCostume(1)
-	Saving.settings["lastAvatar"] = path
-	# Persist immediately — _exit_tree isn't reliable across all shutdown paths
-	Saving.write_settings(Saving.settingsPath)
+	# The session-recovery file is ephemeral — never promote it to lastAvatar,
+	# otherwise startup auto-load and Reset would pull from it instead of the
+	# user's actual saved avatar.
+	if path != SESSION_SAVE_PATH:
+		Saving.settings["lastAvatar"] = path
+		# Persist immediately — _exit_tree isn't reliable across all shutdown paths
+		Saving.write_settings(Saving.settingsPath)
 	await Global.spriteList.updateData()
 
 	onWindowSizeChange()
@@ -1853,84 +1877,79 @@ func _process_save_thread(_delta):
 	# Recenter on viewport — handles window resize while saving.
 	_save_progress_dialog.position = get_viewport().get_visible_rect().size * 0.5
 
-#SAVE AVATAR
-func _on_save_dialog_file_selected(path):
-	if _save_thread != null:
-		_save_thread.wait_to_finish()
-		_save_thread = null
-
+# Build the same Dictionary structure manual save and session auto-save both
+# write out. Image references go in `_image_ref` / `_normal_image_ref` so the
+# background worker can base64-encode them off the main thread (see
+# `_save_worker` and `_session_save_worker`).
+func _build_avatar_save_data() -> Dictionary:
 	var data = {}
 	var nodes = get_tree().get_nodes_in_group("saved")
 	var id = 0
 	for child in nodes:
-
 		if child.type == "sprite":
-			data[id] = {}
-			data[id]["type"] = "sprite"
-			data[id]["path"] = child.path
-			data[id]["_image_ref"] = child.imageData
-			data[id]["identification"] = child.id
-			data[id]["parentId"] = child.parentId
-
-			data[id]["pos"] = var_to_str(child.position)
-			data[id]["offset"] = var_to_str(child.offset)
-			data[id]["zindex"] = child.z
-
-			data[id]["drag"] = child.dragSpeed
-
-			data[id]["xFrq"] = child.xFrq
-			data[id]["xAmp"] = child.xAmp
-			data[id]["yFrq"] = child.yFrq
-			data[id]["yAmp"] = child.yAmp
-
-			data[id]["rotDrag"] = child.rdragStr
-
-			data[id]["showTalk"] = child.showOnTalk
-			data[id]["showBlink"] = child.showOnBlink
-
-			data[id]["rLimitMin"] = child.rLimitMin
-			data[id]["rLimitMax"] = child.rLimitMax
-
-			data[id]["costumeLayers"] = var_to_str(child.costumeLayers)
-
-			data[id]["stretchAmount"] = child.stretchAmount
-
-			data[id]["ignoreBounce"] = child.ignoreBounce
-			data[id]["staticElement"] = child.staticElement
-
-			data[id]["frames"] = child.frames
-			data[id]["animSpeed"] = child.animSpeed
-
-			data[id]["clipped"] = child.clipped
-
-			data[id]["toggle"] = child.toggle
-
-			data[id]["eyeTrack"] = child.eyeTrack
-			data[id]["eyeTrackDistance"] = child.eyeTrackDistance
-			data[id]["eyeTrackSpeed"] = child.eyeTrackSpeed
-			data[id]["eyeTrackInvert"] = child.eyeTrackInvert
-			data[id]["eyeTrackMode"] = child.eyeTrackMode
-			data[id]["eyeTrackTargetId"] = child.eyeTrackTargetId
-			data[id]["ndiRefLayer"] = child.ndiRefLayer
-
-			data[id]["normalPath"] = child.normalPath
+			data[id] = {
+				"type": "sprite",
+				"path": child.path,
+				"_image_ref": child.imageData,
+				"identification": child.id,
+				"parentId": child.parentId,
+				"pos": var_to_str(child.position),
+				"offset": var_to_str(child.offset),
+				"zindex": child.z,
+				"drag": child.dragSpeed,
+				"xFrq": child.xFrq,
+				"xAmp": child.xAmp,
+				"yFrq": child.yFrq,
+				"yAmp": child.yAmp,
+				"rotDrag": child.rdragStr,
+				"showTalk": child.showOnTalk,
+				"showBlink": child.showOnBlink,
+				"rLimitMin": child.rLimitMin,
+				"rLimitMax": child.rLimitMax,
+				"costumeLayers": var_to_str(child.costumeLayers),
+				"stretchAmount": child.stretchAmount,
+				"ignoreBounce": child.ignoreBounce,
+				"staticElement": child.staticElement,
+				"frames": child.frames,
+				"animSpeed": child.animSpeed,
+				"clipped": child.clipped,
+				"toggle": child.toggle,
+				"eyeTrack": child.eyeTrack,
+				"eyeTrackDistance": child.eyeTrackDistance,
+				"eyeTrackSpeed": child.eyeTrackSpeed,
+				"eyeTrackInvert": child.eyeTrackInvert,
+				"eyeTrackMode": child.eyeTrackMode,
+				"eyeTrackTargetId": child.eyeTrackTargetId,
+				"ndiRefLayer": child.ndiRefLayer,
+				"normalPath": child.normalPath,
+			}
 			if child.normalImageData != null:
 				data[id]["_normal_image_ref"] = child.normalImageData
-
 		id += 1
 
-	# Save light gizmo data
 	if _light_gizmo != null:
 		data["_light"] = {
 			"pos": var_to_str(_light_gizmo.position),
 			"energy": _light_gizmo.light_energy,
 			"color": var_to_str(_light_gizmo.light_color),
 			"range": _light_gizmo.light_range,
-			"enabled": _light_gizmo.light_enabled
+			"enabled": _light_gizmo.light_enabled,
 		}
-
-	# Save the global eye-tracking kill switch
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
+	return data
+
+#SAVE AVATAR
+func _on_save_dialog_file_selected(path):
+	if _save_thread != null:
+		_save_thread.wait_to_finish()
+		_save_thread = null
+	# Wait for any in-flight session save too, so its worker doesn't race
+	# against the manual save by holding references to the same image data.
+	if _session_thread != null:
+		_session_thread.wait_to_finish()
+		_session_thread = null
+
+	var data = _build_avatar_save_data()
 
 	Saving.settings["lastAvatar"] = path
 	# Persist immediately — _exit_tree isn't reliable across all shutdown paths
@@ -1976,6 +1995,154 @@ func _on_save_finished(path: String, data: Dictionary):
 		_save_progress_dialog = null
 	Global.pushUpdate("Save complete: " + path.get_file())
 	_show_save_confirmation(path.get_file())
+	# The user's work is now persisted in their chosen save file; the
+	# session-recovery copy is redundant and would otherwise trigger a
+	# spurious "restore?" prompt on the next launch.
+	_discard_session_file()
+	_session_dirty = false
+	_session_timer = 0.0
+
+# --- Session auto-save -------------------------------------------------------
+
+# Signal callback for UndoManager.state_saved. Every edit that produces an
+# undoable snapshot marks the rig dirty for session purposes; the timer in
+# _process_session_save() decides when to flush.
+func _on_undo_state_saved():
+	_session_dirty = true
+
+# Per-frame tick: count up only while we have an avatar loaded, the rig is
+# dirty, and no save (manual or session) is in flight. When the interval
+# elapses, kick off a background encode + write to SESSION_SAVE_PATH.
+func _process_session_save(delta):
+	# Reap a finished thread first so we can start a new tick.
+	if _session_thread != null and !_session_thread.is_alive():
+		_session_thread.wait_to_finish()
+		_session_thread = null
+	if _save_thread != null or _session_thread != null:
+		return
+	if !saveLoaded or !_session_dirty:
+		return
+	_session_timer += delta
+	if _session_timer < SESSION_AUTO_SAVE_INTERVAL:
+		return
+	_session_timer = 0.0
+	_session_dirty = false  # re-armed by the next undo state save
+	var data = _build_avatar_save_data()
+	_session_thread = Thread.new()
+	_session_thread.start(_session_save_worker.bind(data))
+
+# Mirrors _save_worker but writes silently to SESSION_SAVE_PATH and does not
+# touch the progress UI or surface a confirmation.
+func _session_save_worker(data: Dictionary):
+	for id in data:
+		var entry = data[id]
+		if entry is Dictionary:
+			if entry.has("_image_ref"):
+				var img: Image = entry["_image_ref"]
+				entry["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
+				entry.erase("_image_ref")
+			if entry.has("_normal_image_ref"):
+				var nrml_img: Image = entry["_normal_image_ref"]
+				entry["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
+				entry.erase("_normal_image_ref")
+	var file = FileAccess.open(SESSION_SAVE_PATH, FileAccess.WRITE)
+	if file == null:
+		push_error("Session auto-save failed to open " + SESSION_SAVE_PATH)
+		return
+	file.store_line(JSON.stringify(data))
+	file.close()
+
+func _discard_session_file():
+	if !FileAccess.file_exists(SESSION_SAVE_PATH):
+		return
+	var dir = DirAccess.open("user://")
+	if dir != null:
+		dir.remove(SESSION_SAVE_PATH.get_file())
+
+# True if a session file exists and is newer than the user's lastAvatar save
+# (or the lastAvatar is missing entirely). Used at startup to decide whether
+# to prompt for recovery instead of loading the lastAvatar.
+func _has_recoverable_session(last_avatar_path: String) -> bool:
+	if !FileAccess.file_exists(SESSION_SAVE_PATH):
+		return false
+	if last_avatar_path == "" or !FileAccess.file_exists(last_avatar_path):
+		return true
+	var session_mod = FileAccess.get_modified_time(SESSION_SAVE_PATH)
+	var avatar_mod = FileAccess.get_modified_time(last_avatar_path)
+	return session_mod > avatar_mod
+
+# Modal recovery prompt on UILayer, styled like the save-progress dialog: a
+# full-viewport dimmer + click-blocker behind a centered body with a label
+# and two buttons. Restore loads the session file; Discard deletes it and
+# loads the lastAvatar (if any) instead.
+func _show_session_recovery_dialog(last_avatar_path: String):
+	var dialog = Node2D.new()
+	dialog.z_index = 100
+	dialog.position = get_viewport().get_visible_rect().size * 0.5
+
+	var blocker = ColorRect.new()
+	blocker.position = Vector2(-5000, -5000)
+	blocker.size = Vector2(10000, 10000)
+	blocker.color = Color(0, 0, 0, 0.35)
+	blocker.mouse_filter = Control.MOUSE_FILTER_STOP
+	dialog.add_child(blocker)
+
+	var bg = ColorRect.new()
+	bg.position = Vector2(-220, -75)
+	bg.size = Vector2(440, 150)
+	bg.color = Color(0.13, 0.13, 0.15, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(bg)
+
+	var title = Label.new()
+	title.position = Vector2(-210, -62)
+	title.size = Vector2(420, 24)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.text = "Recover unsaved session?"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(title)
+
+	var body = Label.new()
+	body.position = Vector2(-210, -35)
+	body.size = Vector2(420, 60)
+	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD
+	body.text = "A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
+	body.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dialog.add_child(body)
+
+	var restore_btn = Button.new()
+	restore_btn.text = "Restore"
+	restore_btn.position = Vector2(-180, 38)
+	restore_btn.size = Vector2(160, 28)
+	restore_btn.pressed.connect(func(): _on_session_recovery_choice(true, last_avatar_path))
+	dialog.add_child(restore_btn)
+
+	var discard_btn = Button.new()
+	discard_btn.text = "Discard"
+	discard_btn.position = Vector2(20, 38)
+	discard_btn.size = Vector2(160, 28)
+	discard_btn.pressed.connect(func(): _on_session_recovery_choice(false, last_avatar_path))
+	dialog.add_child(discard_btn)
+
+	$UILayer.add_child(dialog)
+	_session_recovery_dialog = dialog
+
+func _on_session_recovery_choice(restore: bool, last_avatar_path: String):
+	if _session_recovery_dialog != null and is_instance_valid(_session_recovery_dialog):
+		_session_recovery_dialog.queue_free()
+		_session_recovery_dialog = null
+	if restore:
+		_on_load_dialog_file_selected(SESSION_SAVE_PATH)
+		# Keep the session file in place: the user's next manual save will
+		# clear it, and crashing again before that should still recover.
+	else:
+		_discard_session_file()
+		if last_avatar_path != "" and FileAccess.file_exists(last_avatar_path):
+			_on_load_dialog_file_selected(last_avatar_path)
 
 # Visible save-success toast on UILayer that lingers ~2 seconds, fades out
 # over half a second, and dismisses on click. More prominent than the

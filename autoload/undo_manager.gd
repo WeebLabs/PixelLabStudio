@@ -1,5 +1,10 @@
 extends Node
 
+# Emitted when save_state() actually captures a snapshot (not when suppressed
+# during an undo/redo restore). Subscribers — currently main.gd's session
+# auto-save — use this to flag the rig as "dirty since last persisted save."
+signal state_saved
+
 const MAX_HISTORY = 50
 
 var _undo_stack: Array = []
@@ -352,6 +357,7 @@ func save_state():
 	_continuous_saved = false
 	if _undo_stack.size() > MAX_HISTORY:
 		_undo_stack.pop_front()
+	state_saved.emit()
 
 func save_state_continuous():
 	if _continuous_saved:
