@@ -1,386 +1,364 @@
 # PixelLab Studio
 
-A modern, opinionated PNGTuber avatar engine. PixelLab Studio takes the familiar
-two-frame talking-avatar workflow and extends it with per-layer physics,
-parent-child layer hierarchies, eye tracking, native NDI broadcast, recording
-with a transparent background, normal-map lighting, and a comprehensive
-non-destructive editor — all built on Godot 4.
+A 2D PNG avatar program for streamers and content creators. PixelLab Studio
+started as a fork of [PNGTuber Plus](https://kaiakairos.itch.io/pngtuber-plus)
+by kaiakairos and adds a number of features around output, lighting, and
+editing ergonomics while keeping the original's per-sprite physics and
+parenting workflow.
 
 ## What it is
 
-PixelLab Studio renders a layered, physically reactive avatar in real time from
-PNG, multi-frame PNG sprite sheets, or PSD files. It's designed to look great
-both in stream overlays and in standalone clips, and to give a serious
-content creator the control they'd expect from a dedicated character rig
-without writing a single line of code.
+You import PNGs (or a PSD), arrange them into a layered rig, set per-sprite
+physics (wobble, drag, rotation, talk/blink frames), and the app renders the
+avatar in real time. The avatar reacts to your microphone, and you can
+either show it directly in a transparent window or broadcast it to OBS via
+NDI.
 
-## What it can do that PNGTuber Plus (the original) can't
+## How it compares to PNGTuber Plus
 
-PNGTuber Plus is a fantastic starting point — PixelLab Studio is what happens
-when you keep extending it. Beyond the original feature set, PixelLab Studio
-adds:
+PNGTuber Plus is the project this is built on. If you've used it, the
+sprite-list, parenting model, sine-wave wobble, drag, bounce, and
+talk/blink visibility rules will all be familiar. They work the same way
+here.
 
-- **Native NDI broadcast.** Send the avatar directly to OBS (or any NDI
-  receiver) as a network video source with transparent alpha. No chroma key,
-  no screen capture, no second window — OBS sees the avatar as a clean NDI
-  source.
-- **Recording with transparent background.** Capture loops of the avatar to
-  WebM (VP9 alpha), animated PNG, or animated GIF — all with true
-  transparency suitable for re-use in video editors.
-- **Per-layer wobble physics.** Each layer has independent X/Y frequency and
-  amplitude wobble, drag (follow-with-lag), squash/stretch, and rotational
-  drag — none of this is global. A scarf flutters differently from a hat.
-- **Rotational limits.** Clamp how far a sprite can rotate so heads don't
-  spin past believable angles.
-- **Eye tracking with two modes.** Eyes can follow the cursor in screen
-  space, or follow another layer in the rig (whip-pick the target with a
-  visual link line). Per-layer enable, global kill switch, invert direction,
-  configurable distance and speed.
-- **Layer parenting.** Build a real rig — earrings parented to the head,
-  the head parented to the body. Children inherit transforms and physics
-  contributions from their parent.
-- **Static elements.** Mark a layer as static so it ignores avatar-wide
-  bounce — useful for backdrops, anchors, or stable accessories — while it
-  still receives drag, wobble, and rotation.
-- **Clip-linked sprites.** Constrain a layer's render to the bounding shape
-  of its parent — clean masking without writing a shader.
-- **Visibility-toggle key bindings.** Bind any keyboard key to show/hide a
-  specific layer for quick prop toggles mid-stream.
-- **Costume system.** Switch between 10 costume states via hotkeys (`1`-`0`
-  by default), with per-layer rules for which costume slots each layer
-  participates in.
-- **Multi-frame sprites and per-layer animation.** Any layer can have its
-  own sprite-sheet frames and a configurable animation speed independent of
-  the rest of the rig.
-- **Normal-map support.** Pair a `_NRML`-suffixed PNG with any diffuse
-  layer on import for proper lighting response (Light2D control coming soon
-  — see Roadmap).
-- **PSD import preserving layer structure.** Drop a PSD in and it lands as
-  a fully parented rig with each Photoshop layer as a separate sprite,
-  retaining position, layer order, and group hierarchy.
-- **Undo/redo across everything.** Sliders, checkboxes, layer moves,
-  imports, deletes — the entire edit session is reversible.
-- **Resizable, persistent sidebars.** Drag either sidebar's edge to resize.
-  Widths are saved with your settings and restored on next launch.
-- **Auto-restore last avatar.** The most recently saved or loaded avatar
-  re-opens automatically on startup; an empty canvas is shown only if the
-  file is missing.
-- **Screenshot with transparent background.** `Ctrl+K` grabs the current
-  frame as a transparent PNG, suitable for thumbnails or animated overlays.
+What's added on top:
+
+- **NDI output.** Broadcasts the avatar directly to OBS (or any NDI
+  receiver) as a network video source with a transparent background. No
+  chroma key or screen capture required.
+- **Recording.** Record to WebM (VP9 alpha), animated PNG, or animated GIF
+  with transparent backgrounds. Configurable frame rate.
+- **Screenshot with transparent background.** `Ctrl+K` saves the current
+  frame as a transparent PNG.
+- **Eye tracking.** Per-sprite eye tracking with two modes: follow the
+  cursor, or follow another sprite in the rig. Includes invert, tracking
+  distance, and tracking speed.
+- **Normal maps.** Pair a `_NRML`-suffixed image with any diffuse sprite
+  for lighting response (UI for placing lights is on the roadmap, see
+  below).
+- **PSD import.** Drop a `.psd` and each Photoshop layer becomes a sprite,
+  preserving group hierarchy and layer order.
+- **Undo/redo.** Most edit operations are reversible.
+- **Rotational limits.** Clamp how far each sprite can rotate (min and
+  max angle).
+- **Static elements.** Mark a sprite to ignore the avatar-wide bounce
+  while still receiving its own wobble, drag, and rotation.
+- **Clip linked sprites.** Render a child sprite only inside its
+  parent's bounds.
+- **NDI reference layer.** Designate one sprite as the framing anchor
+  so the NDI broadcast doesn't drift when other sprites move.
+- **Squash/stretch.** Vertical-velocity-driven scaling for a more
+  exaggerated bounce feel.
+- **Resizable, persistent sidebars.** Drag the inner edge of either
+  sidebar to resize. Widths are saved between sessions.
+- **Auto-restore last avatar.** The most recently saved or loaded
+  avatar is reopened on startup.
+- **Native file pickers.** Save and Load use the OS file picker (Finder
+  on macOS, Explorer on Windows) instead of Godot's themed dialog.
+
+Things both apps have (so they aren't in the list above): per-sprite
+animation frames, parent-child relationships, drag, bounce, sine-wave
+wobble, talk/blink visibility, costume hotkeys, hotkey-toggled sprite
+visibility, custom background color, StreamDeck integration.
 
 ## Who it's for
 
-- **VTubers and streamers** who want a more expressive avatar than the
-  basic two-frame talking head — without having to learn rigging in
-  Live2D or VRoid.
-- **Content creators producing static or animated assets** — the
-  transparent-background recording and screenshot exporters let you reuse
-  avatar moments in video editors, social posts, and thumbnails.
-- **OBS users who use NDI** — direct NDI output is the cleanest possible
-  pipeline into OBS Studio, vMix, or any NDI-aware switcher; no screen
-  capture, no chroma key, full alpha.
-- **Anyone with a multi-layered Photoshop file of their character** who
-  wants to bring it to life with one PSD drop and a few sliders.
+- Streamers who already use PNGTuber Plus and want NDI output, recording,
+  or eye tracking.
+- VTubers who'd rather drop a layered PSD in than wire up sprites one by
+  one.
+- Content creators who want to grab a transparent screenshot or short
+  clip of the avatar for thumbnails or social posts.
+- Anyone setting up an OBS pipeline who'd rather avoid chroma key and
+  screen capture.
 
 ## GUI design
 
-PixelLab Studio is built around three persistent regions:
+There are three persistent regions:
 
 1. **Top menu bar.** Exit, Import, Duplicate, Replace, Save, Load, Clear,
-   Reset — global file and project actions, always available.
-2. **Left sidebar (edit mode only).** All per-layer controls for the
-   currently selected sprite. From top to bottom:
-   - Sprite preview thumbnail
+   Reset.
+2. **Left sidebar (edit mode only).** Per-sprite controls for the
+   currently selected sprite, in order from top to bottom:
+   - Preview thumbnail
    - Normal-map import/clear
    - Position, offset, parent, layer info (read-only)
-   - Animation: frames + speed
-   - Drag (follow-with-lag amount)
-   - Rotation: squash + rotational drag
-   - Per-layer toggles: ignore bounce, clip linked sprites, static element,
-     NDI reference layer
-   - Wobble: X frequency/amplitude, Y frequency/amplitude
-   - Rotational limits: min/max rotation + a live rotation gauge
-3. **Right sidebar (always visible).** Avatar-wide controls.
-   - Top action row: speaking/blinking preview, link, unlink, trash
+   - Animation frames + speed
+   - Drag
+   - Squash + rotational drag
+   - Toggles: ignore bounce, clip linked sprites, static element, NDI
+     reference layer
+   - X frequency/amplitude, Y frequency/amplitude (wobble)
+   - Rotational limits min/max + a live rotation gauge
+3. **Right sidebar (always visible).** Avatar-wide controls:
+   - Top row: speaking/blinking preview, link, unlink, trash
    - Layer search/filter
-   - Layer list (drag-and-drop reorderable, collapsible by parent)
-   - User-draggable split between the layer list and the controls below
+   - Sprite list
+   - A draggable divider sets where the sprite list ends and the
+     controls below begin
    - Costume buttons (10 quick-switch icons)
-   - Eye tracking: enable, invert, mode dropdown (Cursor / Layer), pick
-     target button (whip-pick), tracking distance, tracking speed
-   - Visibility toggle: bind a key to show/hide the selected layer
+   - Eye tracking: enable, invert, mode (Cursor/Layer), pick target,
+     distance, speed
+   - Visibility toggle: bind a key to show/hide the selected sprite
 
-Every control follows a uniform spacing model (a single `ROW_GAP` value
-between adjacent widgets, with dedicated `DIVIDER_PAD` padding around
-section dividers). The sidebars are screen-space (CanvasLayer), so they stay
-nailed to the viewport edges regardless of camera zoom or pan in the canvas.
+The bottom-right corner holds the non-edit-mode controls: microphone,
+settings, edit-mode toggle, volume/sensitivity meters, zoom indicator,
+version.
 
-The bottom-right corner shows controls for non-edit mode (mic, settings,
-edit toggle, volume/sensitivity meters), plus zoom and version info.
+The whole UI lives on a CanvasLayer, so it stays put when you pan or zoom
+the canvas. Spacing follows two shared constants (a per-row gap and a
+divider padding) so adjusting one value reflows the whole panel.
 
 ## Getting started
 
 ### 1. Download and launch
 
-1. Download the latest release for your platform from the Releases page.
-   - **macOS**: a `.dmg` containing `PixelLab Studio.app`. Drag it to your
-     Applications folder.
-   - **Windows**: a `.zip` containing `PixelLab Studio.exe` and its
-     supporting files. Extract anywhere.
-2. Launch the app. On first run macOS may show a Gatekeeper warning —
-   right-click the app and choose Open, then confirm.
-3. The first launch opens an empty canvas. Use Import or Load from the top
-   menu to bring a character in.
+Grab the latest release for your platform from the Releases page.
+
+- **macOS**: a `.dmg` containing `PixelLab Studio.app`. Drag it to
+  Applications. On first run, macOS may show a Gatekeeper warning;
+  right-click the app and choose Open.
+- **Windows**: a `.zip` containing the executable. Extract it anywhere
+  and run.
+
+On first launch you'll see an empty canvas. Use Import or Load from the
+top menu to bring a character in.
 
 ### 2. Loading an avatar
 
-Three ways to bring a character in:
+Three ways to start:
 
-- **Import a PSD.** `Import` from the top menu, choose a `.psd`. Each
-  Photoshop layer becomes a sprite, group structure becomes parent
-  relationships, and the rig is laid out around the world origin. Layers
-  ending in `_NRML` (case-insensitive) auto-pair as normal maps for their
-  matching diffuse layer.
-- **Import PNG sprite sheets.** `Import` accepts multiple PNGs. Frame count
-  (horizontal sprite sheet) and layer order are configured per sprite once
-  it's in the scene.
-- **Load a saved rig.** `Load` opens a previously saved `.save` file. The
-  most recent save is re-loaded automatically next time you launch the
-  app.
+- **Import a PSD.** Pick a `.psd` from Import. Each Photoshop layer
+  becomes a sprite, groups become parent relationships, and the rig is
+  positioned around the world origin. Layers ending in `_NRML`
+  (case-insensitive) auto-pair as normal maps for their matching diffuse
+  layer.
+- **Import PNGs.** Import accepts one or more `.png` files. Once they're
+  in the scene you can set frame count (for sprite sheets), parents, and
+  per-sprite properties.
+- **Load a saved rig.** Load opens a `.save` file from any previous
+  session. The most recently saved or loaded avatar reopens
+  automatically the next time you launch the app.
 
-Save your project anytime with `Save`. A progress bar appears while images
-encode, then a confirmation toast appears on completion. Saves land in your
-platform's user data directory by default; you can navigate anywhere from
-the native file picker.
+Save with Save in the top menu. A progress bar appears while images
+encode, then a confirmation toast appears on completion. Saves default
+to the user data directory; the native file picker lets you navigate
+anywhere from there.
 
-### 3. Editing the rig
+### 3. Editing
 
-Click any sprite on the canvas to select it; its controls populate the left
-sidebar. Right-click a slider to reset that property to its default. The
-selected layer also highlights in the right sidebar's layer list.
+Click any sprite on the canvas to select it; its controls appear in the
+left sidebar. Right-click any slider to reset that property to its
+default.
 
-To set the rest origin of a sprite (the point it pivots around when
-rotating), enter origin mode and drag the white dot on the selected sprite
-to where its pivot should be.
+To set a sprite's pivot point (the white dot), use origin mode and drag
+the dot to the desired pivot. To parent one sprite to another, use the
+Link button at the top of the right sidebar and connect the child to its
+parent. Eye-tracking layer mode uses a similar pick-and-connect flow from
+the Pick button next to the eye-tracking mode dropdown.
 
-To parent a layer to another, click the Link button at the top of the right
-sidebar and connect the child to its desired parent. Eye-tracking layer
-mode uses a similar whip-pick from the Pick button next to the eye-tracking
-mode dropdown.
+### 4. NDI into OBS
 
-### 4. Sending the avatar to OBS via NDI
+1. Open the settings menu (gear icon, bottom-right) and turn on **NDI
+   Output**.
+2. Optionally set the NDI source name (this is what OBS will see).
+3. In OBS, install the obs-ndi plugin
+   ([DistroAV](https://github.com/DistroAV/DistroAV)) if you don't have
+   it.
+4. Add Source → NDI Source, pick `PixelLab Studio` (or your custom name)
+   from the dropdown.
 
-PixelLab Studio publishes the avatar as an NDI source with a transparent
-background — no chroma key, no screen capture.
-
-1. Open the settings menu (gear icon, bottom-right). Enable **NDI Output**.
-2. Optionally set the **NDI source name** (this is what OBS will see).
-3. In OBS Studio, install the official obs-ndi plugin (DistroAV) if you
-   haven't already.
-4. Add a new source → **NDI Source**, then pick `PixelLab Studio` (or your
-   custom name) from the dropdown.
-5. The avatar appears in OBS with a transparent background; layer it on top
-   of whatever you like.
-
-A draggable orange dashed line on the canvas marks the bottom crop boundary
-for the NDI frame — drag it up to crop tighter (e.g., framing for a
-talking-head shot). The NDI output dynamically reframes to fit the rig.
+The avatar shows up in OBS with a transparent background. A dashed
+orange line on the canvas marks the bottom crop boundary for the NDI
+frame. Drag it up to crop tighter for a head-and-shoulders shot. The
+NDI output dynamically reframes based on the rig.
 
 ## Features in detail
 
 ### Animation and physics
 
-- **Talk / blink frames.** Each layer's `showOnTalk` and `showOnBlink`
-  values determine which frame is displayed during talk/blink states.
-  Frame 0 is the rest pose; subsequent frames cycle automatically based on
-  the layer's animation speed.
-- **Per-layer sprite-sheet animation.** Set frames > 1 and a speed and
-  the layer cycles through its sprite sheet. Useful for breathing
-  effects, fluttering hair, animated mouths, or magical sparkles.
+- **Talk and blink frames.** Each sprite's `showOnTalk` and `showOnBlink`
+  settings determine which frame plays for each state. Frame 0 is the
+  rest pose; later frames cycle based on the sprite's animation speed.
+- **Sprite-sheet animation.** Set frames > 1 and a speed and the sprite
+  cycles through its sheet (mouths, breathing, idle accessories).
 - **Wobble.** Independent X and Y sine-wave oscillation, each with its
-  own frequency and amplitude. Combine them for figure-eight motion,
-  bobbing, or jiggle.
-- **Drag.** A lerped follow-with-lag offset that makes large layers
-  trail behind smaller ones during bounce — feels physical without
-  being a real spring simulation.
-- **Squash and stretch.** Driven by the layer's vertical velocity —
-  the avatar elongates as it falls back from a bounce and squashes
-  on contact, scaling by a tunable amount.
-- **Rotational drag.** As the layer moves vertically, rotational drag
-  rotates it slightly into the direction of motion (head tilts back
-  on a bounce, returns to rest on the way down).
-- **Rotational limits.** A min/max angle clamp prevents over-rotation.
-  Min and max are independent and visualized on a live rotation gauge
-  in the editor.
+  own frequency and amplitude.
+- **Drag.** A lerped follow-with-lag offset, so large sprites trail
+  behind smaller ones during a bounce.
+- **Squash and stretch.** Driven by vertical velocity; the sprite
+  stretches as it falls and squashes on contact, by a tunable amount.
+- **Rotational drag.** Sprites tilt slightly in the direction of vertical
+  motion as the avatar bounces.
+- **Rotational limits.** Independent min and max angle clamps, with a
+  live rotation gauge shown in the editor.
 
 ### Layer system
 
-- **Parent-child hierarchy.** Layers can be nested. Children inherit
-  position, rotation, drag, and bounce from their parent.
-- **Drag-and-drop reordering.** Reorder sprites in the layer list to
-  change z-index; drag onto another layer's drop zone to reparent.
-- **Filter.** Type in the filter field to quickly find a sprite by name
-  in deep rigs.
-- **Static elements.** Ignore the avatar's bouncing while still
-  receiving wobble, drag, and rotation.
-- **Clip linked sprites.** Render a child only inside the visual
-  bounds of its parent.
-- **NDI reference layer.** Mark one layer as the NDI framing reference
-  so the broadcast frame anchors consistently regardless of which
-  layer is currently in motion.
+- **Parenting.** Any sprite can be parented to another; children inherit
+  position, rotation, and bounce from their parent.
+- **Filter.** The filter field above the sprite list narrows the visible
+  list as you type.
+- **Static element.** Ignore avatar-wide bounce while still receiving
+  wobble, drag, and rotation. Useful for backdrops or stable accessories.
+- **Clip linked.** Render a sprite only inside its parent's visual
+  bounds.
+- **NDI reference layer.** Mark one sprite so the NDI output framing
+  anchors to it instead of drifting.
 
 ### Eye tracking
 
-- **Cursor mode.** Eyes follow the OS mouse cursor.
-- **Layer mode.** Eyes follow another sprite in the rig. Whip-pick the
-  target by clicking Pick and dragging the line to the target layer in
-  the canvas or the layer list.
-- **Per-layer enable.** Each "eye" layer has its own toggle.
-- **Global kill switch.** Disable all eye tracking with one click when
-  the toggle is in global scope (no layer selected).
-- **Invert direction.** Flip the tracking direction (eyes look away
-  from the target instead of at it).
-- **Tracking distance and speed.** Independent per layer.
+- **Cursor mode.** Eyes follow the mouse cursor.
+- **Layer mode.** Eyes follow another sprite. Pick the target with the
+  Pick button (drag the line to the target sprite on the canvas or in
+  the sprite list).
+- **Per-sprite enable.** Each "eye" sprite has its own toggle.
+- **Global kill switch.** When no sprite is selected, the eye-tracking
+  toggle controls all eye-tracking-enabled sprites at once.
+- **Invert direction.** Look away from the target instead of at it.
+- **Distance and speed.** Independent per sprite.
 
 ### Costume system
 
 - 10 costume slots, switchable via hotkeys `1` through `0` (configurable
-  in settings).
-- Each layer can specify which slots it appears in; layers can be in
-  one slot, multiple slots, or all slots.
-- An optional "bounce on costume change" setting adds a satisfying
-  hop when switching costumes.
+  in settings, removable individually since v1.4.5).
+- Each sprite specifies which slots it appears in.
+- Optional "bounce on costume change" setting.
 
 ### Visibility toggles
 
-Bind any key to show/hide a specific layer for ad-hoc props mid-stream
-(a sign that pops up when you read chat, a celebration confetti layer
-on bits, etc.). The binding is per-layer, stored with the avatar save
-file.
+Bind any key to show/hide a specific sprite. Useful for ad-hoc props
+(a sign that pops up when you read chat, a celebration prop on bits).
+Bindings are stored per sprite in the avatar save file. Also visible in
+the sprite list as an inline toggle since v1.4.5.
 
 ### Lighting (normal maps)
 
-Normal maps are a property of a diffuse layer, not separate layers.
-Either drop a `_NRML`-suffixed PNG/PSD layer next to its diffuse pair
-on import (auto-pairs case-insensitively), or use the **Normal** button
-in the left sidebar to attach a normal map manually. The textures are
-paired via `CanvasTexture` so they render together with lighting
-response.
+Normal maps are a property of a diffuse sprite, not separate sprites.
+You can either:
+- Drop a `_NRML`-suffixed image next to its diffuse pair on import
+  (case-insensitive auto-pair), or
+- Use the Normal button in the left sidebar to attach one to the
+  selected sprite manually.
+
+The two textures are paired via `CanvasTexture` so they render together
+with lighting response. UI for placing and animating lights is on the
+roadmap.
 
 ### NDI output
 
-- Dynamic framing based on the avatar's silhouette plus a user-defined
+- Dynamic framing based on the rig's silhouette plus a user-placed
   bottom crop line.
-- Configurable output width (auto or manual width/height).
-- Source name override (what OBS sees in the NDI source list).
-- Renders on its own SubViewport — completely separate from what you
-  see in the editor, so editing UI overlays don't appear in OBS.
-- Available on macOS (universal binary), Windows (x64), and Linux
-  (x64 and ARM64).
+- Auto width or manual width/height.
+- Custom source name (what shows up in OBS's NDI Source dropdown).
+- Renders on its own SubViewport, so the editor UI doesn't appear in
+  the broadcast.
+- Available on macOS (universal), Windows (x64), and Linux (x64 and
+  ARM64) via the `godot-ndi` plugin.
 
 ### Recording
 
-- **WebM (VP9 with alpha)** for high-quality, fully transparent video
-  re-usable in any video editor.
-- **APNG** for animated images with full alpha.
-- **GIF** with one-bit alpha (palette-quantized).
+- **WebM** (VP9 with alpha): full-quality transparent video.
+- **APNG**: animated PNG with full alpha.
+- **GIF**: animated GIF with one-bit alpha (palette-quantized).
 - Configurable frame rate per recording.
-- Records to the NDI crop view when NDI is enabled so what you get is
-  what your viewers see; otherwise records the full canvas.
+- Records the NDI crop view when NDI is enabled; otherwise records the
+  full canvas.
 
 ### Screenshot
 
-- `Ctrl+K` captures the current frame with a transparent background
-  to a `.png` of your choice. Like the recorder, respects NDI cropping
-  when NDI is enabled.
+`Ctrl+K` captures the current frame to a `.png` of your choice. Like
+the recorder, respects NDI cropping when NDI is enabled.
 
-### Persistence and recovery
+### Persistence
 
 - All settings (volume, microphone, NDI options, sidebar widths,
-  background color, blink chance, etc.) are saved to the user data
-  directory and restored on next launch.
-- The most recently opened or saved avatar is auto-restored at startup;
-  if the file is missing or fails to parse, the app starts on an empty
-  canvas instead of erroring out.
-- Save/load uses native OS file pickers (Finder on macOS, Explorer on
-  Windows), defaulting to the user data directory for first-time saves.
+  background color, blink chance, recording format, etc.) are saved to
+  the user data directory and restored on next launch.
+- The most recently opened or saved avatar reopens at startup. If the
+  file is missing or fails to parse, the app starts on an empty canvas.
+- Save and Load use native OS file pickers, defaulting to the user data
+  directory.
 
 ### Editor ergonomics
 
-- **Right-click any slider** to reset that property to its default
-  value.
-- **Drag the right edge of the left sidebar** (or the left edge of the
+- Right-click any slider to reset that property to its default.
+- Drag the right edge of the left sidebar (or the left edge of the
   right sidebar) to resize. Widths persist across sessions.
-- **Drag the divider between the layer list and the costume row** to
+- Drag the divider between the sprite list and the costume row to
   resize either area.
-- **Wheel scroll** the left sidebar to reach long sections when the
-  window is short.
-- **Click the eye-tracking dropdown's label** to see the full target
-  name in a hover tooltip when the name is truncated.
-- The whole UI lives on a CanvasLayer, so camera pan and zoom in the
-  canvas never disturb the editor layout.
-- During a window-resize gesture, the avatar's physics are frozen so
-  sprites don't stretch or jitter as the viewport changes.
+- Wheel-scroll the left sidebar to reach long sections when the window
+  is short.
+- During a window-resize gesture, sprite physics are frozen so nothing
+  stretches or jitters as the viewport changes.
+- The UI lives on a CanvasLayer, so panning and zooming the canvas
+  doesn't affect the editor layout.
 
 ### Microphone and voice activation
 
-- Per-device selection (any input device the OS exposes).
-- Volume and sensitivity sliders with real-time meter feedback.
-- Right-click the mic icon to mute the input entirely.
-- A `release duration` setting controls how long the avatar continues
-  the talking pose after voice drops below threshold (prevents
-  flickering on natural pauses).
+- Per-device microphone selection.
+- Volume and sensitivity sliders with real-time meters.
+- Right-click the mic icon to mute the input.
+- Release-duration setting controls how long the avatar stays in the
+  talking pose after voice drops below threshold.
 
 ### Background and window
 
-- Custom background color (including transparent, for stream overlay
-  setups not using NDI).
-- Transparent window option for compositing the avatar directly on
-  a desktop layer.
+- Custom background color (supports transparent for stream overlays not
+  using NDI).
+- Transparent-window option for compositing directly on a desktop.
 - Configurable max FPS (default 60).
-- Configurable window size and a remembered last-window state.
+- Last window size is remembered.
 
 ### Stream Deck integration
 
-PixelLab Studio ships with the Elgato Stream Deck addon for
-hardware-button-driven costume changes, visibility toggles, mic mute,
-and other live actions. Settings exposed in the settings menu.
+The Elgato Stream Deck addon is bundled (originally from PNGTuber Plus).
+Settings appear in the settings menu.
 
 ## Roadmap
 
-The following are planned but not yet shipped — pull requests welcome:
+Planned but not shipped yet:
 
-- **Light2D-based dynamic lighting controls.** Currently the renderer
-  reads paired normal maps; a UI for placing, coloring, and animating
-  lights is the next step.
-- **Right-sidebar tab system.** Eye Tracking / Lighting / Details tabs
-  to consolidate the bottom half of the right sidebar and move the
-  normal-map controls and per-layer detail toggles over from the left
-  sidebar.
-- **Settings dialog audit.** Same uniform spacing model applied to the
-  sidebars, applied to the settings dialog.
-- **Theme consolidation.** Project-level theme resource so the slider,
-  checkbox, and button styling can be tuned in one place rather than
-  scattered across scenes.
+- **Light2D UI controls.** Currently the renderer reads paired normal
+  maps; the next step is a UI for placing, coloring, and animating
+  lights.
+- **Right-sidebar tabs.** Eye Tracking / Lighting / Details tabs to
+  consolidate the bottom-half controls (and move the normal-map row
+  and per-sprite toggles over from the left sidebar).
+- **Settings dialog cleanup.** Apply the same spacing model the
+  sidebars use.
+- **Theme consolidation.** Move the inline slider/checkbox styling to
+  a project-level theme so it can be tuned in one place.
 
 ## Tech notes
 
-- Built with **Godot 4.6** (GL Compatibility renderer for broad GPU
-  support).
-- Native GDExtensions for NDI output (`godot-ndi`), PSD parsing
-  (`psd-native`), and Stream Deck (`godot-streamdeck-addon`).
-- macOS universal binary (Intel + Apple Silicon), Windows x64, Linux
-  x64/ARM64.
-- All UI on a single `CanvasLayer` (`UILayer`) for camera-independent
-  screen-space rendering.
+- Built with **Godot 4.6** (GL Compatibility renderer).
+- Native GDExtensions: `godot-ndi` (NDI output), `psd-native` (PSD
+  parsing), `godot-streamdeck-addon` (Stream Deck input).
+- All UI on a single CanvasLayer (`UILayer`) for camera-independent
+  rendering.
+
+## Credits
+
+PixelLab Studio is built on top of
+[PNGTuber Plus](https://kaiakairos.itch.io/pngtuber-plus) by
+[kaiakairos](https://kaiakairos.itch.io/). The core sprite-rig model,
+parenting, wobble, drag, bounce, and talk/blink visibility behavior come
+from that project. Additions in PixelLab Studio (NDI, recording, eye
+tracking, normal maps, PSD import, undo/redo, rotational limits, the
+various toggles and editor ergonomics) are the work of this fork's
+contributors.
 
 ## Contributing
 
-Bug reports, feature requests, and pull requests are welcome on the
-project's issue tracker. If you're contributing UI work, the project's
-architecture guide (`docs/architecture_guide.md`) documents the layout
-conventions, spacing model, and resize/persistence patterns to follow.
+Issues and pull requests are welcome. If you're working on UI,
+`docs/architecture_guide.md` describes the spacing model, the layout
+pass, and the persistence patterns used elsewhere in the codebase.
 
 ## License
 
-See `LICENSE` for the project's license.
+See `LICENSE`.
+
+Sources used to verify the PNGTuber Plus baseline:
+- [PNGTuber Plus on itch.io](https://kaiakairos.itch.io/pngtuber-plus)
+- [v1.4.5 devlog](https://kaiakairos.itch.io/pngtuber-plus/devlog/704463/v-145)
