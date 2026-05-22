@@ -1,5 +1,17 @@
 extends Node2D
 
+# talkBlink() looks up whether a (showOnTalk + 3*blinkVal + 10*speaking + 20*blink)
+# combination should be visible. The values mirror the original literal
+# [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value)) — moving them
+# to a class const Dictionary means we don't allocate an Array each frame for
+# each sprite (was Array literal in a tight per-frame loop).
+const VISIBLE_TALKBLINK_STATES := {
+	0: true, 1: true, 3: true, 4: true,
+	10: true, 12: true, 13: true, 15: true,
+	20: true, 21: true, 26: true, 27: true,
+	30: true, 32: true, 36: true, 38: true,
+}
+
 var type = "sprite"
 
 #Passed Variables
@@ -468,7 +480,7 @@ func talkBlink():
 	var faded = 0.2 * int(Global.main.editMode)
 	var blinkVal = showOnBlink if showOnBlink != 3 else 0
 	var value = (showOnTalk + (blinkVal*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
-	var yes = [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value))
+	var yes = VISIBLE_TALKBLINK_STATES.has(int(value))
 	var a = max(int(yes),faded)
 	sprite.self_modulate = Color(a, a, a, a)
 	# When the sprite is only showing because of the edit-mode faded preview, render
