@@ -563,7 +563,11 @@ func linkSprite(sprite,newParent):
 
 	sprite.parentId = newParent.id
 	sprite.parentSprite = newParent
-	
+
+	# Brief pink flash on the new parent — same confirmation cue the eye-track
+	# layer pick uses, applied here so successful links feel consistent.
+	_flash_pink(newParent)
+
 	reparentMode = false
 
 	Global.spriteList._pending_scroll_target = newParent
