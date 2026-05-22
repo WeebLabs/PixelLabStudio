@@ -6,6 +6,39 @@ by kaiakairos and adds a number of features around output, lighting, and
 editing ergonomics while keeping the original's per-sprite physics and
 parenting workflow.
 
+## Contents
+
+- [What it is](#what-it-is)
+- [How it compares to PNGTuber Plus](#how-it-compares-to-pngtuber-plus)
+- [Who it's for](#who-its-for)
+- [GUI design](#gui-design)
+- [Getting started](#getting-started)
+  - [1. Download and launch](#1-download-and-launch)
+  - [2. Loading an avatar](#2-loading-an-avatar)
+  - [3. Editing](#3-editing)
+  - [4. NDI into OBS](#4-ndi-into-obs)
+- [Features in detail](#features-in-detail)
+  - [Animation and physics](#animation-and-physics)
+  - [Layer system](#layer-system)
+  - [Eye tracking](#eye-tracking)
+  - [Costume system](#costume-system)
+  - [Visibility toggles](#visibility-toggles)
+  - [Lighting (normal maps)](#lighting-normal-maps)
+  - [NDI output](#ndi-output)
+  - [Recording](#recording)
+  - [Screenshot](#screenshot)
+  - [Persistence](#persistence)
+  - [Editor ergonomics](#editor-ergonomics)
+  - [Microphone and voice activation](#microphone-and-voice-activation)
+  - [Background and window](#background-and-window)
+  - [Stream Deck integration](#stream-deck-integration)
+- [Keyboard shortcuts](docs/keyboard_shortcuts.md)
+- [Roadmap](#roadmap)
+- [Tech notes](#tech-notes)
+- [Credits](#credits)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## What it is
 
 You import PNGs (or a PSD), arrange them into a layered rig, set per-sprite
