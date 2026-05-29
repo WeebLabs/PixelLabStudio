@@ -120,6 +120,24 @@ cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 
 ---
 
+## Tab Bar (sidebar tabs)
+
+> Added: 2026-05-29 — `ui_scenes/spriteList/sidebar_tab_bar.gd` (`SidebarTabBar`)
+
+Reusable tab strip used in the right sidebar (Details / Eye Tracking / Physics).
+Rule-based layout: an `HBoxContainer` of flat buttons with `SIZE_EXPAND_FILL`
+(equal widths), and a pink underline `ColorRect` placed under the active tab via
+`index / count` so it reflows at any width.
+
+- **Buttons**: `flat = true`, `focus_mode = FOCUS_NONE`, font size 12
+  - Inactive `font_color`: `Color(0.7, 0.7, 0.75)`
+  - Active `font_color` / hover: `Color(1, 1, 1)`
+- **Underline**: 2px `ColorRect`, `Color(1.0, 0.7, 0.8)` (pink accent), `MOUSE_FILTER_IGNORE`
+- **Bar height**: 26px (`SidebarTabBar.BAR_HEIGHT`)
+- **Section headers inside a tab**: Label, font size 12, `Color(0.85, 0.85, 0.9)`
+
+---
+
 ## Disabled State Patterns
 
 When `Global.heldSprite == null`:

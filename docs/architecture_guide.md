@@ -34,7 +34,9 @@ PNGTuberPlus/
 │   │   ├── sprite_viewer.gd      Left sidebar — sprite property editor (265px)
 │   │   └── chain.gd              Visual line during reparenting
 │   ├── spriteList/
-│   │   ├── viewer.gd             Right sidebar — layer tree + controls (310px, resizable)
+│   │   ├── viewer.gd             Right sidebar — layer tree + tabbed controls (310px, resizable)
+│   │   ├── sidebar_tab_bar.gd    Reusable Details/Eye Tracking/Physics tab strip
+│   │   ├── physics_tab.gd        Physics tab — wiggle controls
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
 │   │   ├── psd_import_dialog.gd     PSD layer selection dialog (import flow)
@@ -57,6 +59,10 @@ PNGTuberPlus/
 │
 ├── shader/
 │   └── wobble.gdshader            Wave oscillation effect
+│
+├── effects/
+│   └── wiggle/                    Wiggly-appendage physics (per-layer)
+│       └── wiggle_appendage.gd    Textured Line2D ribbon + verlet/angular-spring chain
 │
 ├── ndi/                           NDI video output system
 │   ├── ndi_output_manager.gd      SubViewport + Camera + NDIOutput orchestrator
@@ -124,14 +130,17 @@ Key child nodes:
 │              │                          │───────────────────│
 │  - 3D preview│                          │  Costume buttons  │
 │  - Sliders   │                          │───────────────────│
-│  - Properties│                          │  Eye tracking     │
-│  - Dividers  │                          │───────────────────│
+│  - Properties│                          │ [Details|Eye|Phys]│  ← tab bar
+│  - Dividers  │                          │  active tab body  │  (scrollable)
+│              │                          │───────────────────│
 │              │                          │  Visibility Toggle │
 │              │                          │  (310px, resize)  │
 └──────────────┴──────────────────────────┴───────────────────┘
 ```
 
 > Updated: 2026-02-17 — Left sidebar restyled (pink sliders, muted labels, section dividers) to match right sidebar theme. Visibility Toggle control migrated from left sidebar (`sprite_viewer.gd`) to right sidebar (`viewer.gd`) below eye tracking section. UI styling conventions documented in `docs/ui_styling_guide.md`.
+
+> Updated: 2026-05-29 — Right sidebar gained a tab strip beneath the costume row (`ui_scenes/spriteList/sidebar_tab_bar.gd`): **Details** (the four layer toggles — Clip linked / Static element / NDI reference / Ignore bounce — relocated here from the left sidebar `sprite_viewer.gd`), **Eye Tracking** (the existing eye section moved into the tab), and **Physics** (wiggle controls, built by `ui_scenes/spriteList/physics_tab.gd`). The active tab persists in `Saving.settings["rightSidebarTab"]`; tab content lives in a `ScrollContainer` that fills the space above a bottom-pinned Visibility Toggle, so it can expand upward if the layer list is detached later. Engine is now Godot 4.6.
 
 ---
 
@@ -423,3 +432,31 @@ A single `PointLight2D` is always present in the scene so that normal-mapped spr
 - **`swapMode()`**: calls `_light_gizmo.queue_redraw()` to show/hide gizmo dot
 - **Save/Load**: `"_light"` key in avatar JSON with `{pos, energy, color, range, enabled}`. Old saves without `"_light"` get default values.
 - **Undo**: snapshot includes `"_light"` sub-dictionary; `_restore()` and `_restore_full()` skip it in sprite loops and apply separately
+
+## Wiggle (Physics)
+
+> Updated: 2026-05-29 — Per-layer wiggly-appendage (tails, ears, antennae). Cleaned-up rewrite of PNGTuberRemix's `WigglyAppendage2D`: a textured `Line2D` ribbon driven by an angular-spring/verlet chain. (An earlier shader-UV-warp implementation was replaced because it clipped to the layer rect and the Mobile renderer broke its `MODULATE`/`NORMAL_TEXTURE` usage.)
+
+### Overview
+
+When a layer's wiggle is on, its `Sprite2D` is hidden and a `WiggleAppendage2D` (a textured `Line2D` ribbon) is shown in its place. The layer's texture is stretched along a chain of points that bend geometrically — no quad clipping, and `Line2D` carries `CanvasTexture` normal-mapped lighting (verified). Controls live in the right sidebar's **Physics** tab.
+
+### Data flow
+
+1. **`effects/wiggle/wiggle_appendage.gd`** (`WiggleAppendage2D extends Line2D`) — a decoupled port of the remix's angular-momentum spring chain: each joint is a torsional spring toward the previous joint's angle (+ curvature) with momentum, **linear damping**, a hard `max_angle` limit + `comeback_speed` spring, and gravity droop. The root point follows the node's `global_position` (so avatar bounce/drag/wobble propagate in as momentum → the whip), and `auto_wag` adds a **sinusoidal sway to the root direction** — the chain follows it with spring lag, so the base moves smoothly (clean sine) and the tip whips. Propagation smoothness is governed by `max_angular_momentum` (per-joint rotation-speed cap) and `stiffness_decay` (joints soften toward the tip), both scaled from stiffness in `_wiggle_params`. Output is `Line2D.points` (bezier-smoothed, **caps `NONE`** so the texture maps exactly to the chain with no rigid stub); `sample_local(t)` exposes the curve for child-follow. No anchor/mirror/`actor` coupling, and the original's brake-on-reversal damping was replaced with linear damping (it caused a rotate-stop-rotate stutter at wag reversals).
+2. **`spriteObject._set_wiggle_active(on)`** — creates/frees the appendage under `DragOrigin` (sibling of the `Sprite2D`, so it shares the layer transform), builds its texture (raw diffuse + normal `CanvasTexture`), sets `width`/`STRETCH`, and hides/shows the `Sprite2D`.
+3. **`spriteObject._update_wiggle(delta)`** — each frame when `wiggleEnabled`: holds the hidden sprite at identity (so linked children map cleanly), `configure()`s the chain from `_wiggle_params()`, and calls `appendage.tick(delta, tick)`. `talkBlink()` copies the sprite's `self_modulate`/`visibility_layer` onto the ribbon so the talk/blink fade still applies.
+
+> **Texture/orientation:** `Line2D` STRETCH maps the texture's U axis along the ribbon. The appendage length runs along the texture's **longer** axis (taller-than-wide art is `rotate_90`'d in `_rebuild_wiggle_texture`), width across. The ribbon extends from the layer **origin** along **Direction** — so author the appendage as a strip with its root near the origin and set Direction to orient it. (The pre-wiggle Sprite2D was centered on the origin, so enabling wiggle shifts a layer from centered to root-extended.)
+
+### Children ride the bend
+
+When `wiggleChildrenFollow` is on, `_apply_wiggle_to_children()` places each directly-linked child (`getAllLinkedSprites()`) at `appendage.sample_local(t)`, where `t` is the child's rest distance along the appendage; rotation follows the local chain tangent. The hidden sprite is held at identity so its local space matches the appendage's. Deeper descendants follow for free via the scene tree. Rest transforms are captured lazily and restored by `_release_wiggle_children()`.
+
+### Parameters (`spriteObject.gd`)
+
+User-facing units (degrees / friendly ranges), mapped to the chain in `_wiggle_params()`: `wiggleEnabled`, `wiggleDirection` (rest direction), `wiggleSegments`, `wiggleStiffness` (spring constant — also scales the rotation-speed cap + tip softening, so it doubles as the "snappy vs smooth propagation" knob), `wiggleDamping`, `wiggleBendFocus` (→ comeback_speed / "springiness"), `wiggleWeight` (gravity droop), `wiggleMaxBend` (max angle/joint), `wiggleWagEnabled` / `wiggleWagAmount` (base-sway amplitude) / `wiggleWagSpeed` (auto-wag), `wiggleReactivity` (→ root-follow smoothness; higher = laggier whip), `wiggleChildrenFollow`. `segment_length` is derived from the texture length; `subdivision` is fixed at 4.
+
+### Save/Load/Undo
+
+All `wiggle*` fields persist alongside the eye-tracking fields (same sites in `main.gd` save dict + load, and `undo_manager.gd` snapshot / `_restore` / `_add_sprite_from_data`). All loaded behind `has()` guards, so old saves load with defaults. `_restore()` calls `setWiggle()` to rebuild/clear the ribbon for the restored state.

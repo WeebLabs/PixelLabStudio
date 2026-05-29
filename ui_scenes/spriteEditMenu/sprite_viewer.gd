@@ -60,15 +60,6 @@ var _normal_import_btn: Button
 var _normal_clear_btn: Button
 var _normal_dialog: FileDialog
 
-# Buttons section (checkbox column) — replaces the scene-defined $Buttons layout
-# with a VBoxContainer so the checkboxes auto-stack and the divider below them
-# can be computed from the container's actual bottom instead of magic numbers.
-var _buttons_vbox: VBoxContainer
-var _cb_ignore_bounce: CheckBox
-var _cb_clip_linked: CheckBox
-var _cb_static: CheckBox
-var _cb_ndi_ref: CheckBox
-
 # WobbleControl section — 4 label+slider pairs (xFrq/xAmp/yFrq/yAmp) reparented
 # into a VBoxContainer for auto-layout. Cached refs replace $WobbleControl/...
 # node paths.
@@ -237,42 +228,9 @@ func _ready():
 	Global.make_slider_resettable(_rot_max_slider, 180)
 	Global.make_slider_resettable(_anim_speed_slider, 0)
 	Global.make_slider_resettable(_anim_frames_slider, 1)
-	# Buttons section column — VBoxContainer auto-stacks the 4 checkboxes.
-	# Position is set to match where the original CheckBox (Ignore bounce) sat
-	# (scene-y 523 ≈ $Buttons.position.y 85 + CheckBox.offset_top 438), but
-	# the container's bottom is auto-computed and feeds the divider below.
-	_buttons_vbox = VBoxContainer.new()
-	_buttons_vbox.name = "ButtonsVBox"
-	_buttons_vbox.add_theme_constant_override("separation", Global.UI_ROW_GAP)
-	_buttons_vbox.position = Vector2(5, 523)
-	_buttons_vbox.size = Vector2(212, 0)  # height auto-fits below
-	_resizables.append([_buttons_vbox, panel_width - _buttons_vbox.size.x])
-	add_child(_buttons_vbox)
+	# Layer toggles (Ignore bounce / Clip linked / Static element / NDI reference)
+	# now live in the right sidebar's Details tab — see ui_scenes/spriteList/viewer.gd.
 
-	# Reparent the two scene-defined checkboxes into the VBox; their existing
-	# scene signal connections (toggled → handler) survive the reparent.
-	_cb_ignore_bounce = $Buttons/CheckBox
-	_cb_clip_linked = $Buttons/ClipLinked
-	_cb_ignore_bounce.reparent(_buttons_vbox)
-	_cb_clip_linked.reparent(_buttons_vbox)
-
-	# Static-element toggle — when on, sprite ignores all bounce/drag/wobble/etc.
-	_cb_static = CheckBox.new()
-	_cb_static.name = "StaticElement"
-	_cb_static.text = "Static element"
-	_cb_static.toggled.connect(_on_static_element_toggled)
-	_buttons_vbox.add_child(_cb_static)
-
-	# NDI reference checkbox
-	_cb_ndi_ref = CheckBox.new()
-	_cb_ndi_ref.name = "NdiRefLayer"
-	_cb_ndi_ref.text = "NDI reference layer"
-	_cb_ndi_ref.toggled.connect(_on_ndi_ref_layer_toggled)
-	_buttons_vbox.add_child(_cb_ndi_ref)
-
-	_buttons = [
-		_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref,
-	]
 	# Sections to dim when no sprite is selected
 	_sections = [
 		_preview,
@@ -329,14 +287,6 @@ func _ready():
 		label.add_theme_font_size_override("font_size", 12)
 
 	$Position/fileTitle.visible = false
-
-	# Restyle checkboxes
-	# Restyle the column of checkboxes. Width is set by the VBoxContainer.
-	for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
-		cb.add_theme_font_size_override("font_size", 12)
-		cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
-		cb.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		cb.size_flags_horizontal = Control.SIZE_FILL
 
 	# Normal Map row — below preview, above Position. HBoxContainer auto-arranges
 	# status label (expanding) + Normal button + Clear button.
@@ -624,11 +574,6 @@ func setImage():
 	_squash_label.text = "squash: " + str(Global.heldSprite.stretchAmount)
 	_squash_slider.set_value_no_signal(Global.heldSprite.stretchAmount)
 
-	_cb_ignore_bounce.set_pressed_no_signal(Global.heldSprite.ignoreBounce)
-	_cb_clip_linked.set_pressed_no_signal(Global.heldSprite.clipped)
-	_cb_static.set_pressed_no_signal(Global.heldSprite.staticElement)
-	_cb_ndi_ref.set_pressed_no_signal(Global.heldSprite.ndiRefLayer)
-
 	_anim_speed_label.text = "animation speed: " + str(Global.heldSprite.animSpeed)
 	_anim_speed_slider.set_value_no_signal(Global.heldSprite.animSpeed)
 
@@ -673,14 +618,12 @@ func _layout_panel():
 	var y = _normal_section.position.y + _normal_section.size.y
 
 	# Each entry: [section_node, content_control, has_divider_above]
-	# Buttons VBox lives at scene root (no Node2D wrapper) → section=null.
 	# RotationalLimits is last; its trailing gap is irrelevant.
 	var sections = [
 		[$Position,         _position_vbox,  true],
 		[$Animation,        _animation_vbox, true],
 		[$Slider,           _slider_vbox,    false],
 		[$Rotation,         _rotation_vbox,  false],
-		[null,              _buttons_vbox,   false],
 		[$WobbleControl,    _wobble_vbox,    true],
 		[$RotationalLimits, _rot_bounds,     true],
 	]
@@ -695,10 +638,7 @@ func _layout_panel():
 			y += Global.UI_DIVIDER_PAD
 		else:
 			y += Global.UI_ROW_GAP
-		if section == null:
-			content.position.y = y
-		else:
-			_place_section(section, content, y)
+		_place_section(section, content, y)
 		y += content.get_combined_minimum_size().y
 
 	# Final layout cursor = bottom of the last section. Used by the scroll
@@ -1104,12 +1044,6 @@ func _on_squash_value_changed(value):
 	Global.heldSprite.stretchAmount = value
 
 
-func _on_check_box_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.ignoreBounce = button_pressed
-
-
 func _on_anim_speed_value_changed(value):
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
@@ -1123,21 +1057,6 @@ func _on_anim_frames_value_changed(value):
 	Global.heldSprite.frames = value
 	Global.heldSprite.changeFrames()
 	setImage()
-
-
-func _on_clip_linked_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.setClip(button_pressed)
-
-
-func _on_static_element_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.staticElement = button_pressed
-	# Re-snap the dragger when toggling off so physics resumes from the rest pose
-	if not button_pressed:
-		Global.heldSprite._force_drag_snap = true
 
 
 func _on_delete_pressed():
@@ -1160,16 +1079,6 @@ func _on_set_toggle_pressed():
 	if Global.heldSprite == null: return
 	Global.heldSprite.toggle = key
 	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
-
-func _on_ndi_ref_layer_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	if button_pressed:
-		for spr in get_tree().get_nodes_in_group("saved"):
-			if spr != Global.heldSprite:
-				spr.ndiRefLayer = false
-	Global.heldSprite.ndiRefLayer = button_pressed
-	Global.main.ndi_mark_dirty()
 
 func _on_eye_track_toggled(button_pressed):
 	if Global.heldSprite == null: return

@@ -50,6 +50,25 @@ var _eye_whip_line: Line2D
 var _eye_mode_tooltip_label: Label
 var _eye_mode_tooltip_timer: Timer
 
+# Tabs (below costume row): Details / Eye Tracking / Physics. The tab bar selects
+# which content VBox is visible; all three live in _tab_host inside a scroll area
+# so a tab's content can grow upward into freed space if the layer list above is
+# ever detached.
+const BOTTOM_MARGIN = 12
+var _tab_bar: SidebarTabBar
+var _tab_scroll: ScrollContainer
+var _tab_host: VBoxContainer
+var _details_content: VBoxContainer
+var _eye_content: VBoxContainer
+var _physics_content: VBoxContainer
+var _physics_tab: WigglePhysicsTab
+
+# Details tab — layer toggles relocated here from the left sidebar.
+var _cb_ignore_bounce: CheckBox
+var _cb_clip_linked: CheckBox
+var _cb_static: CheckBox
+var _cb_ndi_ref: CheckBox
+
 var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
@@ -114,9 +133,13 @@ func _ready():
 	_filter_field.add_theme_stylebox_override("focus", fs_focus)
 	add_child(_filter_field)
 
+	_build_slider_styles()
 	_create_controls()
 	_create_costume_buttons()
+	_create_tabs()
+	_create_details_tab()
 	_create_eye_tracking()
+	_create_physics_tab()
 	_create_vis_toggle()
 
 	# Restore saved sidebar width before the first _apply_size() so all
@@ -124,7 +147,35 @@ func _ready():
 	var saved_w = Saving.settings.get("rightSidebarWidth", panel_width)
 	var max_w = get_viewport().get_visible_rect().size.x * MAX_WIDTH_RATIO
 	panel_width = clamp(saved_w, MIN_WIDTH, max_w)
+
+	# Restore the active tab before the first layout pass.
+	var saved_tab = clamp(int(Saving.settings.get("rightSidebarTab", 0)), 0, 2)
+	_tab_bar.set_active(saved_tab)
+	_show_tab(saved_tab)
+
 	_apply_size()
+
+# Build the shared slider fill/grabber resources once, before any section
+# attaches them (eye tracking, physics). Mirrors the left sidebar's slider look.
+func _build_slider_styles():
+	_slider_fill_enabled = StyleBoxFlat.new()
+	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
+	_slider_fill_disabled = StyleBoxFlat.new()
+	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
+
+	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_on.fill(Color(0, 0, 0, 0))
+	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	grabber_img_off.fill(Color(0, 0, 0, 0))
+	for px in range(16):
+		for py in range(16):
+			var dx = px - 8
+			var dy = py - 8
+			if dx * dx + dy * dy <= 36:  # Circle radius ~6
+				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
+				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
+	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
+	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
 
 func _create_controls():
 	_divider1 = ColorRect.new()
@@ -217,13 +268,81 @@ func _create_costume_buttons():
 	_costume_select.visible = false
 	add_child(_costume_select)
 
+# Build the tab strip + the scrollable host that holds the three tab contents.
+# Only the active content is visible; the scroll lets a tall tab (Physics) grow
+# into whatever vertical space is available below the costume row.
+func _create_tabs():
+	_tab_bar = SidebarTabBar.new()
+	add_child(_tab_bar)
+	_tab_bar.add_tab("Details")
+	_tab_bar.add_tab("Eye Tracking")
+	_tab_bar.add_tab("Physics")
+	_tab_bar.tab_changed.connect(_on_tab_changed)
+
+	_tab_scroll = ScrollContainer.new()
+	_tab_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(_tab_scroll)
+
+	_tab_host = VBoxContainer.new()
+	_tab_host.add_theme_constant_override("separation", Global.UI_ROW_GAP)
+	_tab_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tab_scroll.add_child(_tab_host)
+
+	_details_content = _make_tab_content()
+	_eye_content = _make_tab_content()
+	_physics_content = _make_tab_content()
+
+func _make_tab_content() -> VBoxContainer:
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", Global.UI_ROW_GAP)
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tab_host.add_child(vbox)
+	return vbox
+
+func _show_tab(index: int):
+	_details_content.visible = index == 0
+	_eye_content.visible = index == 1
+	_physics_content.visible = index == 2
+
+func _on_tab_changed(index: int):
+	_show_tab(index)
+	Saving.settings["rightSidebarTab"] = index
+	Saving.write_settings(Saving.settingsPath)
+
+# Details tab — layer toggles relocated from the left sidebar (same behaviour).
+func _create_details_tab():
+	var c = Color(0.75, 0.75, 0.8)
+	_cb_ignore_bounce = _make_details_checkbox("Ignore bounce velocity", _on_details_ignore_bounce_toggled, c)
+	_cb_clip_linked = _make_details_checkbox("Clip linked sprites", _on_details_clip_linked_toggled, c)
+	_cb_static = _make_details_checkbox("Static element", _on_details_static_toggled, c)
+	_cb_ndi_ref = _make_details_checkbox("NDI reference layer", _on_details_ndi_ref_toggled, c)
+
+func _make_details_checkbox(text: String, on_toggled: Callable, color: Color) -> CheckBox:
+	var cb = CheckBox.new()
+	cb.text = text
+	cb.add_theme_font_size_override("font_size", 12)
+	cb.add_theme_color_override("font_color", color)
+	cb.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cb.toggled.connect(on_toggled)
+	_details_content.add_child(cb)
+	return cb
+
+# Physics tab — wiggle controls (effects/wiggle). Built by a dedicated module so
+# this file stays focused on sidebar structure.
+func _create_physics_tab():
+	_physics_tab = WigglePhysicsTab.new()
+	_physics_tab.build(_physics_content, _slider_fill_enabled, _slider_fill_disabled,
+		_slider_grabber_enabled, _slider_grabber_disabled)
+
 func _create_eye_tracking():
 	# Section is a VBoxContainer; rows are HBoxContainers. No manual `y += ...`
 	# accumulators — VBox handles vertical stacking, HBox handles horizontal.
 	# Width is set in _apply_size; height is auto-fit from children.
 	_eye_section = VBoxContainer.new()
 	_eye_section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
-	add_child(_eye_section)
+	_eye_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_eye_content.add_child(_eye_section)
 
 	var label_color = Color(0.75, 0.75, 0.8)
 
@@ -318,26 +437,6 @@ func _create_eye_tracking():
 	_eye_whip_line.visible = false
 	_eye_whip_line.z_index = 4090
 	add_child(_eye_whip_line)
-
-	# Build shared slider style resources (once, before either slider attaches them)
-	_slider_fill_enabled = StyleBoxFlat.new()
-	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
-	_slider_fill_disabled = StyleBoxFlat.new()
-	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
-
-	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_on.fill(Color(0, 0, 0, 0))
-	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_off.fill(Color(0, 0, 0, 0))
-	for px in range(16):
-		for py in range(16):
-			var dx = px - 8
-			var dy = py - 8
-			if dx * dx + dy * dy <= 36:  # Circle radius ~6
-				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
-				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
-	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
-	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
 
 	# Distance label + slider
 	_eye_dist_label = Label.new()
@@ -491,18 +590,26 @@ func _apply_size():
 	_divider3.size.x = panel_width - 16
 	y += Global.UI_DIVIDER_PAD
 
-	_eye_section.position = Vector2(section_x, y)
-	_eye_section.size = Vector2(section_width, _eye_section.get_combined_minimum_size().y)
-	y += _eye_section.size.y
+	# Tab bar, then a scroll area that fills the space down to a bottom-pinned
+	# Visibility Toggle. When the layer list above is detached later, this region
+	# grows and the active tab's content expands upward to use it.
+	_tab_bar.position = Vector2(section_x, y)
+	_tab_bar.set_bar_size(section_width)
+	y += SidebarTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
 
-	y += Global.UI_DIVIDER_PAD
-	_divider4.position = Vector2(8, y)
+	var vis_h = _vis_toggle_section.get_combined_minimum_size().y
+	var vis_y = panel_height - vis_h - BOTTOM_MARGIN
+	var divider4_y = vis_y - Global.UI_DIVIDER_PAD
+	var tab_bottom = divider4_y - Global.UI_DIVIDER_PAD
+
+	_tab_scroll.position = Vector2(section_x, y)
+	_tab_scroll.size = Vector2(section_width, max(0.0, tab_bottom - y))
+
+	_divider4.position = Vector2(8, divider4_y)
 	_divider4.size.x = panel_width - 16
-	y += Global.UI_DIVIDER_PAD
 
-	_vis_toggle_section.position = Vector2(section_x, y)
-	_vis_toggle_section.size = Vector2(section_width,
-		_vis_toggle_section.get_combined_minimum_size().y)
+	_vis_toggle_section.position = Vector2(section_x, vis_y)
+	_vis_toggle_section.size = Vector2(section_width, vis_h)
 
 	# Collision area + sidebar anchor
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
@@ -515,6 +622,8 @@ func _process(_delta):
 	# Keep eye-tracking section in sync with the current scope. Cheap: a single
 	# group iteration when no sprite is selected, no-op otherwise.
 	refreshEyeUI()
+	_sync_details_tab()
+	_physics_tab.sync()
 
 	var no_sprite = Global.heldSprite == null
 	var dim = Color(0.3, 0.3, 0.35)
@@ -596,6 +705,8 @@ func scroll_to_sprite(target_sprite):
 			return
 
 func updateControls():
+	_sync_details_tab()
+	_physics_tab.sync()
 	if Global.heldSprite == null:
 		refreshEyeUI()
 		return
@@ -662,6 +773,51 @@ func _on_costume_btn_pressed(index: int):
 	else:
 		Global.heldSprite.costumeLayers[index] = 0
 	Global.spriteEdit.setLayerButtons()
+
+# --- Details tab handlers (relocated from the left sidebar) ---
+
+func _on_details_ignore_bounce_toggled(pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.ignoreBounce = pressed
+
+func _on_details_clip_linked_toggled(pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.setClip(pressed)
+
+func _on_details_static_toggled(pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.staticElement = pressed
+	# Re-snap the dragger when toggling off so physics resumes from the rest pose
+	if not pressed:
+		Global.heldSprite._force_drag_snap = true
+
+func _on_details_ndi_ref_toggled(pressed):
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	if pressed:
+		for spr in get_tree().get_nodes_in_group("saved"):
+			if spr != Global.heldSprite:
+				spr.ndiRefLayer = false
+	Global.heldSprite.ndiRefLayer = pressed
+	Global.main.ndi_mark_dirty()
+
+# Sync the Details checkboxes to the selected sprite; disabled when none.
+func _sync_details_tab():
+	var spr = Global.heldSprite
+	var has = spr != null
+	for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
+		cb.disabled = not has
+	if has:
+		_cb_ignore_bounce.set_pressed_no_signal(spr.ignoreBounce)
+		_cb_clip_linked.set_pressed_no_signal(spr.clipped)
+		_cb_static.set_pressed_no_signal(spr.staticElement)
+		_cb_ndi_ref.set_pressed_no_signal(spr.ndiRefLayer)
+	else:
+		for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
+			cb.set_pressed_no_signal(false)
 
 # --- Eye tracking handlers ---
 

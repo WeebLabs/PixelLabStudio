@@ -110,6 +110,31 @@ var eyeTrackMode = 0  # 0 = cursor, 1 = layer
 var eyeTrackTargetId = null  # int sprite id when eyeTrackMode == 1
 var _eyeTrackOffset = Vector2.ZERO
 
+# Wiggle (physics) — bends this layer with a textured Line2D ribbon driven by an
+# angular-spring/verlet chain (effects/wiggle/). User-facing units (degrees /
+# friendly ranges); mapped to the chain in _wiggle_params(). Persisted; all
+# backward-compatible (defaults applied).
+var wiggleEnabled = false
+var wiggleDirection = 90.0     # rest direction from the origin, degrees (90 = down)
+var wiggleSegments = 8
+var wiggleStiffness = 20.0
+var wiggleDamping = 5.0
+var wiggleWeight = 0.0          # gravity droop strength
+var wiggleMaxBend = 25.0        # max bend per joint, degrees
+var wiggleBendFocus = 0.4       # comeback speed off the angle limit (springiness)
+var wiggleWagEnabled = true     # auto-wag drives a side-to-side sweep
+var wiggleWagAmount = 15.0      # auto-wag base-sway amplitude, degrees
+var wiggleWagSpeed = 0.12
+var wiggleReactivity = 1.0      # how much the ribbon lags/whips with the layer's motion
+var wiggleChildrenFollow = false
+
+const _WIGGLE_APPENDAGE = preload("res://effects/wiggle/wiggle_appendage.gd")
+var _wiggleAppendage: WiggleAppendage2D = null
+# Set on this layer while a wiggle parent drives it (child-follow); stores rest transform.
+var _wiggleRestPos = Vector2.ZERO
+var _wiggleRestRot = 0.0
+var _wiggleFollowing = false
+
 #Blink Animation
 var _blinkAnimPlaying = false
 var _blinkAnimTick = 0
@@ -153,6 +178,9 @@ func _rebuild_sprite_texture():
 		sprite.texture = canvas_tex
 	else:
 		sprite.texture = tex
+	# Keep the wiggle ribbon's texture in sync when the image/normal changes.
+	if _wiggleAppendage != null:
+		_rebuild_wiggle_texture()
 
 func setNormalMap(img: Image, nrml_path: String):
 	if imageData != null and img.get_size() != imageData.get_size():
@@ -294,10 +322,13 @@ func _ready():
 				parentSprite = null
 
 	setClip(clipped)
-	
-	
+
+
 	if Global.filtering:
 		sprite.texture_filter = 2
+
+	if wiggleEnabled:
+		_set_wiggle_active(true)
 	
 func replaceSprite(pathNew):
 	var img = Image.new()
@@ -450,7 +481,10 @@ func _process(delta):
 	
 	if grabDelay > 0:
 		grabDelay -= 1
-	
+
+	if wiggleEnabled:
+		_update_wiggle(delta)
+
 	talkBlink()
 
 	if Global.originMode and Global.heldSprite == self:
@@ -486,6 +520,10 @@ func talkBlink():
 	# When the sprite is only showing because of the edit-mode faded preview, render
 	# it on layer 2 so the NDI camera (layer 1 only) doesn't pick up the preview frame.
 	sprite.visibility_layer = 2 if (!yes and faded > 0) else 1
+	# When wiggling, the ribbon stands in for the (hidden) sprite — fade it identically.
+	if _wiggleAppendage != null:
+		_wiggleAppendage.self_modulate = sprite.self_modulate
+		_wiggleAppendage.visibility_layer = sprite.visibility_layer
 
 func blinkAnimation():
 	if showOnBlink != 3 or frames <= 1:
@@ -679,8 +717,153 @@ func rotationalDrag(length,delta):
 func stretch(length,delta):
 	var yvel = (length * stretchAmount * 0.01)
 	var target = Vector2(1.0-yvel,1.0+yvel)
-	
+
 	sprite.scale = lerp(sprite.scale,target,0.5)
+
+# --- Wiggle (physics) ---
+
+# Turn wiggle on/off for this layer. When on, the Sprite2D is hidden and a
+# textured Line2D ribbon (WiggleAppendage2D) is shown in its place, bending along
+# the spring chain. The Physics tab calls this; safe to call any time.
+func setWiggle(on: bool):
+	wiggleEnabled = on
+	_set_wiggle_active(on)
+	if not on:
+		_release_wiggle_children()
+
+func setWiggleChildrenFollow(on: bool):
+	wiggleChildrenFollow = on
+	if not on:
+		_release_wiggle_children()
+
+func _set_wiggle_active(on: bool):
+	if on:
+		if _wiggleAppendage == null:
+			_wiggleAppendage = _WIGGLE_APPENDAGE.new()
+			_wiggleAppendage.texture_mode = Line2D.LINE_TEXTURE_STRETCH
+			_wiggleAppendage.joint_mode = Line2D.LINE_JOINT_ROUND
+			# No caps: LINE_CAP_BOX/ROUND extend the ribbon by half its width past the
+			# root as a rigid stub that never bends. NONE maps the texture exactly to
+			# the chain points.
+			_wiggleAppendage.begin_cap_mode = Line2D.LINE_CAP_NONE
+			_wiggleAppendage.end_cap_mode = Line2D.LINE_CAP_NONE
+			dragOrigin.add_child(_wiggleAppendage)
+		_rebuild_wiggle_texture()
+		_wiggleAppendage.z_index = sprite.z_index
+		_wiggleAppendage.configure(_wiggle_params())
+		_wiggleAppendage.reset()
+		sprite.visible = false
+	else:
+		if _wiggleAppendage != null:
+			_wiggleAppendage.queue_free()
+			_wiggleAppendage = null
+		sprite.visible = true
+		sprite.rotation = 0.0
+		sprite.scale = Vector2.ONE
+
+# (Re)build the ribbon texture from the raw image (+ normal map if present). The
+# appendage length runs along the texture's longer axis; taller-than-wide art is
+# rotated so that axis maps along the ribbon (Line2D stretches U along the line).
+func _rebuild_wiggle_texture():
+	if _wiggleAppendage == null or imageData == null:
+		return
+	var dimg: Image = imageData
+	var nimg: Image = normalImageData
+	if imageData.get_height() > imageData.get_width():
+		dimg = imageData.duplicate()
+		dimg.rotate_90(CLOCKWISE)
+		if normalImageData != null:
+			nimg = normalImageData.duplicate()
+			nimg.rotate_90(CLOCKWISE)
+	var diff := ImageTexture.create_from_image(dimg)
+	if nimg != null:
+		var ct := CanvasTexture.new()
+		ct.diffuse_texture = diff
+		ct.normal_texture = ImageTexture.create_from_image(nimg)
+		_wiggleAppendage.texture = ct
+	else:
+		_wiggleAppendage.texture = diff
+	_wiggleAppendage.width = _wiggle_dims().y
+
+# Per-frame: keep the hidden sprite at identity (so linked children, parented
+# under it, map cleanly to the appendage's space), then configure + advance the
+# ribbon. The appendage root follows the layer origin in world space, so avatar
+# bounce/drag/wobble drive the whip.
+func _update_wiggle(delta: float):
+	if _wiggleAppendage == null:
+		_set_wiggle_active(true)
+		return
+	sprite.rotation = 0.0
+	sprite.scale = Vector2.ONE
+	_wiggleAppendage.configure(_wiggle_params())
+	_wiggleAppendage.tick(delta, tick)
+	if wiggleChildrenFollow:
+		_apply_wiggle_to_children()
+
+# Appendage length (along the bend) and cross width, in pixels.
+func _wiggle_dims() -> Vector2:
+	if imageData == null:
+		return Vector2(1, 1)
+	var w := float(imageData.get_width())
+	var h := float(imageData.get_height())
+	return Vector2(h, w) if h > w else Vector2(w, h)
+
+func _wiggle_params() -> Dictionary:
+	var dims := _wiggle_dims()
+	var segs := clampi(int(wiggleSegments), 1, 24)
+	return {
+		"segment_count": segs,
+		"segment_length": dims.x / float(segs),
+		"stiffness": wiggleStiffness,
+		"damping": wiggleDamping,
+		# Cap per-joint rotation speed and soften joints toward the tip so a root
+		# rotation travels down the tail with lag (a smooth wave) instead of the
+		# whole chain snapping to follow. Both scale with stiffness, so Stiffness
+		# stays the single "snappy vs smooth" knob.
+		"max_angular_momentum": clampf(wiggleStiffness * 0.45, 2.0, 30.0),
+		"stiffness_decay": wiggleStiffness * 0.05,
+		"stiffness_decay_exponent": 1.3,
+		"max_angle": deg_to_rad(wiggleMaxBend),
+		"comeback_speed": wiggleBendFocus,
+		"gravity": Vector2(0.0, wiggleWeight),
+		"curvature": 0.0,
+		"subdivision": 4,
+		"rest_direction_angle": deg_to_rad(wiggleDirection),
+		"root_follow_smoothness": clampf(lerp(0.85, 0.2, clampf(wiggleReactivity / 3.0, 0.0, 1.0)), 0.05, 0.95),
+		"auto_wag": wiggleWagEnabled,
+		"wag_speed": wiggleWagSpeed,
+		"wag_amount": deg_to_rad(wiggleWagAmount),
+	}
+
+# Make directly-linked children ride the ribbon: place each at the chain point
+# matching its rest distance along the appendage. The hidden sprite is held at
+# identity, so its local space matches the appendage's. Deeper descendants follow
+# for free via the scene tree.
+func _apply_wiggle_to_children():
+	if _wiggleAppendage == null:
+		return
+	var dir := deg_to_rad(wiggleDirection)
+	var total := maxf(_wiggle_dims().x, 1.0)
+	for child in getAllLinkedSprites():
+		if not child._wiggleFollowing:
+			child._wiggleRestPos = child.position
+			child._wiggleRestRot = child.rotation
+			child._wiggleFollowing = true
+		var along: float = child._wiggleRestPos.rotated(-dir).x   # rest distance along the appendage
+		var t := clampf(along / total, 0.0, 1.0)
+		var p: Vector2 = _wiggleAppendage.sample_local(t)
+		var tangent: Vector2 = _wiggleAppendage.sample_local(minf(t + 0.05, 1.0)) - p
+		child.position = p
+		if tangent.length() > 0.001:
+			child.rotation = child._wiggleRestRot + (tangent.angle() - dir)
+
+# Restore any children we were driving back to their captured rest transform.
+func _release_wiggle_children():
+	for child in getAllLinkedSprites():
+		if child._wiggleFollowing:
+			child.position = child._wiggleRestPos
+			child.rotation = child._wiggleRestRot
+			child._wiggleFollowing = false
 
 func changeCollision(enable):
 	grabArea.monitorable = enable

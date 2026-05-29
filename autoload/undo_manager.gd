@@ -72,6 +72,19 @@ func _snapshot() -> Dictionary:
 			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
 			data[idx]["eyeTrackMode"] = child.eyeTrackMode
 			data[idx]["eyeTrackTargetId"] = child.eyeTrackTargetId
+			data[idx]["wiggleEnabled"] = child.wiggleEnabled
+			data[idx]["wiggleDirection"] = child.wiggleDirection
+			data[idx]["wiggleSegments"] = child.wiggleSegments
+			data[idx]["wiggleStiffness"] = child.wiggleStiffness
+			data[idx]["wiggleDamping"] = child.wiggleDamping
+			data[idx]["wiggleWeight"] = child.wiggleWeight
+			data[idx]["wiggleMaxBend"] = child.wiggleMaxBend
+			data[idx]["wiggleBendFocus"] = child.wiggleBendFocus
+			data[idx]["wiggleWagEnabled"] = child.wiggleWagEnabled
+			data[idx]["wiggleWagAmount"] = child.wiggleWagAmount
+			data[idx]["wiggleWagSpeed"] = child.wiggleWagSpeed
+			data[idx]["wiggleReactivity"] = child.wiggleReactivity
+			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
 
 			if child.normalImageData != null:
 				if !_normal_cache.has(child.id):
@@ -228,6 +241,21 @@ func _restore(data: Dictionary):
 			sprite.eyeTrackMode = d["eyeTrackMode"]
 		if d.has("eyeTrackTargetId"):
 			sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
+		if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
+		if d.has("wiggleDirection"): sprite.wiggleDirection = d["wiggleDirection"]
+		if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
+		if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
+		if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
+		if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
+		if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
+		if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
+		if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
+		if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
+		if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
+		if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
+		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
+		# Resync the bend material/chain to the restored enabled state.
+		sprite.setWiggle(sprite.wiggleEnabled)
 
 		if d.has("normalImageData") and d["normalImageData"] != null:
 			if sprite.normalImageData != d["normalImageData"]:
@@ -299,6 +327,19 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
 	if d.has("eyeTrackMode"): sprite.eyeTrackMode = d["eyeTrackMode"]
 	if d.has("eyeTrackTargetId"): sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
+	if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
+	if d.has("wiggleDirection"): sprite.wiggleDirection = d["wiggleDirection"]
+	if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
+	if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
+	if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
+	if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
+	if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
+	if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
+	if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
+	if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
+	if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
+	if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
+	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
 	if d.has("normalImageData") and d["normalImageData"] != null:
 		sprite.loadedNormalImage = d["normalImageData"]
 		sprite.normalPath = d.get("normalPath", "")

@@ -14433,20 +14433,6 @@ offset_bottom = 22.0
 theme = SubResource("Theme_6buny")
 flat = true
 
-[node name="CheckBox" type="CheckBox" parent="Buttons"]
-offset_left = 20.0
-offset_top = 438.0
-offset_right = 223.0
-offset_bottom = 469.0
-text = "Ignore bounce velocity"
-
-[node name="ClipLinked" type="CheckBox" parent="Buttons"]
-offset_left = 20.0
-offset_top = 464.0
-offset_right = 223.0
-offset_bottom = 495.0
-text = "Clip linked sprites"
-
 [node name="Slider" type="Node2D" parent="."]
 position = Vector2(0, 183)
 
@@ -14922,8 +14908,6 @@ offset_right = 225.0
 offset_bottom = 132.0
 text = "Invert direction"
 
-[connection signal="toggled" from="Buttons/CheckBox" to="." method="_on_check_box_toggled"]
-[connection signal="toggled" from="Buttons/ClipLinked" to="." method="_on_clip_linked_toggled"]
 [connection signal="value_changed" from="Slider/DragSlider" to="." method="_on_drag_slider_value_changed"]
 [connection signal="value_changed" from="WobbleControl/xFrq" to="." method="_on_x_frq_value_changed"]
 [connection signal="value_changed" from="WobbleControl/xAmp" to="." method="_on_x_amp_value_changed"]
