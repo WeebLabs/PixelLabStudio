@@ -15,6 +15,7 @@ class_name WiggleAppendage2D
 # bounce/drag/wobble propagate into the chain as momentum (the whip / jiggle).
 
 # physics point layout
+const RENDER_POINTS := 96   # target Line2D point count for smooth edges at any physics resolution
 const _PREV := 0   # reference to the previous point's array (null for root)
 const _POS := 1    # Vector2 world position
 const _ROT := 2    # float segment angle (radians)
@@ -31,6 +32,7 @@ var comeback_speed := 0.4
 var rest_return := 0.0     # over-damped pull back to the rest shape (0 = pure spring)
 var gravity := Vector2.ZERO
 var root_follow_smoothness := 0.65
+var motion_intensity := 1.0   # how strongly the layer's movement drives the whip (1 = normal)
 var auto_wag := false
 var wag_speed := 0.15
 var wag_amount := 0.4
@@ -44,6 +46,7 @@ var _rest_rel: PackedFloat32Array = PackedFloat32Array() # per-joint rest relati
 
 var _points: Array = []
 var _smoothed_root := Vector2.ZERO
+var _prev_root_pos := Vector2.ZERO   # root world pos last frame, for motion_intensity
 var _wag_offset := 0.0
 
 func configure(p: Dictionary) -> void:
@@ -57,6 +60,7 @@ func configure(p: Dictionary) -> void:
 	rest_return = float(p.get("rest_return", rest_return))
 	gravity = p.get("gravity", gravity)
 	root_follow_smoothness = float(p.get("root_follow_smoothness", root_follow_smoothness))
+	motion_intensity = float(p.get("motion_intensity", motion_intensity))
 	auto_wag = bool(p.get("auto_wag", auto_wag))
 	wag_speed = float(p.get("wag_speed", wag_speed))
 	wag_amount = float(p.get("wag_amount", wag_amount))
@@ -93,6 +97,7 @@ func reset() -> void:
 	_points = []
 	var start := get_global_position()
 	_smoothed_root = start
+	_prev_root_pos = start
 	var ang := _base_rest_angle + global_rotation
 	var pos := start
 	_points.append([null, pos, ang, 0.0])
@@ -109,11 +114,17 @@ func tick(delta: float, frame_tick: int) -> void:
 	# Auto-wag is a clean sinusoidal sway of the root direction; the chain follows
 	# it with spring lag, so the base moves smoothly and the tip whips.
 	_wag_offset = (sin(float(frame_tick) * wag_speed) * wag_amount) if auto_wag else 0.0
-	for i in _points.size():
-		if i == 0:
-			_process_root(_points[i], delta)
-		else:
-			_process_point(_points[i], delta, i)
+	_process_root(_points[0], delta)
+	# Motion intensity: carry the rest of the chain along with (1 - intensity) of
+	# the root's actual displacement this frame, so `motion_intensity` scales how
+	# much the layer's movement is felt as relative lag (the whip). 1 = full
+	# (default), 0 = rides along rigidly (ignores motion), >1 = exaggerated.
+	var root_motion: Vector2 = _points[0][_POS] - _prev_root_pos
+	_prev_root_pos = _points[0][_POS]
+	var carry := root_motion * (1.0 - motion_intensity)
+	for i in range(1, _points.size()):
+		_points[i][_POS] += carry
+		_process_point(_points[i], delta, i)
 	_update_line()
 
 func _process_root(point: Array, delta: float) -> void:
@@ -159,7 +170,15 @@ func _update_line() -> void:
 	var pts := PackedVector2Array()
 	for p in _points:
 		pts.append(to_local(p[_POS]))
-	points = _bezier(pts, subdivision)
+	# Render resolution is decoupled from physics resolution: smooth the chain with
+	# a Catmull-Rom spline to a high fixed point count, so the ribbon stays a smooth
+	# curve (no faceting/stair-step on warped edges) even at low segment counts —
+	# which give smoother motion but a coarse polyline. Catmull-Rom rounds sparse
+	# points far better than the quadratic bezier, and passes through the endpoints
+	# (so the tip is exact — no overshoot "tail").
+	var seg := maxi(pts.size() - 1, 1)
+	var per := clampi(int(ceil(float(RENDER_POINTS) / float(seg))), subdivision, 48)
+	points = smooth_path(pts, per) if pts.size() >= 3 else pts
 
 # Position along the chain at normalized t in [0,1], in this node's local space.
 # Used by child-follow so attached props ride the ribbon.
@@ -237,36 +256,3 @@ func _angle_diff(a: float, b: float) -> float:
 
 func _signed_sqrt(v: float) -> float:
 	return sqrt(absf(v)) * signf(v)
-
-# Quadratic-bezier smoothing of the polyline for a rounder ribbon (port of the
-# remix's _bezier_interpolate). subdivision < 1 returns the raw points.
-func _bezier(line: PackedVector2Array, sub: int) -> PackedVector2Array:
-	if sub < 1 or line.size() < 3:
-		return line
-	var out := PackedVector2Array()
-	for i in line.size() - 1:
-		var a := line[i]
-		var b := line[i + 1]
-		var c: Vector2
-		var subs: int
-		var ci := i + 2
-		if ci > line.size() - 1:
-			var before := line[i - 1]
-			var ang := _angle_diff((b - a).angle(), (a - before).angle())
-			c = b + (b - a).rotated(ang)
-			subs = sub / 2 + 1
-		else:
-			c = line[ci]
-			subs = sub
-		var ta := a.lerp(b, 0.5) if i != 0 else a
-		var tc := b.lerp(c, 0.5)
-		for o in subs:
-			var tt := 1.0 / float(sub) * float(o)
-			out.append(ta.lerp(b, tt).lerp(b.lerp(tc, tt), tt))
-	# Include the exact tip, but only if the curve didn't already reach it. A
-	# duplicate final point makes a zero-length segment that Line2D renders as a
-	# stray round-joint spike fanning past the tip.
-	var tip := line[line.size() - 1]
-	if out.is_empty() or out[out.size() - 1].distance_squared_to(tip) > 0.25:
-		out.append(tip)
-	return out

@@ -87,6 +87,7 @@ func _snapshot() -> Dictionary:
 			data[idx]["wiggleWagAmount"] = child.wiggleWagAmount
 			data[idx]["wiggleWagSpeed"] = child.wiggleWagSpeed
 			data[idx]["wiggleReactivity"] = child.wiggleReactivity
+			data[idx]["wiggleMotionIntensity"] = child.wiggleMotionIntensity
 			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
 
 			if child.normalImageData != null:
@@ -259,6 +260,7 @@ func _restore(data: Dictionary):
 		if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
 		if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
 		if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
+		if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
 		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
 		# Resync the bend material/chain to the restored enabled state.
 		sprite.setWiggle(sprite.wiggleEnabled)
@@ -348,6 +350,7 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
 	if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
 	if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
+	if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
 	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
 	if d.has("normalImageData") and d["normalImageData"] != null:
 		sprite.loadedNormalImage = d["normalImageData"]

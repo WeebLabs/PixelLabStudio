@@ -1308,6 +1308,7 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("wiggleWagAmount"): sprite.wiggleWagAmount = data[item]["wiggleWagAmount"]
 		if data[item].has("wiggleWagSpeed"): sprite.wiggleWagSpeed = data[item]["wiggleWagSpeed"]
 		if data[item].has("wiggleReactivity"): sprite.wiggleReactivity = data[item]["wiggleReactivity"]
+		if data[item].has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = data[item]["wiggleMotionIntensity"]
 		if data[item].has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = data[item]["wiggleChildrenFollow"]
 		if data[item].has("normalPath"):
 			sprite.normalPath = data[item]["normalPath"]
@@ -1951,6 +1952,7 @@ func _build_avatar_save_data() -> Dictionary:
 				"wiggleWagAmount": child.wiggleWagAmount,
 				"wiggleWagSpeed": child.wiggleWagSpeed,
 				"wiggleReactivity": child.wiggleReactivity,
+				"wiggleMotionIntensity": child.wiggleMotionIntensity,
 				"wiggleChildrenFollow": child.wiggleChildrenFollow,
 				"ndiRefLayer": child.ndiRefLayer,
 				"normalPath": child.normalPath,
@@ -2588,6 +2590,7 @@ func _on_duplicate_button_pressed():
 	sprite.wiggleWagAmount = Global.heldSprite.wiggleWagAmount
 	sprite.wiggleWagSpeed = Global.heldSprite.wiggleWagSpeed
 	sprite.wiggleReactivity = Global.heldSprite.wiggleReactivity
+	sprite.wiggleMotionIntensity = Global.heldSprite.wiggleMotionIntensity
 	sprite.wiggleChildrenFollow = Global.heldSprite.wiggleChildrenFollow
 
 	origin.add_child(sprite)

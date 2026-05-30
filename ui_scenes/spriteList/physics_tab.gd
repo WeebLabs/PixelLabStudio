@@ -55,6 +55,7 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_slider("wag amount", "wiggleWagAmount", 0.0, 45.0, 0.5, 15.0, "°", false)
 	_slider("wag speed", "wiggleWagSpeed", 0.02, 1.0, 0.01, 0.12, "", false)
 	_slider("reactivity", "wiggleReactivity", 0.0, 3.0, 0.05, 1.0, "", false)
+	_slider("motion intensity", "wiggleMotionIntensity", 0.0, 3.0, 0.05, 1.0, "×", false)
 
 	_header("Feel")
 	_slider("stiffness", "wiggleStiffness", 1.0, 60.0, 0.5, 20.0, "", false)
@@ -101,6 +102,14 @@ func sync() -> void:
 		if has:
 			row.slider.set_value_no_signal(spr.get(prop))
 		_update_label(prop)
+
+	# Auto-wag-only sliders do nothing unless auto-wag is on, so only show them then
+	# (the Auto-wag checkbox itself stays). The container reflows to close the gap.
+	var wag_on = active and spr.wiggleWagEnabled
+	for prop in ["wiggleWagAmount", "wiggleWagSpeed"]:
+		var row = _rows[prop]
+		row.slider.visible = wag_on
+		row.label.visible = wag_on
 
 	if active != _slider_state:
 		_slider_state = active

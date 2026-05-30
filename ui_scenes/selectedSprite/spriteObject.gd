@@ -131,7 +131,8 @@ var wiggleShapeReturn = 0.0     # over-damped pull back to the original (rest) s
 var wiggleWagEnabled = true     # auto-wag drives a side-to-side sweep
 var wiggleWagAmount = 15.0      # auto-wag base-sway amplitude, degrees
 var wiggleWagSpeed = 0.12
-var wiggleReactivity = 1.0      # how much the ribbon lags/whips with the layer's motion
+var wiggleReactivity = 1.0      # how snappily the base tracks the layer (higher = more immediate, lower = floatier)
+var wiggleMotionIntensity = 1.0 # master scale on motion-imparted wiggle (1 = normal, 0 = ignores motion)
 var wiggleChildrenFollow = false
 
 const _WIGGLE_APPENDAGE = preload("res://effects/wiggle/wiggle_appendage.gd")
@@ -522,6 +523,10 @@ func animation():
 
 func setZIndex():
 	sprite.z_index = z
+	# Keep the wiggle ribbon at the same depth as the sprite it stands in for, so
+	# reordering a wiggling layer re-depths the ribbon too (not just the sprite).
+	if _wiggleAppendage != null:
+		_wiggleAppendage.z_index = z
 
 func talkBlink():
 	var faded = 0.2 * int(Global.main.editMode)
@@ -767,11 +772,15 @@ func _set_wiggle_active(on: bool):
 			# the chain points.
 			_wiggleAppendage.begin_cap_mode = Line2D.LINE_CAP_NONE
 			_wiggleAppendage.end_cap_mode = Line2D.LINE_CAP_NONE
+			# Match the Sprite2D's absolute z so the ribbon sits at the layer's real
+			# depth (the Sprite is z_as_relative=false; a plain Line2D defaults to
+			# relative, which mis-orders it once layers are reparented/linked).
+			_wiggleAppendage.z_as_relative = false
 			dragOrigin.add_child(_wiggleAppendage)
 		# Match the sprite's filter (Linear) — the project default is Nearest, which
 		# the ribbon would otherwise inherit and render with stair-stepped edges.
 		_wiggleAppendage.texture_filter = sprite.texture_filter
-		_wiggleAppendage.z_index = sprite.z_index
+		_wiggleAppendage.z_index = z
 		_apply_wiggle_geometry()     # builds chain rest + bakes the strip
 		_wiggleAppendage.configure(_wiggle_params())
 		_wiggleAppendage.reset()
@@ -1025,7 +1034,11 @@ func _wiggle_params() -> Dictionary:
 		"rest_return": wiggleShapeReturn,
 		"gravity": Vector2(0.0, wiggleWeight),
 		"subdivision": 4,
-		"root_follow_smoothness": clampf(lerp(0.85, 0.2, clampf(wiggleReactivity / 3.0, 0.0, 1.0)), 0.05, 0.95),
+		# Base tracks the layer tightly so the wiggle reacts immediately — the whip
+		# comes from the chain trailing the base, NOT from delaying the base. Higher
+		# reactivity = snappier (toward instant); lower = a floatier, laggier base.
+		"root_follow_smoothness": clampf(0.6 + wiggleReactivity * 0.3, 0.5, 1.0),
+		"motion_intensity": wiggleMotionIntensity,
 		"auto_wag": wiggleWagEnabled,
 		"wag_speed": wiggleWagSpeed,
 		"wag_amount": deg_to_rad(wiggleWagAmount),
