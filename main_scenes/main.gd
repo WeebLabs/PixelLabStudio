@@ -1294,13 +1294,16 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
 		if data[item].has("wiggleEnabled"): sprite.wiggleEnabled = data[item]["wiggleEnabled"]
-		if data[item].has("wiggleDirection"): sprite.wiggleDirection = data[item]["wiggleDirection"]
+		if data[item].has("wigglePath"): sprite.wigglePath = str_to_var(data[item]["wigglePath"])
+		if data[item].has("wigglePathWidths"): sprite.wigglePathWidths = str_to_var(data[item]["wigglePathWidths"])
+		if data[item].has("wiggleThickness"): sprite.wiggleThickness = data[item]["wiggleThickness"]
 		if data[item].has("wiggleSegments"): sprite.wiggleSegments = data[item]["wiggleSegments"]
 		if data[item].has("wiggleStiffness"): sprite.wiggleStiffness = data[item]["wiggleStiffness"]
 		if data[item].has("wiggleDamping"): sprite.wiggleDamping = data[item]["wiggleDamping"]
 		if data[item].has("wiggleWeight"): sprite.wiggleWeight = data[item]["wiggleWeight"]
 		if data[item].has("wiggleMaxBend"): sprite.wiggleMaxBend = data[item]["wiggleMaxBend"]
 		if data[item].has("wiggleBendFocus"): sprite.wiggleBendFocus = data[item]["wiggleBendFocus"]
+		if data[item].has("wiggleShapeReturn"): sprite.wiggleShapeReturn = data[item]["wiggleShapeReturn"]
 		if data[item].has("wiggleWagEnabled"): sprite.wiggleWagEnabled = data[item]["wiggleWagEnabled"]
 		if data[item].has("wiggleWagAmount"): sprite.wiggleWagAmount = data[item]["wiggleWagAmount"]
 		if data[item].has("wiggleWagSpeed"): sprite.wiggleWagSpeed = data[item]["wiggleWagSpeed"]
@@ -1934,13 +1937,16 @@ func _build_avatar_save_data() -> Dictionary:
 				"eyeTrackMode": child.eyeTrackMode,
 				"eyeTrackTargetId": child.eyeTrackTargetId,
 				"wiggleEnabled": child.wiggleEnabled,
-				"wiggleDirection": child.wiggleDirection,
+				"wigglePath": var_to_str(child.wigglePath),
+				"wigglePathWidths": var_to_str(child.wigglePathWidths),
+				"wiggleThickness": child.wiggleThickness,
 				"wiggleSegments": child.wiggleSegments,
 				"wiggleStiffness": child.wiggleStiffness,
 				"wiggleDamping": child.wiggleDamping,
 				"wiggleWeight": child.wiggleWeight,
 				"wiggleMaxBend": child.wiggleMaxBend,
 				"wiggleBendFocus": child.wiggleBendFocus,
+				"wiggleShapeReturn": child.wiggleShapeReturn,
 				"wiggleWagEnabled": child.wiggleWagEnabled,
 				"wiggleWagAmount": child.wiggleWagAmount,
 				"wiggleWagSpeed": child.wiggleWagSpeed,
@@ -2568,13 +2574,16 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrackTargetId = Global.heldSprite.eyeTrackTargetId
 
 	sprite.wiggleEnabled = Global.heldSprite.wiggleEnabled
-	sprite.wiggleDirection = Global.heldSprite.wiggleDirection
+	sprite.wigglePath = Global.heldSprite.wigglePath.duplicate()
+	sprite.wigglePathWidths = Global.heldSprite.wigglePathWidths.duplicate()
+	sprite.wiggleThickness = Global.heldSprite.wiggleThickness
 	sprite.wiggleSegments = Global.heldSprite.wiggleSegments
 	sprite.wiggleStiffness = Global.heldSprite.wiggleStiffness
 	sprite.wiggleDamping = Global.heldSprite.wiggleDamping
 	sprite.wiggleWeight = Global.heldSprite.wiggleWeight
 	sprite.wiggleMaxBend = Global.heldSprite.wiggleMaxBend
 	sprite.wiggleBendFocus = Global.heldSprite.wiggleBendFocus
+	sprite.wiggleShapeReturn = Global.heldSprite.wiggleShapeReturn
 	sprite.wiggleWagEnabled = Global.heldSprite.wiggleWagEnabled
 	sprite.wiggleWagAmount = Global.heldSprite.wiggleWagAmount
 	sprite.wiggleWagSpeed = Global.heldSprite.wiggleWagSpeed

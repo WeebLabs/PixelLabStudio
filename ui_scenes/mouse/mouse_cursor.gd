@@ -26,7 +26,7 @@ func _process(delta):
 		global_position = get_global_mouse_position()
 		if _click_pending:
 			_click_pending = false
-			if !Global.originMode:
+			if !Global.originMode and !Global.wigglePathMode:
 				var areas = _query_areas_at_mouse()
 				# Sprite areas live in world space — use the world mouse for
 				# pixel-opaque hit-testing, not the viewport coords above.

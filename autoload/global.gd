@@ -52,6 +52,10 @@ var eyeTrackPickBroadcast: bool = false
 # Sprite-level eyeTrack flags are never modified by this switch.
 var eyeTrackingGloballyEnabled: bool = true
 var originMode = false
+# On while tracing a layer's wiggle ribbon path on the canvas (entered from the
+# Physics tab). Canvas clicks are routed to the WigglePathEditor instead of the
+# usual sprite selection while this is set.
+var wigglePathMode = false
 var awaitingToggleBind = false
 var _origin_press_time = 0
 var scrollSelection = 0
@@ -181,9 +185,13 @@ func _process(delta):
 			heldSprite.setZIndex()
 			pushUpdate("Moved sprite layer.")
 		if main.editMode:
+			if wigglePathMode and Input.is_action_just_pressed("ui_cancel"):
+				wigglePathMode = false
+				pushUpdate("Finished editing ribbon path.")
 			if Input.is_action_just_pressed("reparent"):
 				reparentMode = !reparentMode
 				originMode = false
+				wigglePathMode = false
 				Global.chain.enable(reparentMode)
 			if Input.is_action_just_pressed("origin"):
 				_origin_press_time = Time.get_ticks_msec()
@@ -191,6 +199,7 @@ func _process(delta):
 				if Time.get_ticks_msec() - _origin_press_time >= 300:
 					originMode = true
 					reparentMode = false
+					wigglePathMode = false
 					chain.enable(false)
 					pushUpdate("Origin adjustment mode.")
 			if Input.is_action_just_released("origin"):
@@ -207,11 +216,14 @@ func _process(delta):
 	else:
 		reparentMode = false
 		originMode = false
+		wigglePathMode = false
 		Global.chain.enable(reparentMode)
-	
+
 	if main.editMode:
 		if reparentMode:
 			RenderingServer.set_default_clear_color(Color(0.18, 0.25, 0.35))
+		elif wigglePathMode:
+			RenderingServer.set_default_clear_color(Color(0.28, 0.20, 0.25))
 		elif originMode or eyeTrackPickMode:
 			RenderingServer.set_default_clear_color(Color(0.25, 0.18, 0.3))
 		else:
@@ -447,6 +459,7 @@ func select(areas):
 	if areas.size() <= 0:
 		heldSprite = null
 		originMode = false
+		wigglePathMode = false
 		i = 0
 		lastArray = []
 		return

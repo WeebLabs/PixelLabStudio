@@ -24,6 +24,12 @@ var _cb_enabled: CheckBox
 var _cb_children: CheckBox
 var _cb_wag: CheckBox
 
+var _edit_btn: Button
+var _autofit_btn: Button
+var _edit_box_idle: StyleBoxFlat
+var _edit_box_hover: StyleBoxFlat
+var _edit_box_active: StyleBoxFlat
+
 # prop name -> { slider, label, prefix, suffix, is_int }
 var _rows: Dictionary = {}
 var _sliders: Array = []        # value sliders, for enable/disable styling
@@ -40,6 +46,10 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_cb_enabled = _checkbox("Wiggle this layer", _on_enabled_toggled)
 	_cb_children = _checkbox("Linked layers follow", _on_children_toggled)
 
+	_header("Ribbon")
+	_build_ribbon_group()
+	_slider("thickness", "wiggleThickness", 0.2, 3.0, 0.05, 1.0, "×", false)
+
 	_header("Motion")
 	_cb_wag = _checkbox("Auto-wag (waves on its own)", _on_wag_toggled)
 	_slider("wag amount", "wiggleWagAmount", 0.0, 45.0, 0.5, 15.0, "°", false)
@@ -50,11 +60,11 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_slider("stiffness", "wiggleStiffness", 1.0, 60.0, 0.5, 20.0, "", false)
 	_slider("damping", "wiggleDamping", 0.5, 20.0, 0.5, 5.0, "", false)
 	_slider("springiness", "wiggleBendFocus", 0.0, 6.0, 0.1, 0.4, "", false)
+	_slider("shape return", "wiggleShapeReturn", 0.0, 1.0, 0.02, 0.0, "", false)
 	_slider("weight (droop)", "wiggleWeight", 0.0, 30.0, 0.5, 0.0, "", false)
 
 	_header("Shape")
-	_slider("direction", "wiggleDirection", 0.0, 360.0, 1.0, 90.0, "°", true)
-	_slider("segments", "wiggleSegments", 2.0, 16.0, 1.0, 8.0, "", true)
+	_slider("resolution", "wiggleSegments", 4.0, 32.0, 1.0, 12.0, "", true)
 	_slider("max bend", "wiggleMaxBend", 5.0, 90.0, 1.0, 25.0, "°", true)
 
 # Refresh control states/values from the selected layer. Called per frame.
@@ -66,6 +76,16 @@ func sync() -> void:
 	_cb_enabled.disabled = not has
 	_cb_children.disabled = not active
 	_cb_wag.disabled = not active
+
+	# Ribbon controls light up with the layer's wiggle; the Edit toggle reflects
+	# whether the on-canvas path editor is currently open for this layer.
+	_edit_btn.disabled = not active
+	_autofit_btn.disabled = not active
+	var editing = active and Global.wigglePathMode
+	_edit_btn.text = "✓  Done editing" if editing else "✎  Edit ribbon path"
+	_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
+	_edit_btn.add_theme_color_override("font_color",
+		Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
 	if has:
 		_cb_enabled.set_pressed_no_signal(spr.wiggleEnabled)
 		_cb_children.set_pressed_no_signal(spr.wiggleChildrenFollow)
@@ -140,6 +160,55 @@ func _slider(prefix: String, prop: String, minv: float, maxv: float, step: float
 		"suffix": suffix, "is_int": is_int}
 	_update_label(prop)
 
+# Ribbon-path controls: a primary "edit on canvas" toggle (filled accent box that
+# lights up while active), a secondary auto-fit, and a one-line how-to hint. The
+# thickness slider is added separately so it sits in the standard slider styling.
+func _build_ribbon_group() -> void:
+	_edit_box_idle = _box(Color(1.0, 0.7, 0.8, 0.16))
+	_edit_box_hover = _box(Color(1.0, 0.7, 0.8, 0.26))
+	_edit_box_active = _box(Color(1.0, 0.7, 0.8, 0.9))
+
+	_edit_btn = Button.new()
+	_edit_btn.text = "✎  Edit ribbon path"
+	_edit_btn.add_theme_font_size_override("font_size", 12)
+	_edit_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_edit_btn.add_theme_stylebox_override("normal", _edit_box_idle)
+	_edit_btn.add_theme_stylebox_override("hover", _edit_box_hover)
+	_edit_btn.add_theme_stylebox_override("pressed", _edit_box_active)
+	_edit_btn.add_theme_stylebox_override("disabled", _box(Color(0.3, 0.3, 0.32, 0.18)))
+	_edit_btn.add_theme_color_override("font_color", Color(1.0, 0.82, 0.88))
+	_edit_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_edit_btn.add_theme_color_override("font_disabled_color", Color(0.5, 0.5, 0.52))
+	_edit_btn.pressed.connect(_on_edit_path_pressed)
+	_content.add_child(_edit_btn)
+
+	_autofit_btn = Button.new()
+	_autofit_btn.text = "Auto-fit to content"
+	_autofit_btn.flat = true
+	_autofit_btn.add_theme_font_size_override("font_size", 12)
+	_autofit_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	_autofit_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_autofit_btn.add_theme_color_override("font_disabled_color", Color(0.45, 0.45, 0.48))
+	_autofit_btn.pressed.connect(_on_autofit_pressed)
+	_content.add_child(_autofit_btn)
+
+	var hint = Label.new()
+	hint.text = "Drag points to shape · click to add · right-click to remove · Esc when done"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_content.add_child(hint)
+
+func _box(col: Color) -> StyleBoxFlat:
+	var b = StyleBoxFlat.new()
+	b.bg_color = col
+	b.set_corner_radius_all(4)
+	b.content_margin_left = 8
+	b.content_margin_right = 8
+	b.content_margin_top = 5
+	b.content_margin_bottom = 5
+	return b
+
 func _update_label(prop: String) -> void:
 	var row = _rows[prop]
 	var v = row.slider.value
@@ -151,6 +220,8 @@ func _update_label(prop: String) -> void:
 func _on_enabled_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
+	if not pressed:
+		Global.wigglePathMode = false    # ribbon controls disable with wiggle
 	Global.heldSprite.setWiggle(pressed)
 
 func _on_children_toggled(pressed: bool) -> void:
@@ -163,8 +234,21 @@ func _on_wag_toggled(pressed: bool) -> void:
 	UndoManager.save_state()
 	Global.heldSprite.wiggleWagEnabled = pressed
 
+func _on_edit_path_pressed() -> void:
+	if Global.heldSprite == null: return
+	Global.wigglePathMode = not Global.wigglePathMode
+	Global.pushUpdate("Editing ribbon path." if Global.wigglePathMode else "Finished editing ribbon path.")
+
+func _on_autofit_pressed() -> void:
+	if Global.heldSprite == null: return
+	UndoManager.save_state()
+	Global.heldSprite.wiggle_auto_fit_path()
+
 func _on_slider_changed(value: float, prop: String) -> void:
 	if Global.heldSprite == null: return
 	UndoManager.save_state_continuous()
 	Global.heldSprite.set(prop, value)
+	# Thickness scales the captured band, so it needs a re-bake to take effect.
+	if prop == "wiggleThickness":
+		Global.heldSprite.apply_wiggle_path_changed()
 	_update_label(prop)
