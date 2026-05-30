@@ -263,5 +263,10 @@ func _bezier(line: PackedVector2Array, sub: int) -> PackedVector2Array:
 		for o in subs:
 			var tt := 1.0 / float(sub) * float(o)
 			out.append(ta.lerp(b, tt).lerp(b.lerp(tc, tt), tt))
-	out.append(line[line.size() - 1])   # include the exact tip (the loop stops short of it)
+	# Include the exact tip, but only if the curve didn't already reach it. A
+	# duplicate final point makes a zero-length segment that Line2D renders as a
+	# stray round-joint spike fanning past the tip.
+	var tip := line[line.size() - 1]
+	if out.is_empty() or out[out.size() - 1].distance_squared_to(tip) > 0.25:
+		out.append(tip)
 	return out

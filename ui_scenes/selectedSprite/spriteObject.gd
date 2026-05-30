@@ -768,6 +768,9 @@ func _set_wiggle_active(on: bool):
 			_wiggleAppendage.begin_cap_mode = Line2D.LINE_CAP_NONE
 			_wiggleAppendage.end_cap_mode = Line2D.LINE_CAP_NONE
 			dragOrigin.add_child(_wiggleAppendage)
+		# Match the sprite's filter (Linear) — the project default is Nearest, which
+		# the ribbon would otherwise inherit and render with stair-stepped edges.
+		_wiggleAppendage.texture_filter = sprite.texture_filter
 		_wiggleAppendage.z_index = sprite.z_index
 		_apply_wiggle_geometry()     # builds chain rest + bakes the strip
 		_wiggleAppendage.configure(_wiggle_params())
