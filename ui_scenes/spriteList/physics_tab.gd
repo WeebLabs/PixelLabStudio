@@ -202,7 +202,7 @@ func _build_ribbon_group() -> void:
 	_content.add_child(_autofit_btn)
 
 	var hint = Label.new()
-	hint.text = "Drag points to shape · click to add · right-click to remove · Esc when done"
+	hint.text = "Drag points to shape · drag amber grips to taper · click to add · right-click to remove · Esc when done"
 	hint.add_theme_font_size_override("font_size", 10)
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

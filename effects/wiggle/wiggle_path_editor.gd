@@ -28,13 +28,21 @@ const ROOT_COL := Color(1.0, 0.72, 0.82)          # warm anchor
 const TIP_COL := Color(0.62, 0.88, 1.0)           # cool free end
 const HALO := Color(1.0, 1.0, 1.0, 0.65)
 
+const WIDTH_CORE := Color(0.12, 0.12, 0.15, 0.95)
+const WIDTH_EDGE := Color(1.0, 0.82, 0.4)         # amber width grips (vs pink position handles)
+const WIDTH_SPOKE := Color(1.0, 0.82, 0.4, 0.4)
+
 const HANDLE_R := 6.0          # screen px (scaled to constant on-screen size)
+const WIDTH_R := 4.5           # screen px half-size of the square width grips
 const HIT_R := 11.0            # screen px hit radius for grabbing a handle
 const INSERT_NEAR := 16.0      # screen px: within this of the line -> split it
+const MIN_WIDTH := 1.0         # min per-point half-width (px)
 
 var owner_sprite = null        # the spriteObject we edit
 var _drag := -1                # control point index being dragged, -1 = none
 var _hover := -1               # control point index under the cursor
+var _width_drag := -1          # control point whose width grip is being dragged
+var _width_hover := -1         # control point whose width grip is under the cursor
 
 func setup(spr) -> void:
 	owner_sprite = spr
@@ -64,16 +72,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
 				var tex := _mouse_tex()
-				var hit := _hit_handle(tex)
+				_ensure_widths()
+				var ph := _hit_handle(tex)               # position grip
+				var wh := _hit_width_handle(tex)         # width grip
+				var pd := tex.distance_to(owner_sprite.wigglePath[ph]) if ph >= 0 else INF
+				var wd := tex.distance_to(_width_handle_tex(wh)) if wh >= 0 else INF
 				UndoManager.save_state()
-				if hit >= 0:
-					_drag = hit
+				if wh >= 0 and wd <= pd:
+					_width_drag = wh                     # grab the closer of the two
+				elif ph >= 0:
+					_drag = ph
 				else:
 					_drag = _insert_point(tex)
 				queue_redraw()
 				get_viewport().set_input_as_handled()
-			elif _drag >= 0:
+			elif _drag >= 0 or _width_drag >= 0:
 				_drag = -1
+				_width_drag = -1
 				owner_sprite.apply_wiggle_path_changed()
 				get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -85,14 +100,27 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	elif event is InputEventMouseMotion:
 		var tex := _mouse_tex()
-		if _drag >= 0:
+		if _width_drag >= 0:
+			# Perpendicular distance from the centerline = the displayed half-width;
+			# divide out the global thickness so the stored per-point width is the
+			# base taper profile (thickness still scales it).
+			var d: float = absf((tex - owner_sprite.wigglePath[_width_drag]).dot(_path_normal(_width_drag)))
+			var base: float = d / maxf(owner_sprite.wiggleThickness, 0.01)
+			owner_sprite.wigglePathWidths[_width_drag] = maxf(base, MIN_WIDTH)
+			queue_redraw()
+			get_viewport().set_input_as_handled()
+		elif _drag >= 0:
 			owner_sprite.wigglePath[_drag] = tex
 			queue_redraw()
 			get_viewport().set_input_as_handled()
 		else:
 			var h := _hit_handle(tex)
-			if h != _hover:
+			var wh := _hit_width_handle(tex)
+			if wh >= 0 and tex.distance_to(_width_handle_tex(wh)) < (tex.distance_to(owner_sprite.wigglePath[h]) if h >= 0 else INF):
+				h = -1   # width grip wins the hover
+			if h != _hover or wh != _width_hover:
 				_hover = h
+				_width_hover = wh if h < 0 else -1
 				queue_redraw()
 
 # Nearest control point within the hit radius, or -1.
@@ -171,6 +199,51 @@ func _project(p: Vector2, a: Vector2, b: Vector2) -> Vector2:
 	var t := 0.0 if len2 < 0.0001 else clampf((p - a).dot(ab) / len2, 0.0, 1.0)
 	return Vector2(t, p.distance_to(a + ab * t))
 
+# --- per-point width grips (Phase 4) -----------------------------------------
+
+# Keep the per-point widths array the same length as the path.
+func _ensure_widths() -> void:
+	var path: PackedVector2Array = owner_sprite.wigglePath
+	var ws: PackedFloat32Array = owner_sprite.wigglePathWidths
+	if ws.size() == path.size():
+		return
+	while ws.size() < path.size():
+		ws.append(ws[ws.size() - 1] if ws.size() > 0 else 16.0)
+	while ws.size() > path.size():
+		ws.remove_at(ws.size() - 1)
+	owner_sprite.wigglePathWidths = ws
+
+# Path normal at control point i (perpendicular to the local tangent), texture space.
+func _path_normal(i: int) -> Vector2:
+	var path: PackedVector2Array = owner_sprite.wigglePath
+	var n := path.size()
+	var t: Vector2 = path[mini(i + 1, n - 1)] - path[maxi(i - 1, 0)]
+	if t.length() < 0.001:
+		t = Vector2.RIGHT
+	return t.normalized().orthogonal()
+
+# Texture-space position of control point i's width grip (on the band edge, the
+# displayed half-width = base width * thickness out along the path normal).
+func _width_handle_tex(i: int) -> Vector2:
+	if i < 0:
+		return Vector2.ZERO
+	var ws: PackedFloat32Array = owner_sprite.wigglePathWidths
+	var w: float = (ws[i] if i < ws.size() else 16.0) * maxf(owner_sprite.wiggleThickness, 0.01)
+	return owner_sprite.wigglePath[i] + _path_normal(i) * w
+
+# Nearest width grip within the hit radius, or -1.
+func _hit_width_handle(tex: Vector2) -> int:
+	var path: PackedVector2Array = owner_sprite.wigglePath
+	var thr := HIT_R * _px()
+	var best := -1
+	var best_d := thr
+	for i in path.size():
+		var d := tex.distance_to(_width_handle_tex(i))
+		if d <= best_d:
+			best_d = d
+			best = i
+	return best
+
 # --- drawing -----------------------------------------------------------------
 
 func _draw() -> void:
@@ -214,6 +287,19 @@ func _draw() -> void:
 		draw_polyline(right, BAND_EDGE, 1.0 * ppx, true)
 		draw_polyline(ctr, CENTER_LINE, 2.0 * ppx, true)
 		_draw_flow(ctr, ppx)
+
+	# Per-point width grips: an amber square on a spoke out to the band edge — drag
+	# to taper that point. Drawn under the position handles so the points stay on top.
+	for i in path.size():
+		var cp: Vector2 = o._tex_to_local(path[i])
+		var wp: Vector2 = o._tex_to_local(_width_handle_tex(i))
+		var wactive: bool = (i == _width_hover or i == _width_drag)
+		draw_line(cp, wp, WIDTH_SPOKE, 1.0 * ppx, true)
+		var wr := (WIDTH_R + (1.5 if wactive else 0.0)) * ppx
+		if wactive:
+			draw_arc(wp, wr + 3.0 * ppx, 0.0, TAU, 16, HALO, 1.0 * ppx, true)
+		draw_rect(Rect2(wp - Vector2(wr, wr), Vector2(wr * 2.0, wr * 2.0)), WIDTH_CORE)
+		draw_rect(Rect2(wp - Vector2(wr, wr), Vector2(wr * 2.0, wr * 2.0)), WIDTH_EDGE, false, 1.5 * ppx)
 
 	# Control handles: root = warm filled diamond, tip = cool ring, mid = dot.
 	for i in path.size():
