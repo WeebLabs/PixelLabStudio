@@ -352,11 +352,24 @@ func _process(delta):
 		var hold = origin.get_parent().position.y
 
 		origin.get_parent().position.y += yVel * 0.0166
-		if origin.get_parent().position.y > 0:
-			origin.get_parent().position.y = 0
+		var p = origin.get_parent().position.y
+		if p > 0.0:
+			# Soft landing: ease the avatar into rest instead of a dead stop at the
+			# bottom of the bounce. The hard clamp slammed the velocity to zero in
+			# one frame, which dependent wiggle layers over-followed (a sharp jolt
+			# only on the way down). Now the impact velocity bleeds and the position
+			# eases back to rest over a few frames (a small settle-dip), so the
+			# landing reads as smoothly as the rise. Snap to exact rest once tiny so
+			# there's no sub-pixel jitter; gravity only applies while airborne.
+			yVel = lerp(yVel, 0.0, 0.72)
+			p = lerp(p, 0.0, 0.45)
+			if p < 0.4 and absf(yVel) < 6.0:
+				p = 0.0
+				yVel = 0.0
+			origin.get_parent().position.y = p
+		elif p < 0.0:
+			yVel += bounceGravity*0.0166
 		bounceChange = hold - origin.get_parent().position.y
-
-		yVel += bounceGravity*0.0166
 	
 	if Input.is_action_just_pressed("openFolder") and !Global._text_field_active:
 		OS.shell_open(ProjectSettings.globalize_path("user://"))
