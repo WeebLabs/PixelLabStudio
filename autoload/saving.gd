@@ -66,6 +66,7 @@ var settings = {
 	"recordingFPS":30,
 	"leftSidebarWidth":265,
 	"rightSidebarWidth":310,
+	"wigglePresets":{},
 }
 
 var settingsPath = "user://settings.pngtp"

@@ -14,6 +14,34 @@ class_name WigglePhysicsTab
 const _BODY := Color(0.75, 0.75, 0.8)
 const _HEADER := Color(0.85, 0.85, 0.9)
 
+# Max total presets (built-ins + saved customs); saving a new one past this is refused.
+const _MAX_PRESETS := 10
+
+# The wiggle "feel" parameters a preset captures/applies (NOT coverage, path, or the
+# enable/children structural flags — those stay per-layer).
+const _PRESET_KEYS := [
+	"wiggleStiffness", "wiggleDamping", "wiggleBendFocus", "wiggleShapeReturn",
+	"wiggleWeight", "wiggleReactivity", "wiggleMotionIntensity",
+	"wiggleWagEnabled", "wiggleWagAmount", "wiggleWagSpeed",
+	"wiggleMaxBend", "wiggleSegments",
+]
+
+# Built-in starting points. Distinct, sensible bundles the user tweaks from.
+const _BUILTIN_PRESETS := {
+	"Fluffy": {
+		"wiggleStiffness": 32.0, "wiggleDamping": 6.0, "wiggleBendFocus": 0.8,
+		"wiggleShapeReturn": 0.25, "wiggleWeight": 2.0, "wiggleReactivity": 1.0,
+		"wiggleMotionIntensity": 1.4, "wiggleWagEnabled": false, "wiggleWagAmount": 6.0,
+		"wiggleWagSpeed": 0.12, "wiggleMaxBend": 20.0, "wiggleSegments": 10,
+	},
+	"Stiff": {
+		"wiggleStiffness": 46.0, "wiggleDamping": 10.0, "wiggleBendFocus": 0.2,
+		"wiggleShapeReturn": 0.5, "wiggleWeight": 0.0, "wiggleReactivity": 0.6,
+		"wiggleMotionIntensity": 0.7, "wiggleWagEnabled": false, "wiggleWagAmount": 4.0,
+		"wiggleWagSpeed": 0.12, "wiggleMaxBend": 12.0, "wiggleSegments": 8,
+	},
+}
+
 var _content: VBoxContainer
 var _fill_on: StyleBoxFlat
 var _fill_off: StyleBoxFlat
@@ -35,6 +63,14 @@ var _rows: Dictionary = {}
 var _sliders: Array = []        # value sliders, for enable/disable styling
 var _slider_state := true
 
+# Presets
+var _preset_box: HFlowContainer
+var _save_btn: Button
+var _name_edit: LineEdit
+var _preset_chips: Array = []           # chip buttons, for enable/disable
+var _custom_presets: Dictionary = {}    # name -> param dict (lives in Saving.settings)
+var _preset_active := false
+
 func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat,
 		grab_on: ImageTexture, grab_off: ImageTexture) -> void:
 	_content = content
@@ -46,9 +82,12 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_cb_enabled = _checkbox("Wiggle this layer", _on_enabled_toggled)
 	_cb_children = _checkbox("Linked layers follow", _on_children_toggled)
 
+	_header("Presets")
+	_build_presets()
+
 	_header("Ribbon")
 	_build_ribbon_group()
-	_slider("thickness", "wiggleThickness", 0.2, 3.0, 0.05, 1.0, "×", false)
+	_slider("coverage", "wiggleThickness", 0.4, 2.0, 0.05, 1.0, "×", false)
 
 	_header("Motion")
 	_cb_wag = _checkbox("Auto-wag (waves on its own)", _on_wag_toggled)
@@ -65,7 +104,7 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_slider("weight (droop)", "wiggleWeight", 0.0, 30.0, 0.5, 0.0, "", false)
 
 	_header("Shape")
-	_slider("resolution", "wiggleSegments", 4.0, 32.0, 1.0, 12.0, "", true)
+	_slider("Bones", "wiggleSegments", 4.0, 32.0, 1.0, 12.0, "", true)
 	_slider("max bend", "wiggleMaxBend", 5.0, 90.0, 1.0, 25.0, "°", true)
 
 # Refresh control states/values from the selected layer. Called per frame.
@@ -77,6 +116,15 @@ func sync() -> void:
 	_cb_enabled.disabled = not has
 	_cb_children.disabled = not active
 	_cb_wag.disabled = not active
+
+	# Presets apply to / capture from the active layer, so they enable with it.
+	_preset_active = active
+	_save_btn.disabled = not active
+	_name_edit.editable = active
+	if not active:
+		_name_edit.visible = false
+	for chip in _preset_chips:
+		chip.disabled = not active
 
 	# Ribbon controls light up with the layer's wiggle; the Edit toggle reflects
 	# whether the on-canvas path editor is currently open for this layer.
@@ -207,6 +255,129 @@ func _build_ribbon_group() -> void:
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_content.add_child(hint)
+
+# Presets: a wrapping row of chips (built-in + the user's saved customs) over a
+# "save current" affordance. Click a chip to apply; right-click a custom one to remove.
+# Custom presets persist in Saving.settings["wigglePresets"].
+func _build_presets() -> void:
+	if not Saving.settings.has("wigglePresets") or typeof(Saving.settings["wigglePresets"]) != TYPE_DICTIONARY:
+		Saving.settings["wigglePresets"] = {}
+	_custom_presets = Saving.settings["wigglePresets"]
+
+	_preset_box = HFlowContainer.new()
+	_preset_box.add_theme_constant_override("h_separation", 4)
+	_preset_box.add_theme_constant_override("v_separation", 4)
+	_preset_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content.add_child(_preset_box)
+
+	_save_btn = Button.new()
+	_save_btn.text = "+ Save current as preset"
+	_save_btn.flat = true
+	_save_btn.add_theme_font_size_override("font_size", 12)
+	_save_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	_save_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	_save_btn.add_theme_color_override("font_disabled_color", Color(0.45, 0.45, 0.48))
+	_save_btn.pressed.connect(_on_save_preset_pressed)
+	_content.add_child(_save_btn)
+
+	_name_edit = LineEdit.new()
+	_name_edit.placeholder_text = "Preset name…  (Enter to save)"
+	_name_edit.add_theme_font_size_override("font_size", 12)
+	_name_edit.visible = false
+	_name_edit.text_submitted.connect(_on_name_submitted)
+	_content.add_child(_name_edit)
+
+	var hint = Label.new()
+	hint.text = "Click to apply · right-click a custom preset to remove"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_content.add_child(hint)
+
+	_rebuild_preset_chips()
+
+func _rebuild_preset_chips() -> void:
+	for c in _preset_box.get_children():
+		_preset_box.remove_child(c)
+		c.queue_free()
+	_preset_chips.clear()
+	for pname in _BUILTIN_PRESETS:
+		_preset_box.add_child(_make_chip(pname, false))
+	for pname in _custom_presets:
+		_preset_box.add_child(_make_chip(pname, true))
+
+# Custom chips carry a faint pink tint (so it's clear which are yours / removable);
+# built-ins are neutral.
+func _make_chip(pname: String, is_custom: bool) -> Button:
+	var b = Button.new()
+	b.text = pname
+	b.add_theme_font_size_override("font_size", 12)
+	var bg = Color(1.0, 0.7, 0.8, 0.14) if is_custom else Color(1.0, 1.0, 1.0, 0.06)
+	b.add_theme_stylebox_override("normal", _box(bg))
+	b.add_theme_stylebox_override("hover", _box(Color(1.0, 0.7, 0.8, 0.28)))
+	b.add_theme_stylebox_override("pressed", _box(Color(1.0, 0.7, 0.8, 0.34)))
+	b.add_theme_stylebox_override("disabled", _box(Color(0.3, 0.3, 0.32, 0.12)))
+	b.add_theme_color_override("font_color", _BODY)
+	b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	b.add_theme_color_override("font_disabled_color", Color(0.5, 0.5, 0.52))
+	b.disabled = not _preset_active
+	b.pressed.connect(_on_preset_pressed.bind(pname))
+	if is_custom:
+		b.tooltip_text = "Right-click to remove"
+		b.gui_input.connect(_on_chip_gui_input.bind(pname))
+	_preset_chips.append(b)
+	return b
+
+func _persist_presets() -> void:
+	Saving.settings["wigglePresets"] = _custom_presets
+	Saving.write_settings(Saving.settingsPath)
+
+func _on_preset_pressed(pname: String) -> void:
+	if Global.heldSprite == null:
+		return
+	var data: Dictionary = _BUILTIN_PRESETS.get(pname, _custom_presets.get(pname, {}))
+	if data.is_empty():
+		return
+	UndoManager.save_state()
+	for k in _PRESET_KEYS:
+		if data.has(k):
+			Global.heldSprite.set(k, data[k])
+	Global.pushUpdate("Wiggle preset: " + pname)
+
+func _on_chip_gui_input(event: InputEvent, pname: String) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		_custom_presets.erase(pname)
+		_persist_presets()
+		_rebuild_preset_chips()
+		Global.pushUpdate("Removed preset: " + pname)
+
+func _on_save_preset_pressed() -> void:
+	if Global.heldSprite == null:
+		return
+	_name_edit.text = ""
+	_name_edit.visible = true
+	_name_edit.grab_focus()
+
+func _on_name_submitted(text: String) -> void:
+	var pname = text.strip_edges()
+	_name_edit.visible = false
+	if pname == "" or Global.heldSprite == null:
+		return
+	if _BUILTIN_PRESETS.has(pname):
+		Global.pushUpdate("'" + pname + "' is a built-in preset name.")
+		return
+	# Cap the total (built-ins + customs). Overwriting an existing custom is fine
+	# (count unchanged); only a brand-new name past the limit is refused.
+	if not _custom_presets.has(pname) and _BUILTIN_PRESETS.size() + _custom_presets.size() >= _MAX_PRESETS:
+		Global.pushUpdate("Preset limit reached (" + str(_MAX_PRESETS) + ") — remove one first.")
+		return
+	var data = {}
+	for k in _PRESET_KEYS:
+		data[k] = Global.heldSprite.get(k)
+	_custom_presets[pname] = data
+	_persist_presets()
+	_rebuild_preset_chips()
+	Global.pushUpdate("Saved preset: " + pname)
 
 func _box(col: Color) -> StyleBoxFlat:
 	var b = StyleBoxFlat.new()
