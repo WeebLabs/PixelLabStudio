@@ -615,6 +615,7 @@ func _input(event):
 		offset = Vector2(int(offset.x), int(offset.y))
 		sprite.offset = offset
 		grabArea.position = (size * -0.5) + offset
+		_sync_wiggle_to_offset()
 		get_viewport().set_input_as_handled()
 
 func _physics_process(delta):
@@ -670,6 +671,7 @@ func moveOrigin(dir):
 
 	sprite.offset = offset
 	grabArea.position = (size*-0.5) + offset
+	_sync_wiggle_to_offset()
 
 func snapOriginToMouse():
 	var mouse_pos = get_global_mouse_position()
@@ -681,6 +683,7 @@ func snapOriginToMouse():
 	offset = Vector2(int(offset.x), int(offset.y))
 	sprite.offset = offset
 	grabArea.position = (size * -0.5) + offset
+	_sync_wiggle_to_offset()
 
 func drag(delta):
 	if _force_drag_snap:
@@ -819,6 +822,10 @@ func _enter_path_edit():
 
 func _exit_path_edit():
 	if _wigglePathEditor != null:
+		# If the user only traced the spine (didn't touch a width grip), re-fit the
+		# band to the new path's silhouette so it keeps hugging the art automatically.
+		if not _wigglePathEditor.width_edited:
+			_fit_widths_to_content()
 		_wigglePathEditor.queue_free()
 		_wigglePathEditor = null
 	# Rebuild the ribbon from the edited path and restore the wiggle/idle look.
@@ -830,22 +837,25 @@ func _exit_path_edit():
 	else:
 		sprite.visible = _wigglePathEditPrevVisible
 
-# Rebuild geometry after an external path/width/thickness change (editor commit,
-# auto-fit, thickness slider). No-op when the ribbon isn't built yet — the path is
+# Rebuild geometry after an external path/width/coverage change (editor commit,
+# auto-fit, coverage slider). No-op when the mesh isn't built yet — the path is
 # simply stored until wiggle is enabled.
 func apply_wiggle_path_changed():
 	if _wiggleAppendage != null:
 		_apply_wiggle_geometry()
 		_wiggleAppendage.reset()
 
-# Re-fit the path to the layer's content (the editor's "Auto-fit" button).
+# The "Auto-fit" button: re-detect the spine (centerline trace) AND the band
+# (silhouette fit) from the content — a full auto from scratch. Undoable (the
+# Physics tab saves undo state first), so it's safe to use as a reset.
 func wiggle_auto_fit_path():
 	_auto_fit_wiggle_path()
 	apply_wiggle_path_changed()
 	if _wigglePathEditor != null:
+		_wigglePathEditor.width_edited = false
 		_wigglePathEditor.queue_redraw()
 
-# Rebuild the chain rest shape + the baked strip from the current path. Call on
+# Rebuild the chain rest shape + the deformable mesh from the current path. Call on
 # enable and whenever the path, widths, segment count, or image change. Cheap
 # enough to be event-driven (NOT per frame).
 func _apply_wiggle_geometry():
@@ -880,6 +890,16 @@ func _tex_to_local(tex_px: Vector2) -> Vector2:
 func _local_to_tex(local: Vector2) -> Vector2:
 	return local + Vector2(size) * 0.5 - offset
 
+# Re-anchor the wiggle mesh after the origin (offset) moves. The mesh sits at
+# _tex_to_local(path root), which includes `offset`; moving the origin shifts both
+# `position` (+d) and `offset` (-d), and the Sprite2D compensates via sprite.offset,
+# but the mesh would otherwise ride `position` and visibly slide. Its rest vertices
+# are offset-independent (the offset cancels in `_tex_to_local(p) - root`), so only the
+# anchor position needs updating — no rebuild, no chain reset.
+func _sync_wiggle_to_offset():
+	if _wiggleAppendage != null and not _wiggleSmooth.is_empty():
+		_wiggleAppendage.position = _tex_to_local(_wiggleSmooth[0])
+
 # Per-smooth-point half-widths (px): the per-control-point widths interpolated
 # along the smooth path, scaled by the global thickness knob. This sets how far the
 # mesh band reaches perpendicular to the path (how much of the layer it covers);
@@ -902,19 +922,255 @@ func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
 	return out
 
 
-# Default path from the opaque content: principal axis of the used-rect, so
-# enabling wiggle gives a usable ribbon over the content before any tracing.
+# Auto path: trace the artwork's centerline (medial spine) so it follows the
+# content's curve, adding as many points as the curve needs. Falls back to a
+# straight principal-axis path if the shape can't be traced. Endpoints are pushed
+# out to the true tip so the band's end-cap doesn't clip pointed ends, then the band
+# is sized to the actual silhouette.
 func _auto_fit_wiggle_path():
-	var r := get_image_used_rect()
-	if r.size.x <= 0 or r.size.y <= 0:
-		r = Rect2i(0, 0, int(Vector2(size).x), int(Vector2(size).y))
-	var center := Vector2(r.position) + Vector2(r.size) * 0.5
-	var horizontal := r.size.x >= r.size.y
-	var half_len := (float(r.size.x) if horizontal else float(r.size.y)) * 0.5
-	var half_w := (float(r.size.y) if horizontal else float(r.size.x)) * 0.5
-	var axis := Vector2.RIGHT if horizontal else Vector2.DOWN
-	wigglePath = PackedVector2Array([center - axis * half_len, center, center + axis * half_len])
-	wigglePathWidths = PackedFloat32Array([half_w, half_w, half_w])
+	var traced := _trace_centerline()
+	if traced.size() >= 2:
+		wigglePath = traced
+	else:
+		var r := get_image_used_rect()
+		if r.size.x <= 0 or r.size.y <= 0:
+			r = Rect2i(0, 0, int(Vector2(size).x), int(Vector2(size).y))
+		var center := Vector2(r.position) + Vector2(r.size) * 0.5
+		var horizontal := r.size.x >= r.size.y
+		var half_len := (float(r.size.x) if horizontal else float(r.size.y)) * 0.5
+		var axis := Vector2.RIGHT if horizontal else Vector2.DOWN
+		wigglePath = PackedVector2Array([center - axis * half_len, center, center + axis * half_len])
+	wigglePath = _extend_ends(wigglePath)
+	wigglePath = _orient_path_to_origin(wigglePath)
+	_fit_widths_to_content()
+
+# Orient the path so its root (index 0 — the wiggle pivot) is the end nearest the layer
+# origin. The trace's endpoint order is otherwise arbitrary (it follows the PCA axis
+# sign), which can root a tail/ear at its tip and wiggle it from the wrong end. The
+# origin gizmo sits at texture-px `size/2 - offset` (inverse of _tex_to_local at local
+# 0,0), so the user picks the base simply by placing the origin near it.
+func _orient_path_to_origin(path: PackedVector2Array) -> PackedVector2Array:
+	if path.size() < 2:
+		return path
+	var origin_tex: Vector2 = Vector2(size) * 0.5 - offset
+	if path[path.size() - 1].distance_squared_to(origin_tex) < path[0].distance_squared_to(origin_tex):
+		var rev := PackedVector2Array()
+		for i in range(path.size() - 1, -1, -1):
+			rev.append(path[i])
+		return rev
+	return path
+
+# Push each endpoint outward along the path tangent by however far the opaque content
+# overhangs it, so the band's flat end-cap reaches past a pointed/rounded tip instead
+# of clipping it. A flat attachment (no overhang along the tangent) is left in place,
+# so it doesn't push the base out into empty space.
+func _extend_ends(path: PackedVector2Array) -> PackedVector2Array:
+	if imageData == null or path.size() < 2:
+		return path
+	var img: Image = imageData
+	var reach := maxf(float(img.get_width()), float(img.get_height()))
+	var out := path.duplicate()
+	var n := out.size()
+	var d0 := out[0] - out[1]
+	if d0.length() > 0.001:
+		d0 = d0.normalized()
+		var over0 := _content_reach(img, out[0], d0, reach, 0.05)
+		if over0 > 0.5:
+			out[0] = out[0] + d0 * (over0 + 1.0)
+	var d1 := out[n - 1] - out[n - 2]
+	if d1.length() > 0.001:
+		d1 = d1.normalized()
+		var over1 := _content_reach(img, out[n - 1], d1, reach, 0.05)
+		if over1 > 0.5:
+			out[n - 1] = out[n - 1] + d1 * (over1 + 1.0)
+	return out
+
+# Trace the centerline of the opaque content: PCA for the main axis, start from an
+# interior spine point, walk both ways re-centering on each perpendicular
+# cross-section (so it follows curves), then simplify (Douglas-Peucker) to control
+# points. Texture-px. Empty if the content is too small.
+func _trace_centerline() -> PackedVector2Array:
+	if imageData == null:
+		return PackedVector2Array()
+	var img: Image = imageData
+	var w := img.get_width()
+	var h := img.get_height()
+	var reach := float(maxi(w, h))
+	var stride := maxi(1, int(reach / 200.0))
+	var sum := Vector2.ZERO
+	var cnt := 0
+	var samples: Array = []
+	for y in range(0, h, stride):
+		for x in range(0, w, stride):
+			if _alpha_at(img, x, y) > 0.5:
+				var p := Vector2(x, y)
+				samples.append(p)
+				sum += p
+				cnt += 1
+	if cnt < 6:
+		return PackedVector2Array()
+	var centroid: Vector2 = sum / float(cnt)
+	var cxx := 0.0
+	var cxy := 0.0
+	var cyy := 0.0
+	for p in samples:
+		var dp: Vector2 = p - centroid
+		cxx += dp.x * dp.x
+		cxy += dp.x * dp.y
+		cyy += dp.y * dp.y
+	var axis := Vector2(cos(0.5 * atan2(2.0 * cxy, cxx - cyy)), sin(0.5 * atan2(2.0 * cxy, cxx - cyy)))
+	var trace_step := maxf(reach * 0.02, 4.0)
+	var start := centroid
+	var best := INF
+	for p in samples:
+		var dd: float = p.distance_to(centroid)
+		if dd < best:
+			best = dd
+			start = p
+	start = _spine_center(img, start, axis, reach)[0]
+	var fwd := _spine_walk(img, start, axis, trace_step, reach)
+	var bwd := _spine_walk(img, start, -axis, trace_step, reach)
+	var raw := PackedVector2Array()
+	for i in range(bwd.size() - 1, -1, -1):
+		raw.append(bwd[i])
+	raw.append(start)
+	for p in fwd:
+		raw.append(p)
+	return _simplify_path(raw, clampf(reach * 0.025, 5.0, 14.0))
+
+func _spine_walk(img: Image, start: Vector2, d0: Vector2, trace_step: float, reach: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var P := start
+	var d := d0.normalized()
+	for s in 500:
+		var Pn: Vector2 = P + d * trace_step
+		var res := _spine_center(img, Pn, d, reach)
+		if not res[1]:
+			break
+		Pn = res[0]
+		var nd: Vector2 = Pn - P
+		# End-of-ribbon: a normal step advances ~trace_step; if re-centering snapped
+		# the point far across a gap, we walked off a tip and it grabbed distant
+		# content (a U-turn back along the shape). Stop instead of following the jump.
+		if nd.length() > trace_step * 3.0:
+			break
+		if nd.length() > 0.001:
+			d = nd.normalized()
+		out.append(Pn)
+		P = Pn
+	return out
+
+# Perpendicular-span center at P, and whether P is on/near content.
+func _spine_center(img: Image, P: Vector2, d: Vector2, reach: float) -> Array:
+	var perp := d.orthogonal()
+	var ep := _content_reach(img, P, perp, reach)
+	var en := _content_reach(img, P, -perp, reach)
+	var on := _alpha_at(img, int(round(P.x)), int(round(P.y))) > 0.25 or ep > 0.0 or en > 0.0
+	return [P + perp * (ep - en) * 0.5, on]
+
+func _alpha_at(img: Image, x: int, y: int) -> float:
+	if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+		return 0.0
+	return img.get_pixel(x, y).a
+
+# Douglas-Peucker polyline simplification.
+func _simplify_path(pts: PackedVector2Array, eps: float) -> PackedVector2Array:
+	if pts.size() < 3:
+		return pts
+	var keep: Dictionary = {0: true, pts.size() - 1: true}
+	_dp(pts, 0, pts.size() - 1, eps, keep)
+	var idx := keep.keys()
+	idx.sort()
+	var out := PackedVector2Array()
+	for i in idx:
+		out.append(pts[i])
+	return out
+
+func _dp(pts: PackedVector2Array, lo: int, hi: int, eps: float, keep: Dictionary) -> void:
+	if hi <= lo + 1:
+		return
+	var a: Vector2 = pts[lo]
+	var b: Vector2 = pts[hi]
+	var ab := b - a
+	var len2 := ab.length_squared()
+	var dmax := 0.0
+	var idx := -1
+	for i in range(lo + 1, hi):
+		var t := 0.0 if len2 < 0.001 else clampf((pts[i] - a).dot(ab) / len2, 0.0, 1.0)
+		var dist: float = pts[i].distance_to(a + ab * t)
+		if dist > dmax:
+			dmax = dist
+			idx = i
+	if dmax > eps and idx > 0:
+		keep[idx] = true
+		_dp(pts, lo, idx, eps, keep)
+		_dp(pts, idx, hi, eps, keep)
+
+# Size the band to the artwork's actual silhouette: at each control point, march
+# perpendicular to the path until the opaque content ends (both sides), and set
+# the half-width to cover it plus a small margin. Keeps the band hugging the art
+# (no manual width fiddling, no accidental cropping) for any traced path.
+func _fit_widths_to_content():
+	if imageData == null or wigglePath.size() < 1:
+		return
+	var img: Image = imageData
+	var reach := maxf(float(img.get_width()), float(img.get_height()))
+	# Measure each control point's coverage perpendicular to the *smoothed* band
+	# centerline (the curve the mesh actually follows), not the raw control polyline
+	# — so the probe direction matches the band's real normal and the width reaches
+	# the true silhouette edge instead of cutting across at an angle.
+	var smooth := WiggleAppendage2D.smooth_path(wigglePath, 10)
+	if smooth.size() < 2:
+		smooth = wigglePath
+	var ns := smooth.size()
+	var out := PackedFloat32Array()
+	for cp in wigglePath:
+		var bi := 0
+		var bd := INF
+		for j in ns:
+			var dd: float = cp.distance_squared_to(smooth[j])
+			if dd < bd:
+				bd = dd
+				bi = j
+		var a: Vector2 = smooth[maxi(bi - 1, 0)]
+		var b: Vector2 = smooth[mini(bi + 1, ns - 1)]
+		var t := b - a
+		if t.length() < 0.001:
+			t = Vector2.RIGHT
+		var perp := t.normalized().orthogonal()
+		var c: Vector2 = smooth[bi]
+		# threshold 0.1 marches into the anti-aliased edge so the band reaches the
+		# real silhouette; +2px margin keeps the outline inside the band.
+		var ext := maxf(_content_reach(img, c, perp, reach, 0.1), _content_reach(img, c, -perp, reach, 0.1))
+		# +2px margin for the outline/AA, then grow the whole half-width ~10% so the
+		# band sits a touch outside the silhouette (the bare fit read slightly small).
+		out.append(maxf((ext + 2.0) * 1.1, 4.0))
+	wigglePathWidths = out
+
+# Distance from `start` to the furthest opaque pixel along `dir`, stopping after a
+# sustained transparent gap (the content edge).
+func _content_reach(img: Image, start: Vector2, dir: Vector2, reach: float, threshold := 0.25) -> float:
+	var last := 0.0
+	var gap := 0.0
+	var w := img.get_width()
+	var h := img.get_height()
+	var d := 1.0
+	while d <= reach:
+		var p := start + dir * d
+		var x := int(round(p.x))
+		var y := int(round(p.y))
+		var alpha := 0.0
+		if x >= 0 and y >= 0 and x < w and y < h:
+			alpha = img.get_pixel(x, y).a
+		if alpha > threshold:
+			last = d
+			gap = 0.0
+		else:
+			gap += 1.0
+			if gap >= 8.0 and last > 0.0:
+				break
+		d += 1.0
+	return last
 
 func _update_wiggle(delta: float):
 	if _wiggleAppendage == null:

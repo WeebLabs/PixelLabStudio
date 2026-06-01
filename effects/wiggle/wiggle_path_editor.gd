@@ -43,6 +43,7 @@ var _drag := -1                # control point index being dragged, -1 = none
 var _hover := -1               # control point index under the cursor
 var _width_drag := -1          # control point whose width grip is being dragged
 var _width_hover := -1         # control point whose width grip is under the cursor
+var width_edited := false      # set once a width grip is dragged → suppress auto-fit-on-exit
 
 func setup(spr) -> void:
 	owner_sprite = spr
@@ -102,8 +103,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var tex := _mouse_tex()
 		if _width_drag >= 0:
 			# Perpendicular distance from the centerline = the displayed half-width;
-			# divide out the global thickness so the stored per-point width is the
-			# base taper profile (thickness still scales it).
+			# divide out the coverage knob so the stored per-point width is the base
+			# taper profile (coverage still scales it).
+			width_edited = true
 			var d: float = absf((tex - owner_sprite.wigglePath[_width_drag]).dot(_path_normal(_width_drag)))
 			var base: float = d / maxf(owner_sprite.wiggleThickness, 0.01)
 			owner_sprite.wigglePathWidths[_width_drag] = maxf(base, MIN_WIDTH)
