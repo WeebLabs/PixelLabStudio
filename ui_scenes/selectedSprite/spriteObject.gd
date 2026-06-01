@@ -110,10 +110,10 @@ var eyeTrackMode = 0  # 0 = cursor, 1 = layer
 var eyeTrackTargetId = null  # int sprite id when eyeTrackMode == 1
 var _eyeTrackOffset = Vector2.ZERO
 
-# Wiggle (physics) — bends this layer with a textured Line2D ribbon driven by an
+# Wiggle (physics) — bends this layer with a deformable textured MESH driven by an
 # angular-spring chain whose REST shape is a user-traced path over the layer's
-# content (effects/wiggle/). The content is unwrapped along that path into a strip
-# and re-wrapped along the chain, so at rest it matches the original exactly and
+# content (effects/wiggle/). The mesh's per-vertex UVs map straight to the layer
+# texture, so at rest it IS the artwork exactly (no distortion, even on curves) and
 # only deforms when it moves. This is what lets irregular, off-origin, oversized
 # (canvas-sized) layers wiggle correctly. Persisted; backward-compatible (auto-fit
 # when a wiggle layer has no path).
@@ -189,8 +189,10 @@ func _rebuild_sprite_texture():
 		sprite.texture = canvas_tex
 	else:
 		sprite.texture = tex
-	# Re-bake the wiggle ribbon when the image/normal changes (content moved).
+	# Refresh the wiggle mesh when the image/normal changes: it samples the layer's
+	# texture directly, so re-point it and rebuild the geometry/UVs.
 	if _wiggleAppendage != null:
+		_wiggleAppendage.texture = sprite.texture
 		_apply_wiggle_geometry()
 
 func setNormalMap(img: Image, nrml_path: String):
@@ -746,7 +748,7 @@ func stretch(length,delta):
 # --- Wiggle (physics) ---
 
 # Turn wiggle on/off for this layer. When on, the Sprite2D is hidden and a
-# textured Line2D ribbon (WiggleAppendage2D) is shown in its place, bending along
+# deformable textured mesh (WiggleAppendage2D) is shown in its place, bending along
 # the spring chain. The Physics tab calls this; safe to call any time.
 func setWiggle(on: bool):
 	wiggleEnabled = on
@@ -765,23 +767,22 @@ func _set_wiggle_active(on: bool):
 			_auto_fit_wiggle_path()
 		if _wiggleAppendage == null:
 			_wiggleAppendage = _WIGGLE_APPENDAGE.new()
-			_wiggleAppendage.texture_mode = Line2D.LINE_TEXTURE_STRETCH
-			_wiggleAppendage.joint_mode = Line2D.LINE_JOINT_ROUND
-			# No caps: LINE_CAP_BOX/ROUND extend the ribbon by half its width past the
-			# root as a rigid stub that never bends. NONE maps the strip exactly to
-			# the chain points.
-			_wiggleAppendage.begin_cap_mode = Line2D.LINE_CAP_NONE
-			_wiggleAppendage.end_cap_mode = Line2D.LINE_CAP_NONE
-			# Match the Sprite2D's absolute z so the ribbon sits at the layer's real
-			# depth (the Sprite is z_as_relative=false; a plain Line2D defaults to
+			# Match the Sprite2D's absolute z so the mesh sits at the layer's real
+			# depth (the Sprite is z_as_relative=false; a plain node defaults to
 			# relative, which mis-orders it once layers are reparented/linked).
 			_wiggleAppendage.z_as_relative = false
 			dragOrigin.add_child(_wiggleAppendage)
-		# Match the sprite's filter (Linear) — the project default is Nearest, which
-		# the ribbon would otherwise inherit and render with stair-stepped edges.
+		# The deformable mesh samples the layer's own texture directly (the same
+		# CanvasTexture the Sprite2D uses, so normals come along). Match the sprite's
+		# filter (Linear; the project default is Nearest → stair-stepped edges) AND
+		# its premultiplied-alpha blend material — the textures are premultiplied, so
+		# without it the mesh blends them as straight alpha and a dark fringe bleeds
+		# in along the edges.
+		_wiggleAppendage.texture = sprite.texture
 		_wiggleAppendage.texture_filter = sprite.texture_filter
+		_wiggleAppendage.material = sprite.material
 		_wiggleAppendage.z_index = z
-		_apply_wiggle_geometry()     # builds chain rest + bakes the strip
+		_apply_wiggle_geometry()     # builds chain rest + the deformable mesh
 		_wiggleAppendage.configure(_wiggle_params())
 		_wiggleAppendage.reset()
 		sprite.visible = false
@@ -854,7 +855,9 @@ func _apply_wiggle_geometry():
 	if _wiggleSmooth.size() < 2:
 		_wiggleSmooth = wigglePath
 	_rebuild_wiggle_chain()
-	_bake_wiggle_strip(_wiggleSmooth, _smooth_widths(_wiggleSmooth))
+	# Build the deformable mesh: per-along widths (incl thickness) + the UV offset
+	# (the path root in texture pixels) so each vertex maps to the real artwork.
+	_wiggleAppendage.build_mesh(_smooth_widths(_wiggleSmooth), _wiggleSmooth[0])
 
 # Chain-only rebuild from the cached smooth path: anchor the ribbon at the path
 # root and pass the rest path relative to it, so the chain pivots where the user
@@ -878,10 +881,9 @@ func _local_to_tex(local: Vector2) -> Vector2:
 	return local + Vector2(size) * 0.5 - offset
 
 # Per-smooth-point half-widths (px): the per-control-point widths interpolated
-# along the smooth path, scaled by the global thickness knob. This is the CAPTURE
-# band fed to the bake — scaling it (rather than the display width) keeps the
-# content at its native aspect at any thickness (no squash); thickness just widens
-# or trims how much of the layer the ribbon sweeps. Changing thickness re-bakes.
+# along the smooth path, scaled by the global thickness knob. This sets how far the
+# mesh band reaches perpendicular to the path (how much of the layer it covers);
+# thickness widens/trims that band. Changing thickness rebuilds the mesh.
 func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
 	var out := PackedFloat32Array()
 	var n := smooth.size()
@@ -899,97 +901,6 @@ func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
 			out.append(lerp(wigglePathWidths[a], wigglePathWidths[b], f - float(a)) * k)
 	return out
 
-# Unwrap the content along the rest path into a straight strip (so STRETCH along
-# the chain re-wraps it; rest == original). Bakes diffuse + normal (if any) and a
-# width_curve for taper. One-time per geometry change.
-func _bake_wiggle_strip(smooth_tex: PackedVector2Array, widths: PackedFloat32Array):
-	var arc := 0.0
-	for i in smooth_tex.size() - 1:
-		arc += smooth_tex[i].distance_to(smooth_tex[i + 1])
-	var cols := clampi(int(round(arc)), 16, 512)
-	var cs := WiggleAppendage2D.resample_equal_arc(smooth_tex, cols)
-	var ws := _resample_widths(widths, cols)
-	var max_w := 1.0
-	for w in ws:
-		max_w = maxf(max_w, w)
-	var rows := clampi(int(round(max_w * 2.0)), 8, 256)
-
-	var diffuse := Image.create(cols, rows, false, Image.FORMAT_RGBA8)
-	var has_n := normalImageData != null
-	var normal: Image = Image.create(cols, rows, false, Image.FORMAT_RGBA8) if has_n else null
-	for j in cols:
-		var a: Vector2 = cs[maxi(j - 1, 0)]
-		var b: Vector2 = cs[mini(j + 1, cols - 1)]
-		var tang := b - a
-		if tang.length() < 0.0001:
-			tang = Vector2.RIGHT
-		# Negated to match Line2D's across-the-ribbon V convention (its internal
-		# normal is the CCW perpendicular, the opposite of Vector2.orthogonal());
-		# without this the baked content renders mirrored across the path centerline.
-		var nrm := -tang.normalized().orthogonal()
-		var c: Vector2 = cs[j]
-		var w: float = ws[j]
-		for v in rows:
-			var cross := (float(v) / float(rows - 1) - 0.5) * 2.0 * w
-			var pos := c + nrm * cross
-			diffuse.set_pixel(j, v, _sample_bilinear(imageData, pos))
-			if has_n:
-				normal.set_pixel(j, v, _sample_bilinear(normalImageData, pos))
-	var diff_tex := ImageTexture.create_from_image(diffuse)
-	if has_n:
-		var ct := CanvasTexture.new()
-		ct.diffuse_texture = diff_tex
-		ct.normal_texture = ImageTexture.create_from_image(normal)
-		_wiggleAppendage.texture = ct
-	else:
-		_wiggleAppendage.texture = diff_tex
-	# Ribbon width = the widest band; per-column taper via width_curve so the strip
-	# isn't squished where the band is narrower. The band already carries the
-	# thickness scale (see _smooth_widths), so display width == captured width →
-	# native content aspect at any thickness.
-	_wiggleAppendage.width = max_w * 2.0
-	var curve := Curve.new()
-	curve.min_value = 0.0
-	curve.max_value = 1.0
-	var keys := mini(cols, 16)
-	for k in keys:
-		var u := float(k) / float(maxi(keys - 1, 1))
-		var jj := int(u * float(cols - 1))
-		curve.add_point(Vector2(u, ws[jj] / max_w))
-	_wiggleAppendage.width_curve = curve
-
-func _resample_widths(widths: PackedFloat32Array, m: int) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	var n := widths.size()
-	if n == 0:
-		for i in m:
-			out.append(16.0)
-		return out
-	for i in m:
-		var f := float(i) / float(maxi(m - 1, 1)) * float(n - 1)
-		var a := int(f)
-		var b := mini(a + 1, n - 1)
-		out.append(lerp(widths[a], widths[b], f - float(a)))
-	return out
-
-# Bilinear sample of an image at a float pixel position; transparent outside.
-func _sample_bilinear(img: Image, pos: Vector2) -> Color:
-	var w := img.get_width()
-	var h := img.get_height()
-	var x := pos.x - 0.5
-	var y := pos.y - 0.5
-	var x0 := floori(x)
-	var y0 := floori(y)
-	var fx := x - float(x0)
-	var fy := y - float(y0)
-	var c0 := _px(img, x0, y0, w, h).lerp(_px(img, x0 + 1, y0, w, h), fx)
-	var c1 := _px(img, x0, y0 + 1, w, h).lerp(_px(img, x0 + 1, y0 + 1, w, h), fx)
-	return c0.lerp(c1, fy)
-
-func _px(img: Image, x: int, y: int, w: int, h: int) -> Color:
-	if x < 0 or y < 0 or x >= w or y >= h:
-		return Color(0, 0, 0, 0)
-	return img.get_pixel(x, y)
 
 # Default path from the opaque content: principal axis of the used-rect, so
 # enabling wiggle gives a usable ribbon over the content before any tracing.
@@ -1011,9 +922,9 @@ func _update_wiggle(delta: float):
 		return
 	sprite.rotation = 0.0
 	sprite.scale = Vector2.ONE
-	# Rebuild the chain (not the bake) if the resolution slider changed.
+	# Resolution change → rebuild chain AND mesh (the mesh vertex count tracks it).
 	if _wiggleAppendage.segment_count != clampi(int(wiggleSegments), 2, 48):
-		_rebuild_wiggle_chain()
+		_apply_wiggle_geometry()
 	_wiggleAppendage.configure(_wiggle_params())
 	_wiggleAppendage.tick(delta, tick)
 	if wiggleChildrenFollow:

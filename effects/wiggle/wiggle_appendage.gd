@@ -1,12 +1,14 @@
-extends Line2D
+extends Polygon2D
 class_name WiggleAppendage2D
 
-# A textured Line2D ribbon driven by an angular-spring chain whose REST shape is a
-# user-traced path (the appendage's spine). The chain holds that (possibly curved)
-# rest shape and wiggles around it; the owner bakes the layer's content, unwrapped
-# along the same rest path, into a straight strip and assigns it as the texture,
-# so at rest the ribbon re-wraps to exactly the original look and only deforms when
-# it moves. Reuses Line2D (texture STRETCH) — proven for normals/premult/etc.
+# A deformable textured MESH (Polygon2D triangle strip) driven by an angular-spring
+# chain whose REST shape is a user-traced path (the appendage's spine). The chain
+# holds that (possibly curved) rest shape and wiggles around it. The mesh's
+# per-vertex UVs map straight to the ORIGINAL artwork, so at REST every vertex sits
+# at its own texture position with its own UV — the mesh IS the artwork exactly
+# (identity), with no distortion even on curves. (The earlier Line2D ribbon
+# "ironed" the art into a straight strip and re-wrapped it, which sheared the
+# content on curved rest shapes; the mesh avoids that entirely.)
 #
 # Cleaned-up, decoupled port of PNGTuberRemix's WigglyAppendage2D angular-momentum
 # chain (stiffness / damping / max-angle / comeback / gravity), generalised from a
@@ -15,7 +17,7 @@ class_name WiggleAppendage2D
 # bounce/drag/wobble propagate into the chain as momentum (the whip / jiggle).
 
 # physics point layout
-const RENDER_POINTS := 96   # target Line2D point count for smooth edges at any physics resolution
+const RENDER_POINTS := 96   # target along-resolution of the smoothed centerline (mesh density)
 const _PREV := 0   # reference to the previous point's array (null for root)
 const _POS := 1    # Vector2 world position
 const _ROT := 2    # float segment angle (radians)
@@ -48,6 +50,14 @@ var _points: Array = []
 var _smoothed_root := Vector2.ZERO
 var _prev_root_pos := Vector2.ZERO   # root world pos last frame, for motion_intensity
 var _wag_offset := 0.0
+
+# --- Mesh (Polygon2D) ---
+# The ribbon is a 2-row triangle strip whose per-vertex UVs map to the ORIGINAL
+# artwork. At rest each vertex sits at its own texture position with its own UV,
+# so the rendered mesh IS the artwork exactly (identity) — no Line2D unwrap/rewrap
+# shear on curves. Each frame the chain moves the vertices; the UVs stay fixed.
+var _mesh_widths: PackedFloat32Array = PackedFloat32Array()  # half-width per along-point (incl thickness)
+var _uv_offset := Vector2.ZERO                               # local -> texture-pixel offset (path root, tex px)
 
 func configure(p: Dictionary) -> void:
 	stiffness = float(p.get("stiffness", stiffness))
@@ -105,7 +115,7 @@ func reset() -> void:
 		ang += _rest_rel[i]
 		pos += Vector2(segment_length, 0).rotated(ang)
 		_points.append([_points[-1], pos, ang, 0.0])
-	_update_line()
+	_update_mesh()
 
 # Advance one frame. frame_tick drives auto-wag (a per-layer frame counter).
 func tick(delta: float, frame_tick: int) -> void:
@@ -125,7 +135,7 @@ func tick(delta: float, frame_tick: int) -> void:
 	for i in range(1, _points.size()):
 		_points[i][_POS] += carry
 		_process_point(_points[i], delta, i)
-	_update_line()
+	_update_mesh()
 
 func _process_root(point: Array, delta: float) -> void:
 	var cur := get_global_position()
@@ -166,19 +176,95 @@ func _process_point(point: Array, delta: float, index: int) -> void:
 	point[_ROT] = rot
 	point[_POS] = prev[_POS] + Vector2(segment_length, 0).rotated(rot)
 
-func _update_line() -> void:
+# The deformed centerline in local space: the chain points smoothed with a
+# Catmull-Rom spline to a high fixed resolution (decoupled from physics
+# resolution), so even a low segment count renders as a smooth curve. The point
+# count is constant for a given segment count, so the mesh vertex/UV count is
+# stable between rebuilds.
+func _centerline() -> PackedVector2Array:
 	var pts := PackedVector2Array()
 	for p in _points:
 		pts.append(to_local(p[_POS]))
-	# Render resolution is decoupled from physics resolution: smooth the chain with
-	# a Catmull-Rom spline to a high fixed point count, so the ribbon stays a smooth
-	# curve (no faceting/stair-step on warped edges) even at low segment counts —
-	# which give smoother motion but a coarse polyline. Catmull-Rom rounds sparse
-	# points far better than the quadratic bezier, and passes through the endpoints
-	# (so the tip is exact — no overshoot "tail").
+	if pts.size() < 3:
+		return pts
 	var seg := maxi(pts.size() - 1, 1)
 	var per := clampi(int(ceil(float(RENDER_POINTS) / float(seg))), subdivision, 48)
-	points = smooth_path(pts, per) if pts.size() >= 3 else pts
+	return smooth_path(pts, per)
+
+func _perp_at(center: PackedVector2Array, i: int) -> Vector2:
+	var n := center.size()
+	var tang: Vector2 = center[mini(i + 1, n - 1)] - center[maxi(i - 1, 0)]
+	if tang.length() < 0.0001:
+		tang = Vector2.RIGHT
+	return tang.normalized().orthogonal()
+
+# Build the mesh UVs + triangulation from the REST pose. `widths_along` are the
+# half-widths sampled along the rest path (resampled here to the centerline's
+# point count); `uv_offset` converts a local vertex to its texture-pixel UV
+# (= the path root in texture pixels). Call after set_geometry/reset, and whenever
+# the path, widths, thickness, or segment count change. Cheap (no per-pixel bake).
+func build_mesh(widths_along: PackedFloat32Array, uv_offset: Vector2) -> void:
+	_uv_offset = uv_offset
+	var center := _centerline()
+	var n := center.size()
+	if n < 2:
+		polygon = PackedVector2Array()
+		uv = PackedVector2Array()
+		polygons = []
+		_mesh_widths = PackedFloat32Array()
+		return
+	# Resample the along-widths to the centerline resolution.
+	_mesh_widths = PackedFloat32Array()
+	_mesh_widths.resize(n)
+	var m := widths_along.size()
+	for i in n:
+		if m == 0:
+			_mesh_widths[i] = 16.0
+		elif m == 1:
+			_mesh_widths[i] = widths_along[0]
+		else:
+			var f := float(i) / float(n - 1) * float(m - 1)
+			var a := int(f)
+			var b := mini(a + 1, m - 1)
+			_mesh_widths[i] = lerp(widths_along[a], widths_along[b], f - float(a))
+	# Per-vertex UVs (texture pixels) from the rest centerline + perpendicular.
+	var uvs := PackedVector2Array()
+	uvs.resize(n * 2)
+	for i in n:
+		var perp := _perp_at(center, i)
+		var w := _mesh_widths[i]
+		uvs[i * 2] = center[i] + perp * w + _uv_offset
+		uvs[i * 2 + 1] = center[i] - perp * w + _uv_offset
+	uv = uvs
+	# Triangulate the 2-row strip (two triangles per cell).
+	var tris := []
+	for i in n - 1:
+		var o0 := i * 2
+		var in0 := i * 2 + 1
+		var o1 := (i + 1) * 2
+		var in1 := (i + 1) * 2 + 1
+		tris.append(PackedInt32Array([o0, in0, in1]))
+		tris.append(PackedInt32Array([o0, in1, o1]))
+	polygons = tris
+	_update_mesh()
+
+# Move the mesh vertices to follow the deformed chain. Vertex i's UV is fixed, so
+# at rest (deformed == rest) it lands exactly on its texture position = identity.
+func _update_mesh() -> void:
+	if _mesh_widths.is_empty():
+		return
+	var center := _centerline()
+	var n := center.size()
+	if n != _mesh_widths.size():
+		return   # segment count changed; awaiting a build_mesh rebuild
+	var verts := PackedVector2Array()
+	verts.resize(n * 2)
+	for i in n:
+		var perp := _perp_at(center, i)
+		var w := _mesh_widths[i]
+		verts[i * 2] = center[i] + perp * w
+		verts[i * 2 + 1] = center[i] - perp * w
+	polygon = verts
 
 # Position along the chain at normalized t in [0,1], in this node's local space.
 # Used by child-follow so attached props ride the ribbon.
