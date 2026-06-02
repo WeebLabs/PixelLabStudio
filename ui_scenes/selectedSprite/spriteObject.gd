@@ -80,6 +80,10 @@ var rLimitMin = -180
 
 #Layer
 var costumeLayers = [1,1,1,1,1,1,1,1,1,1]
+# Manual eye-button hide (layer-list ●/○), runtime only. Kept separate from the
+# costume system so re-applying costume visibility (on selection / costume change)
+# doesn't clobber it.
+var userHidden = false
 
 #Stretch
 var stretchAmount = 0.0
@@ -1351,3 +1355,13 @@ func visToggle(keys):
 
 func makeVis():
 	$WobbleOrigin/DragOrigin.visible = true
+
+# Set this layer's visibility from its costume membership, honoring the manual
+# eye-button hide. The single place costume + manual-hide combine, so every caller
+# (selection refresh, costume change, the eye button) stays consistent.
+func applyCostumeVisibility():
+	if Global.main == null:
+		return
+	var on = costumeLayers[Global.main.costume - 1] == 1 and not userHidden
+	visible = on
+	changeCollision(on)

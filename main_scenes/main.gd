@@ -2643,12 +2643,7 @@ func changeCostume(newCostume):
 	Global.heldSprite = null
 	var nodes = get_tree().get_nodes_in_group("saved")
 	for sprite in nodes:
-		if sprite.costumeLayers[newCostume-1] == 1:
-			sprite.visible = true
-			sprite.changeCollision(true)
-		else:
-			sprite.visible = false
-			sprite.changeCollision(false)
+		sprite.applyCostumeVisibility()   # costume membership, honoring a manual hide
 	Global.spriteEdit.layerSelected()
 	spriteList.updateAllVisible()
 	

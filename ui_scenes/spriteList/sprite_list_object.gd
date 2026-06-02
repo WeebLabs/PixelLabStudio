@@ -18,6 +18,8 @@ var _eye_target_badge: Label
 var _indent_spacer: Control
 var _hovered = false
 var _was_selected = false
+var _was_visible = true       # tracks effective (in-tree) visibility to refresh the eye
+var _vis_synced = false       # force a first-frame eye sync (sprites aren't visible-in-tree yet at row setup)
 
 static var _style_normal: StyleBoxFlat
 static var _style_hover: StyleBoxFlat
@@ -169,7 +171,9 @@ func _update_style():
 func _update_vis_display():
 	if !is_instance_valid(sprite):
 		return
-	if sprite.visible:
+	# Effective visibility (is_visible_in_tree), so a child shows ○ when an ancestor
+	# is hidden — not just when it's individually hidden.
+	if sprite.is_visible_in_tree():
 		_vis_btn.text = "●"
 		_vis_btn.add_theme_color_override("font_color", Color(0.5, 0.78, 0.5))
 		modulate.a = 1.0
@@ -179,7 +183,8 @@ func _update_vis_display():
 		modulate.a = 0.3
 
 func _on_vis_toggled():
-	sprite.visible = !sprite.visible
+	sprite.userHidden = !sprite.userHidden
+	sprite.applyCostumeVisibility()   # survives selection/costume re-derivation
 	_update_vis_display()
 
 func _gui_input(event: InputEvent):
@@ -227,6 +232,14 @@ func _process(_delta):
 		_update_style()
 	_normal_badge.visible = sprite.hasNormalMap()
 	_eye_target_badge.visible = _is_eye_track_target()
+	# Refresh the eye when effective visibility changes (e.g. a parent was hidden,
+	# cascading down via the scene tree), and force a first-frame sync so the eye
+	# matches once the sprites settle visible after a session load.
+	var vis = sprite.is_visible_in_tree()
+	if vis != _was_visible or not _vis_synced:
+		_vis_synced = true
+		_was_visible = vis
+		_update_vis_display()
 
 func _is_eye_track_target() -> bool:
 	for spr in get_tree().get_nodes_in_group("saved"):

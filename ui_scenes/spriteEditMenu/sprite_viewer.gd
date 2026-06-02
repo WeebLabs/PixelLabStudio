@@ -918,12 +918,7 @@ func setLayerButtons():
 	
 	var nodes = get_tree().get_nodes_in_group("saved")
 	for sprite in nodes:
-		if sprite.costumeLayers[Global.main.costume - 1] == 1:
-			sprite.visible = true
-			sprite.changeCollision(true)
-		else:
-			sprite.visible = false
-			sprite.changeCollision(false)
+		sprite.applyCostumeVisibility()   # costume membership, honoring a manual hide
 		
 
 
