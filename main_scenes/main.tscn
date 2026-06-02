@@ -14196,29 +14196,11 @@ font_size = 31
 [node name="Main" type="Node2D" unique_id=216923518]
 script = ExtResource("1_06alx")
 
-[node name="UILayer" type="CanvasLayer" parent="."]
+[node name="UILayer" type="CanvasLayer" parent="." unique_id=148283163]
 
 [node name="MouseCursor" parent="UILayer" unique_id=29390548 instance=ExtResource("8_fd33p")]
 z_index = 4090
 position = Vector2(-200, -28)
-
-[node name="Lines" type="Node2D" parent="." unique_id=693934637]
-z_index = -4096
-z_as_relative = false
-script = ExtResource("7_2u7em")
-
-[node name="v" type="Line2D" parent="Lines" unique_id=1174385757]
-width = 2.0
-default_color = Color(0.137255, 0.137255, 0.137255, 1)
-
-[node name="h" type="Line2D" parent="Lines" unique_id=1971360491]
-width = 2.0
-default_color = Color(0.137255, 0.137255, 0.137255, 1)
-
-[node name="OriginMotion" type="Node2D" parent="." unique_id=1630158778]
-
-[node name="Origin" type="Node2D" parent="OriginMotion" unique_id=1240125665]
-position = Vector2(360, 360)
 
 [node name="ControlPanel" type="Node2D" parent="UILayer" unique_id=782465269]
 z_index = 4090
@@ -14485,6 +14467,40 @@ text = "-Mouse click or scroll to select sprite
 "
 label_settings = SubResource("LabelSettings_iu6ix")
 
+[node name="ViewerArrows" type="Node2D" parent="UILayer" unique_id=784664020]
+z_index = 4096
+
+[node name="Arrows" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=343932311]
+position = Vector2(134, 694)
+texture = ExtResource("24_joqmn")
+
+[node name="Arrows2" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=1243095641]
+position = Vector2(122, 35)
+rotation = 3.14159
+texture = ExtResource("24_joqmn")
+
+[node name="PushUpdates" parent="UILayer" unique_id=221036027 instance=ExtResource("30_q43vl")]
+z_index = 4090
+position = Vector2(0, 720)
+
+[node name="Lines" type="Node2D" parent="." unique_id=693934637]
+z_index = -4096
+z_as_relative = false
+script = ExtResource("7_2u7em")
+
+[node name="v" type="Line2D" parent="Lines" unique_id=1174385757]
+width = 2.0
+default_color = Color(0.137255, 0.137255, 0.137255, 1)
+
+[node name="h" type="Line2D" parent="Lines" unique_id=1971360491]
+width = 2.0
+default_color = Color(0.137255, 0.137255, 0.137255, 1)
+
+[node name="OriginMotion" type="Node2D" parent="." unique_id=1630158778]
+
+[node name="Origin" type="Node2D" parent="OriginMotion" unique_id=1240125665]
+position = Vector2(360, 360)
+
 [node name="PSDImportDialog" parent="." unique_id=679721683 instance=ExtResource("31_psdim")]
 
 [node name="ReplaceReviewDialog" parent="." unique_id=1201067964 instance=ExtResource("32_rrdlg")]
@@ -14519,27 +14535,11 @@ text = "MISSING PERMISSION"
 label_settings = SubResource("LabelSettings_5yofs")
 horizontal_alignment = 1
 
-[node name="ViewerArrows" type="Node2D" parent="UILayer" unique_id=784664020]
-z_index = 4096
-
-[node name="Arrows" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=343932311]
-position = Vector2(134, 694)
-texture = ExtResource("24_joqmn")
-
-[node name="Arrows2" type="Sprite2D" parent="UILayer/ViewerArrows" unique_id=1243095641]
-position = Vector2(122, 35)
-rotation = 3.14159
-texture = ExtResource("24_joqmn")
-
 [node name="Camera2D" type="Camera2D" parent="." unique_id=247065398]
 position = Vector2(360, 360)
 
 [node name="BackgroundInputCapture" type="BackgroundInputCapture" parent="." unique_id=113626146]
 position = Vector2(-28, -28)
-
-[node name="PushUpdates" parent="UILayer" unique_id=221036027 instance=ExtResource("30_q43vl")]
-z_index = 4090
-position = Vector2(0, 720)
 
 [node name="shadowSprite" type="Sprite2D" parent="." unique_id=1017547515]
 modulate = Color(0, 0, 0, 0.478431)
