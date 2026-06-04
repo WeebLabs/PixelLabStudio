@@ -124,7 +124,7 @@ cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 
 > Added: 2026-05-29 — `ui_scenes/spriteList/sidebar_tab_bar.gd` (`SidebarTabBar`)
 
-Reusable tab strip used in the right sidebar (Details / Eye Tracking / Physics).
+Reusable tab strip used in the right sidebar (Details / Tracking / Physics).
 Rule-based layout: an `HBoxContainer` of flat buttons with `SIZE_EXPAND_FILL`
 (equal widths), and a pink underline `ColorRect` placed under the active tab via
 `index / count` so it reflows at any width.

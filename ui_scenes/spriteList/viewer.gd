@@ -289,7 +289,7 @@ func _create_tabs():
 	_tab_bar = SidebarTabBar.new()
 	add_child(_tab_bar)
 	_tab_bar.add_tab("Details")
-	_tab_bar.add_tab("Eye Tracking")
+	_tab_bar.add_tab("Tracking")
 	_tab_bar.add_tab("Physics")
 	_tab_bar.tab_changed.connect(_on_tab_changed)
 
@@ -366,7 +366,7 @@ func _create_eye_tracking():
 	_eye_section.add_child(toggle_row)
 
 	_eye_toggle = CheckBox.new()
-	_eye_toggle.text = "Eye tracking"
+	_eye_toggle.text = "Enable (Global)"
 	_eye_toggle.add_theme_font_size_override("font_size", 12)
 	_eye_toggle.add_theme_color_override("font_color", label_color)
 	_eye_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1021,6 +1021,9 @@ func refreshEyeUI():
 	var scope = _eye_scope()
 	var transitioned = scope != _prev_eye_scope
 	_prev_eye_scope = scope
+	# The enable checkbox is the per-layer toggle when a layer is selected, and the global
+	# kill switch otherwise — label it so the active scope is obvious.
+	_eye_toggle.text = "Enable (Layer)" if Global.heldSprite != null else "Enable (Global)"
 	if scope == "per_layer":
 		_refresh_eye_ui_per_layer()
 	elif scope == "global":
