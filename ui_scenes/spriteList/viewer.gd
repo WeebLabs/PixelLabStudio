@@ -152,7 +152,10 @@ func _ready():
 	# Restore saved sidebar width before the first _apply_size() so all
 	# resizable elements pick up the user's preference on startup.
 	var saved_w = Saving.settings.get("rightSidebarWidth", panel_width)
-	var max_w = get_viewport().get_visible_rect().size.x * MAX_WIDTH_RATIO
+	# Floor the max at MIN_WIDTH: at startup the stretched viewport is narrow, so
+	# viewport.x * ratio can fall below MIN_WIDTH, inverting the clamp (min > max) and
+	# collapsing the panel under its minimum until a drag re-clamps it.
+	var max_w = maxf(MIN_WIDTH, get_viewport().get_visible_rect().size.x * MAX_WIDTH_RATIO)
 	panel_width = clamp(saved_w, MIN_WIDTH, max_w)
 
 	# Restore the active tab before the first layout pass.
@@ -1298,7 +1301,7 @@ func _input(event):
 		if _dragging:
 			var delta = get_global_mouse_position() - _drag_start
 			var viewport_width = get_viewport().get_visible_rect().size.x
-			var max_width = viewport_width * MAX_WIDTH_RATIO
+			var max_width = maxf(MIN_WIDTH, viewport_width * MAX_WIDTH_RATIO)
 			panel_width = clamp(_drag_start_width - delta.x, MIN_WIDTH, max_width)
 			_apply_size()
 			get_viewport().set_input_as_handled()
