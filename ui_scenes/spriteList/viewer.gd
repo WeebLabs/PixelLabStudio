@@ -44,7 +44,8 @@ var _eye_dist_slider: HSlider
 var _eye_speed_label: Label
 var _eye_speed_slider: HSlider
 var _eye_invert: CheckBox
-var _eye_mode_option: OptionButton
+var _eye_type_option: OptionButton   # Mode: Position / Rotation
+var _eye_mode_option: OptionButton   # Target: Cursor / Layer
 var _eye_pick_btn: Button
 var _eye_whip_line: Line2D
 var _eye_mode_tooltip_label: Label
@@ -367,13 +368,34 @@ func _create_eye_tracking():
 	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
 	toggle_row.add_child(_eye_invert)
 
-	# Row: mode label + dropdown + pick button
+	# Row: Mode (Position = translate toward target / Rotation = swivel toward it)
+	var type_row = HBoxContainer.new()
+	type_row.add_theme_constant_override("separation", 6)
+	_eye_section.add_child(type_row)
+
+	var type_label = Label.new()
+	type_label.text = "Mode:"
+	type_label.add_theme_font_size_override("font_size", 12)
+	type_label.add_theme_color_override("font_color", label_color)
+	type_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	type_row.add_child(type_label)
+
+	_eye_type_option = OptionButton.new()
+	_eye_type_option.add_item("Position", 0)
+	_eye_type_option.add_item("Rotation", 1)
+	_eye_type_option.add_theme_font_size_override("font_size", 12)
+	_eye_type_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_eye_type_option.custom_minimum_size = Vector2(0, 22)
+	_eye_type_option.item_selected.connect(_on_eye_track_type_selected)
+	type_row.add_child(_eye_type_option)
+
+	# Row: target label + dropdown (Cursor / Layer) + pick button
 	var mode_row = HBoxContainer.new()
 	mode_row.add_theme_constant_override("separation", 6)
 	_eye_section.add_child(mode_row)
 
 	var mode_label = Label.new()
-	mode_label.text = "mode:"
+	mode_label.text = "Target:"
 	mode_label.add_theme_font_size_override("font_size", 12)
 	mode_label.add_theme_color_override("font_color", label_color)
 	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -836,11 +858,11 @@ func _on_eye_track_dist_changed(value):
 	var scope = _eye_scope()
 	if scope == "per_layer":
 		UndoManager.save_state_continuous()
-		_eye_dist_label.text = "tracking distance: " + str(value)
+		_update_eye_amount_label()
 		Global.heldSprite.eyeTrackDistance = value
 	elif scope == "global":
 		UndoManager.save_state_continuous()
-		_eye_dist_label.text = "tracking distance: " + str(value)
+		_update_eye_amount_label()
 		for spr in _eye_tracked_sprites():
 			spr.eyeTrackDistance = value
 
@@ -891,6 +913,30 @@ func _on_eye_track_invert_toggled(pressed):
 		UndoManager.save_state()
 		for spr in _eye_tracked_sprites():
 			spr.eyeTrackInvert = pressed
+
+# Mode: 0 = Position (translate toward target), 1 = Rotation (swivel toward it).
+func _on_eye_track_type_selected(idx):
+	var scope = _eye_scope()
+	if scope == "per_layer":
+		UndoManager.save_state()
+		Global.heldSprite.eyeTrackType = idx
+	elif scope == "global":
+		UndoManager.save_state()
+		for spr in _eye_tracked_sprites():
+			spr.eyeTrackType = idx
+	refreshEyeUI()
+
+# The amount slider is shared: tracking distance (px) in Position, max tilt (°) in Rotation.
+func _update_eye_amount_label():
+	if _eye_type_option.selected == 1:
+		_eye_dist_label.text = "max tilt: " + str(_eye_dist_slider.value) + "°"
+	else:
+		_eye_dist_label.text = "tracking distance: " + str(_eye_dist_slider.value)
+
+# The amount label/slider shows in both modes (its text differs per mode).
+func _eye_apply_mode_visibility(_is_rot: bool):
+	_eye_dist_label.visible = true
+	_eye_dist_slider.visible = true
 
 func _on_eye_track_mode_selected(idx):
 	var scope = _eye_scope()
@@ -966,6 +1012,9 @@ func _refresh_eye_ui_per_layer():
 	var spr = Global.heldSprite
 	_eye_toggle.disabled = false
 	_eye_toggle.set_pressed_no_signal(spr.eyeTrack)
+	_eye_type_option.disabled = false
+	_eye_type_option.selected = spr.eyeTrackType
+	_eye_apply_mode_visibility(spr.eyeTrackType == 1)
 	_eye_mode_option.disabled = false
 	_eye_mode_option.selected = spr.eyeTrackMode
 	_eye_invert.disabled = false
@@ -974,7 +1023,7 @@ func _refresh_eye_ui_per_layer():
 	_eye_speed_slider.editable = true
 	_eye_dist_slider.set_value_no_signal(spr.eyeTrackDistance)
 	_eye_speed_slider.set_value_no_signal(spr.eyeTrackSpeed)
-	_eye_dist_label.text = "tracking distance: " + str(spr.eyeTrackDistance)
+	_update_eye_amount_label()
 	_eye_speed_label.text = "tracking speed: " + str(spr.eyeTrackSpeed)
 	var layer_mode = spr.eyeTrackMode == 1
 	_eye_pick_btn.visible = layer_mode
@@ -987,6 +1036,7 @@ func _refresh_eye_ui_global(_reset_values: bool):
 	# Enable checkbox reflects the global kill switch (interactable, NOT per-sprite)
 	_eye_toggle.disabled = false
 	_eye_toggle.set_pressed_no_signal(Global.eyeTrackingGloballyEnabled)
+	_eye_type_option.disabled = false
 	_eye_mode_option.disabled = false
 	_eye_invert.disabled = false
 	_eye_dist_slider.editable = true
@@ -996,16 +1046,19 @@ func _refresh_eye_ui_global(_reset_values: bool):
 	# avoids drift where the dropdown lies about the actual per-sprite mode
 	# (e.g. sprites at Layer but UI stuck on Cursor from an old "reset on
 	# transition" code path). When sprites disagree, fall back to neutral.
+	var agreed_type = _agreed_eye_value("eyeTrackType")
 	var agreed_mode = _agreed_eye_value("eyeTrackMode")
 	var agreed_invert = _agreed_eye_value("eyeTrackInvert")
 	var agreed_dist = _agreed_eye_value("eyeTrackDistance")
 	var agreed_speed = _agreed_eye_value("eyeTrackSpeed")
+	_eye_type_option.selected = (agreed_type if agreed_type != null else 0)
+	_eye_apply_mode_visibility(agreed_type == 1)
 	_eye_mode_option.selected = (agreed_mode if agreed_mode != null else 0)
 	_eye_invert.set_pressed_no_signal(agreed_invert if agreed_invert != null else false)
 	_eye_dist_slider.set_value_no_signal(agreed_dist if agreed_dist != null else _eye_dist_slider.min_value)
 	_eye_speed_slider.set_value_no_signal(agreed_speed if agreed_speed != null else _eye_speed_slider.min_value)
 
-	_eye_dist_label.text = "tracking distance: " + str(_eye_dist_slider.value)
+	_update_eye_amount_label()
 	_eye_speed_label.text = "tracking speed: " + str(_eye_speed_slider.value)
 	# Pick button only relevant when mode is Layer
 	_eye_pick_btn.visible = _eye_mode_option.selected == 1
@@ -1032,6 +1085,9 @@ func _agreed_eye_value(prop: String):
 func _refresh_eye_ui_dead():
 	_eye_toggle.disabled = true
 	_eye_toggle.set_pressed_no_signal(false)
+	_eye_type_option.disabled = true
+	_eye_type_option.selected = 0
+	_eye_apply_mode_visibility(false)
 	_eye_mode_option.disabled = true
 	_eye_mode_option.selected = 0
 	_eye_invert.disabled = true

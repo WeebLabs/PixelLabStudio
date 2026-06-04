@@ -72,6 +72,8 @@ func _snapshot() -> Dictionary:
 			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
 			data[idx]["eyeTrackMode"] = child.eyeTrackMode
 			data[idx]["eyeTrackTargetId"] = child.eyeTrackTargetId
+			data[idx]["eyeTrackType"] = child.eyeTrackType
+			data[idx]["eyeTrackForward"] = child.eyeTrackForward
 			data[idx]["wiggleEnabled"] = child.wiggleEnabled
 			data[idx]["wigglePath"] = child.wigglePath.duplicate()
 			data[idx]["wigglePathWidths"] = child.wigglePathWidths.duplicate()
@@ -245,6 +247,10 @@ func _restore(data: Dictionary):
 			sprite.eyeTrackMode = d["eyeTrackMode"]
 		if d.has("eyeTrackTargetId"):
 			sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
+		if d.has("eyeTrackType"):
+			sprite.eyeTrackType = d["eyeTrackType"]
+		if d.has("eyeTrackForward"):
+			sprite.eyeTrackForward = d["eyeTrackForward"]
 		if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
 		if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
 		if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()
@@ -335,6 +341,8 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
 	if d.has("eyeTrackMode"): sprite.eyeTrackMode = d["eyeTrackMode"]
 	if d.has("eyeTrackTargetId"): sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
+	if d.has("eyeTrackType"): sprite.eyeTrackType = d["eyeTrackType"]
+	if d.has("eyeTrackForward"): sprite.eyeTrackForward = d["eyeTrackForward"]
 	if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
 	if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
 	if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()

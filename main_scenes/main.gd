@@ -1304,6 +1304,10 @@ func _on_load_dialog_file_selected(path):
 			sprite.eyeTrackMode = data[item]["eyeTrackMode"]
 		if data[item].has("eyeTrackTargetId"):
 			sprite.eyeTrackTargetId = data[item]["eyeTrackTargetId"]
+		if data[item].has("eyeTrackType"):
+			sprite.eyeTrackType = data[item]["eyeTrackType"]
+		if data[item].has("eyeTrackForward"):
+			sprite.eyeTrackForward = data[item]["eyeTrackForward"]
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
 		if data[item].has("wiggleEnabled"): sprite.wiggleEnabled = data[item]["wiggleEnabled"]
@@ -1950,6 +1954,8 @@ func _build_avatar_save_data() -> Dictionary:
 				"eyeTrackInvert": child.eyeTrackInvert,
 				"eyeTrackMode": child.eyeTrackMode,
 				"eyeTrackTargetId": child.eyeTrackTargetId,
+				"eyeTrackType": child.eyeTrackType,
+				"eyeTrackForward": child.eyeTrackForward,
 				"wiggleEnabled": child.wiggleEnabled,
 				"wigglePath": var_to_str(child.wigglePath),
 				"wigglePathWidths": var_to_str(child.wigglePathWidths),
@@ -2587,6 +2593,8 @@ func _on_duplicate_button_pressed():
 	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
 	sprite.eyeTrackMode = Global.heldSprite.eyeTrackMode
 	sprite.eyeTrackTargetId = Global.heldSprite.eyeTrackTargetId
+	sprite.eyeTrackType = Global.heldSprite.eyeTrackType
+	sprite.eyeTrackForward = Global.heldSprite.eyeTrackForward
 
 	sprite.wiggleEnabled = Global.heldSprite.wiggleEnabled
 	sprite.wigglePath = Global.heldSprite.wigglePath.duplicate()

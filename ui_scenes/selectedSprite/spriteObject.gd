@@ -77,6 +77,8 @@ var yAmp = 0.0
 var rdragStr = 0
 var rLimitMax = 180
 var rLimitMin = -180
+var _micRot = 0.0   # smoothed mic-driven rotation, kept separate from sprite.rotation so
+					# eye-track rotation isn't fed back into its own smoothing (→ spin)
 
 #Layer
 var costumeLayers = [1,1,1,1,1,1,1,1,1,1]
@@ -110,9 +112,12 @@ var eyeTrack = false
 var eyeTrackDistance = 20.0
 var eyeTrackSpeed = 0.15
 var eyeTrackInvert = false
-var eyeTrackMode = 0  # 0 = cursor, 1 = layer
+var eyeTrackMode = 0  # TARGET: 0 = cursor, 1 = layer (UI label "Target")
 var eyeTrackTargetId = null  # int sprite id when eyeTrackMode == 1
+var eyeTrackType = 0  # MODE: 0 = Position (translate toward target), 1 = Rotation (swivel toward it) — UI label "Mode"
+var eyeTrackForward = 0  # DEPRECATED (2026-06-04): the "Up side" control was removed — the saddle is X/Y-symmetric so it only flipped sign (redundant with Invert). Kept at default 0 for save compat; no longer read by the formula or any UI.
 var _eyeTrackOffset = Vector2.ZERO
+var _eyeTrackRotation = 0.0  # runtime: smoothed eye-track rotation, radians (Rotation mode)
 
 # Wiggle (physics) — bends this layer with a deformable textured MESH driven by an
 # angular-spring chain whose REST shape is a user-traced path over the layer's
@@ -499,7 +504,12 @@ func _process(delta):
 
 		rotationalDrag(length,delta)
 		stretch(length,delta)
-	
+
+	# Eye-track Rotation composes with the mic rotational sway. rotationalDrag smooths
+	# into its own _micRot (not sprite.rotation), so the look-at is added cleanly here
+	# without feeding back into that smoothing (which compounded into a runaway spin).
+	sprite.rotation = _micRot + _eyeTrackRotation
+
 	if grabDelay > 0:
 		grabDelay -= 1
 
@@ -730,16 +740,47 @@ func wobble():
 
 	if have_target:
 		var rest_pos = global_position
-		var direction = target_world_pos - rest_pos
-		if eyeTrackInvert:
-			direction = -direction
-		var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)
-		_eyeTrackOffset = _eyeTrackOffset.lerp(target_offset, eyeTrackSpeed)
-		wob.position += _eyeTrackOffset
+		var to_target = target_world_pos - rest_pos
+		if eyeTrackType == 1:
+			# Rotation = LIMITED head-tilt that tracks the cursor's VERTICAL position on
+			# whichever side it's on: the side nearest the cursor lifts toward an upper
+			# cursor and drops toward a lower one. It's a saddle — the screen-frame
+			# horizontal × vertical cursor offset — so it's 0 when the cursor is straight
+			# up/down or straight to a side, peaks (±eyeTrackDistance°) at the diagonals,
+			# and reverses across the artwork's center lines. Referenced from the artwork's
+			# VISUAL CENTER (not the origin), so the reversal lands on the artwork's 50%
+			# line wherever the origin sits. Default (no invert): cursor upper-left -> top
+			# tilts right (left side lifts), upper-right -> top left; lower mirrors. Invert
+			# flips the lean.
+			var center_world = rest_pos
+			var ur = get_image_used_rect()
+			if imageData != null and ur.size.x > 0 and ur.size.y > 0:
+				center_world = dragOrigin.to_global(_tex_to_local(Vector2(ur.position) + Vector2(ur.size) * 0.5))
+			var d = target_world_pos - center_world
+			var max_rad = deg_to_rad(eyeTrackDistance)
+			var target_rot = 0.0
+			if d.length() > 0.001:
+				var u = d.normalized()
+				var sgn = -1.0 if eyeTrackInvert else 1.0
+				target_rot = clampf(sgn * 2.0 * max_rad * u.x * u.y, -max_rad, max_rad)
+			_eyeTrackRotation = lerp_angle(_eyeTrackRotation, target_rot, eyeTrackSpeed)
+			_eyeTrackOffset = _eyeTrackOffset.lerp(Vector2.ZERO, 0.15)
+			if _eyeTrackOffset.length() > 0.01:
+				wob.position += _eyeTrackOffset
+		else:
+			# Position mode: translate toward the target, capped at eyeTrackDistance px.
+			var direction = to_target
+			if eyeTrackInvert:
+				direction = -direction
+			var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)
+			_eyeTrackOffset = _eyeTrackOffset.lerp(target_offset, eyeTrackSpeed)
+			wob.position += _eyeTrackOffset
+			_eyeTrackRotation = lerp(_eyeTrackRotation, 0.0, eyeTrackSpeed)
 	else:
 		_eyeTrackOffset = _eyeTrackOffset.lerp(Vector2.ZERO, 0.15)
 		if _eyeTrackOffset.length() > 0.01:
 			wob.position += _eyeTrackOffset
+		_eyeTrackRotation = lerp(_eyeTrackRotation, 0.0, 0.15)
 
 func rotationalDrag(length,delta):
 	var yvel = (length * rdragStr)
@@ -747,8 +788,9 @@ func rotationalDrag(length,delta):
 	#Calculate Max angle
 	
 	yvel = clamp(yvel,rLimitMin,rLimitMax)
-	
-	sprite.rotation = lerp_angle(sprite.rotation,deg_to_rad(yvel),0.25)
+
+	_micRot = lerp_angle(_micRot, deg_to_rad(yvel), 0.25)
+	sprite.rotation = _micRot
 
 func stretch(length,delta):
 	var yvel = (length * stretchAmount * 0.01)
