@@ -152,12 +152,12 @@ When `Global.heldSprite == null`:
 ## Opacity + Blend Strip
 
 > Added: 2026-06-04 — `ui_scenes/spriteList/blend_section.gd` (`BlendOpacitySection`)
+> Updated: 2026-06-04 — Single-row Photoshop/Affinity layout (blend dropdown + opacity field with slider flyout).
 
-Per-layer Opacity slider + Blend-mode dropdown, pinned to the bottom of the right sidebar's
-layer-list region (above the draggable divider). Two `HBoxContainer` rows in a `VBoxContainer`
-(`separation = Global.UI_ROW_GAP`):
+Per-layer Blend + Opacity on **one row**, pinned to the bottom of the right sidebar's layer-list
+region (above the draggable divider): `[ Blend dropdown … ]  [ 100% ▾ ]`.
 
-- **Labels** ("Blend", "Opacity"): font size 12, `Color(0.75, 0.75, 0.8)`; `Color(0.35, 0.35, 0.4)` when no sprite.
-- **OptionButton** (blend dropdown): `flat` left as default, font size 12, `SIZE_EXPAND_FILL`, `custom_minimum_size = (0, 22)`. Item id == `BlendMode.Mode` int.
-- **Opacity slider**: shared slider look (same fill/grabber resources as the eye-tracking sliders), `custom_minimum_size = (0, 16)`, double-click-resettable to 1.0.
-- **Value readout** ("100%"): font size 12, `Color(0.85, 0.85, 0.9)` (heading), right-aligned, `custom_minimum_size.x = 36`.
+- **Blend dropdown** (`OptionButton`): font size 12, `SIZE_EXPAND_FILL` (fills the row), `custom_minimum_size = (0, 22)`. Item id == `BlendMode.Mode` int.
+- **Opacity field** (`LineEdit`): editable `NN%`, right-aligned, font size 12, `custom_minimum_size = (44, 22)`, `select_all_on_focus`. Dark rounded box (`bg_color 0.1`, corner radius 3, matching the filter field); focus border `Color(0.45, 0.45, 0.5)`. Accepts `0–100` with or without `%`.
+- **▾ arrow** (`Button`, `flat`, `FOCUS_NONE`, font size 10, `(16, 22)`): opens a `PopupPanel` flyout holding a horizontal `HSlider` (shared fill/grabber styles, double-click-resettable to 1.0), right-aligned under the field.
+- Disabled when no sprite: dropdown + arrow disabled, field shows `—`.
