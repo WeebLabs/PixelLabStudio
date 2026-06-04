@@ -685,10 +685,12 @@ func _input(event):
 	elif event is InputEventMouseMotion and _origin_dragging:
 		var mouse_local = get_parent().to_local(get_global_mouse_position())
 		var delta = mouse_local - _origin_drag_start_mouse_local
-		position = _origin_drag_start_pos + delta
-		position = Vector2(int(position.x), int(position.y))
-		offset = _origin_drag_start_offset - delta
-		offset = Vector2(int(offset.x), int(offset.y))
+		# Snap the drag delta to a whole pixel ONCE and apply it equally/oppositely, so position
+		# and offset stay exactly coupled. Truncating each independently (int() rounds toward
+		# zero) drifted them apart by a pixel when both had the same sign — moving the artwork.
+		var idelta = Vector2(roundi(delta.x), roundi(delta.y))
+		position = _origin_drag_start_pos + idelta
+		offset = _origin_drag_start_offset - idelta
 		sprite.offset = offset
 		grabArea.position = (size * -0.5) + offset
 		_sync_wiggle_to_offset()
