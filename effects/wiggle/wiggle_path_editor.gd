@@ -43,7 +43,6 @@ var _drag := -1                # control point index being dragged, -1 = none
 var _hover := -1               # control point index under the cursor
 var _width_drag := -1          # control point whose width grip is being dragged
 var _width_hover := -1         # control point whose width grip is under the cursor
-var width_edited := false      # set once a width grip is dragged → suppress auto-fit-on-exit
 
 func setup(spr) -> void:
 	owner_sprite = spr
@@ -105,7 +104,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			# Perpendicular distance from the centerline = the displayed half-width;
 			# divide out the coverage knob so the stored per-point width is the base
 			# taper profile (coverage still scales it).
-			width_edited = true
 			var d: float = absf((tex - owner_sprite.wigglePath[_width_drag]).dot(_path_normal(_width_drag)))
 			var base: float = d / maxf(owner_sprite.wiggleThickness, 0.01)
 			owner_sprite.wigglePathWidths[_width_drag] = maxf(base, MIN_WIDTH)
@@ -257,13 +255,10 @@ func _draw() -> void:
 		return
 	var ppx := _px()
 
-	# Smooth centerline + per-point half-widths (px), scaled by the thickness knob
-	# so the band previews the ribbon's actual swept coverage.
+	# Smooth centerline + per-point half-widths (px). _smooth_widths already applies
+	# the coverage knob, so the editor band previews the actual swept coverage.
 	var smooth: PackedVector2Array = WiggleAppendage2D.smooth_path(path, 8) if path.size() >= 3 else path
 	var widths: PackedFloat32Array = o._smooth_widths(smooth)
-	var k: float = maxf(o.wiggleThickness, 0.01)
-	for wi in widths.size():
-		widths[wi] *= k
 	var n := smooth.size()
 
 	var ctr := PackedVector2Array()
@@ -281,9 +276,11 @@ func _draw() -> void:
 		left.append(c + nrm * widths[i])
 		right.append(c - nrm * widths[i])
 
-	# Swept band (per-segment quads — robust vs. a single concave polygon).
+	# Swept band fill. Draw each segment as simple triangles split through the
+	# centerline; wide/tapered bends can make full-width quads concave/bow-tied,
+	# which shows up as ugly creases or empty patches in the editor overlay.
 	for i in n - 1:
-		draw_colored_polygon(PackedVector2Array([left[i], left[i + 1], right[i + 1], right[i]]), BAND_FILL)
+		_draw_band_cell(ctr[i], ctr[i + 1], left[i], left[i + 1], right[i], right[i + 1])
 	if n >= 2:
 		draw_polyline(left, BAND_EDGE, 1.0 * ppx, true)
 		draw_polyline(right, BAND_EDGE, 1.0 * ppx, true)
@@ -339,6 +336,12 @@ func _draw_flow(ctr: PackedVector2Array, ppx: float) -> void:
 		var tip := c + dir * s
 		draw_line(tip, c - dir * s + m * s, FLOW, 1.5 * ppx, true)
 		draw_line(tip, c - dir * s - m * s, FLOW, 1.5 * ppx, true)
+
+func _draw_band_cell(c0: Vector2, c1: Vector2, l0: Vector2, l1: Vector2, r0: Vector2, r1: Vector2) -> void:
+	draw_colored_polygon(PackedVector2Array([c0, c1, l1]), BAND_FILL)
+	draw_colored_polygon(PackedVector2Array([c0, l1, l0]), BAND_FILL)
+	draw_colored_polygon(PackedVector2Array([c0, r0, r1]), BAND_FILL)
+	draw_colored_polygon(PackedVector2Array([c0, r1, c1]), BAND_FILL)
 
 func _diamond(c: Vector2, r: float) -> PackedVector2Array:
 	return PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0)])

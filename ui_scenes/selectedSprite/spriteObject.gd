@@ -150,6 +150,10 @@ var _wiggleRestPos = Vector2.ZERO
 var _wiggleRestRot = 0.0
 var _wiggleFollowing = false
 
+const _WIGGLE_WIDTH_MIN := 4.0
+const _WIGGLE_WIDTH_MARGIN := 3.0
+const _WIGGLE_WIDTH_GROW := 1.08
+
 #Blink Animation
 var _blinkAnimPlaying = false
 var _blinkAnimTick = 0
@@ -826,10 +830,6 @@ func _enter_path_edit():
 
 func _exit_path_edit():
 	if _wigglePathEditor != null:
-		# If the user only traced the spine (didn't touch a width grip), re-fit the
-		# band to the new path's silhouette so it keeps hugging the art automatically.
-		if not _wigglePathEditor.width_edited:
-			_fit_widths_to_content()
 		_wigglePathEditor.queue_free()
 		_wigglePathEditor = null
 	# Rebuild the ribbon from the edited path and restore the wiggle/idle look.
@@ -856,7 +856,6 @@ func wiggle_auto_fit_path():
 	_auto_fit_wiggle_path()
 	apply_wiggle_path_changed()
 	if _wigglePathEditor != null:
-		_wigglePathEditor.width_edited = false
 		_wigglePathEditor.queue_redraw()
 
 # Rebuild the chain rest shape + the deformable mesh from the current path. Call on
@@ -924,6 +923,20 @@ func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
 			var b := mini(a + 1, m - 1)
 			out.append(lerp(wigglePathWidths[a], wigglePathWidths[b], f - float(a)) * k)
 	return out
+
+# Approximate the rest centerline that WiggleAppendage2D will actually render.
+# Width fitting uses this path instead of the raw controls, so coverage accounts
+# for chain resampling / smoothing instead of only measuring at sparse handles.
+func _wiggle_mesh_rest_path() -> PackedVector2Array:
+	var smooth := WiggleAppendage2D.smooth_path(wigglePath, 10) if wigglePath.size() >= 3 else wigglePath
+	if smooth.size() < 2:
+		return smooth
+	var joints := WiggleAppendage2D.resample_equal_arc(smooth, clampi(int(wiggleSegments), 2, 48) + 1)
+	if joints.size() < 3:
+		return joints
+	var seg := maxi(joints.size() - 1, 1)
+	var per := clampi(int(ceil(float(WiggleAppendage2D.RENDER_POINTS) / float(seg))), 4, 48)
+	return WiggleAppendage2D.smooth_path(joints, per)
 
 
 # Auto path: trace the artwork's centerline (medial spine) so it follows the
@@ -1110,45 +1123,56 @@ func _dp(pts: PackedVector2Array, lo: int, hi: int, eps: float, keep: Dictionary
 		_dp(pts, lo, idx, eps, keep)
 		_dp(pts, idx, hi, eps, keep)
 
-# Size the band to the artwork's actual silhouette: at each control point, march
-# perpendicular to the path until the opaque content ends (both sides), and set
-# the half-width to cover it plus a small margin. Keeps the band hugging the art
-# (no manual width fiddling, no accidental cropping) for any traced path.
+# Size the band to the artwork's actual silhouette: sample the rendered rest path,
+# march perpendicular until the opaque content ends, then pool the sample widths
+# back to the user-visible control points. Keeps the band hugging the art without
+# clipping bulges between sparse handles.
 func _fit_widths_to_content():
 	if imageData == null or wigglePath.size() < 1:
 		return
 	var img: Image = imageData
 	var reach := maxf(float(img.get_width()), float(img.get_height()))
-	# Measure each control point's coverage perpendicular to the *smoothed* band
-	# centerline (the curve the mesh actually follows), not the raw control polyline
-	# — so the probe direction matches the band's real normal and the width reaches
-	# the true silhouette edge instead of cutting across at an angle.
-	var smooth := WiggleAppendage2D.smooth_path(wigglePath, 10)
+	# Measure coverage along the same smoothed / resampled rest centerline that the
+	# mesh will render. Then pool each sample's required width back to the adjacent
+	# control widths. This is intentionally an envelope: if a bulge falls between two
+	# handles, both handles learn about it instead of letting the interpolated band
+	# cut a straight chord through the art.
+	var smooth := _wiggle_mesh_rest_path()
 	if smooth.size() < 2:
 		smooth = wigglePath
 	var ns := smooth.size()
-	var out := PackedFloat32Array()
-	for cp in wigglePath:
-		var bi := 0
-		var bd := INF
-		for j in ns:
-			var dd: float = cp.distance_squared_to(smooth[j])
-			if dd < bd:
-				bd = dd
-				bi = j
-		var a: Vector2 = smooth[maxi(bi - 1, 0)]
-		var b: Vector2 = smooth[mini(bi + 1, ns - 1)]
+	var sample_widths := PackedFloat32Array()
+	sample_widths.resize(ns)
+	for i in ns:
+		var a: Vector2 = smooth[maxi(i - 1, 0)]
+		var b: Vector2 = smooth[mini(i + 1, ns - 1)]
 		var t := b - a
 		if t.length() < 0.001:
 			t = Vector2.RIGHT
 		var perp := t.normalized().orthogonal()
-		var c: Vector2 = smooth[bi]
-		# threshold 0.1 marches into the anti-aliased edge so the band reaches the
-		# real silhouette; +2px margin keeps the outline inside the band.
-		var ext := maxf(_content_reach(img, c, perp, reach, 0.1), _content_reach(img, c, -perp, reach, 0.1))
-		# +2px margin for the outline/AA, then grow the whole half-width ~10% so the
-		# band sits a touch outside the silhouette (the bare fit read slightly small).
-		out.append(maxf((ext + 2.0) * 1.1, 4.0))
+		var c: Vector2 = smooth[i]
+		var ext := maxf(
+			_content_reach(img, c, perp, reach, 0.08),
+			_content_reach(img, c, -perp, reach, 0.08)
+		)
+		sample_widths[i] = maxf((ext + _WIGGLE_WIDTH_MARGIN) * _WIGGLE_WIDTH_GROW, _WIGGLE_WIDTH_MIN)
+
+	var out := PackedFloat32Array()
+	var m := wigglePath.size()
+	out.resize(m)
+	for i in m:
+		out[i] = _WIGGLE_WIDTH_MIN
+	if m == 1:
+		for w in sample_widths:
+			out[0] = maxf(out[0], w)
+		wigglePathWidths = out
+		return
+	for i in ns:
+		var f := float(i) / float(ns - 1) * float(m - 1)
+		var a := int(f)
+		var b := mini(a + 1, m - 1)
+		out[a] = maxf(out[a], sample_widths[i])
+		out[b] = maxf(out[b], sample_widths[i])
 	wigglePathWidths = out
 
 # Distance from `start` to the furthest opaque pixel along `dir`, stopping after a
