@@ -91,6 +91,8 @@ func _snapshot() -> Dictionary:
 			data[idx]["wiggleReactivity"] = child.wiggleReactivity
 			data[idx]["wiggleMotionIntensity"] = child.wiggleMotionIntensity
 			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
+			data[idx]["blendMode"] = child.blendMode
+			data[idx]["opacity"] = child.opacity
 
 			if child.normalImageData != null:
 				if !_normal_cache.has(child.id):
@@ -268,8 +270,12 @@ func _restore(data: Dictionary):
 		if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
 		if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
 		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
-		# Resync the bend material/chain to the restored enabled state.
+		if d.has("blendMode"): sprite.blendMode = d["blendMode"]
+		if d.has("opacity"): sprite.opacity = d["opacity"]
+		# Resync the bend material/chain to the restored enabled state, then the blend
+		# material/backbuffer (after setWiggle so the recreated ribbon gets the right material).
 		sprite.setWiggle(sprite.wiggleEnabled)
+		sprite.applyBlendMode()
 
 		if d.has("normalImageData") and d["normalImageData"] != null:
 			if sprite.normalImageData != d["normalImageData"]:
@@ -360,6 +366,8 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
 	if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
 	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
+	if d.has("blendMode"): sprite.blendMode = d["blendMode"]
+	if d.has("opacity"): sprite.opacity = d["opacity"]
 	if d.has("normalImageData") and d["normalImageData"] != null:
 		sprite.loadedNormalImage = d["normalImageData"]
 		sprite.normalPath = d.get("normalPath", "")

@@ -438,6 +438,49 @@ A single `PointLight2D` is always present in the scene so that normal-mapped spr
 - **Save/Load**: `"_light"` key in avatar JSON with `{pos, energy, color, range, enabled}`. Old saves without `"_light"` get default values.
 - **Undo**: snapshot includes `"_light"` sub-dictionary; `_restore()` and `_restore_full()` skip it in sprite loops and apply separately
 
+## Blend Modes & Opacity
+
+> Added: 2026-06-04 — Per-layer blend mode + opacity compositing.
+
+Each sprite layer has `blendMode` (a `BlendMode.Mode` int) and `opacity` (0–1). The controls live
+in a strip pinned to the **bottom of the right sidebar's layer-list region** (above the draggable
+divider, mirroring the filter field that caps the top) — `ui_scenes/spriteList/blend_section.gd`
+(`class_name BlendOpacitySection`), built/positioned/synced by `viewer.gd`.
+
+### Modules (`effects/blend/`)
+- `blend_mode.gd` (`class_name BlendMode`) — the mode enum (persisted as int, **append-only — never
+  reorder**), display names, and render-tier categorization helpers.
+- `blend_modes.gdshader` — one `canvas_item` shader holding every screen-reading blend formula,
+  selected by a `blend_mode` uniform (if-chain on a uniform → effectively free).
+
+### Three render tiers — only modes that need it pay any cost
+| Tier | Modes | Mechanism | Backbuffer |
+|------|-------|-----------|------------|
+| Native default | Normal | `CanvasItemMaterial`, `PREMULT_ALPHA` | no |
+| Native hardware | Add, Subtract | `CanvasItemMaterial` `BLEND_MODE_ADD`/`SUB` (correct under premultiplied alpha) | no |
+| Shader | Multiply, Screen, Overlay, Darken, Lighten, Color Dodge, Color Burn, Hard Light, Soft Light, Difference, Exclusion | `ShaderMaterial` + `BackBufferCopy` | yes |
+
+`spriteObject.applyBlendMode()` is the single path that assigns the material and creates/removes the
+per-layer `BackBufferCopy`. The copy is the **first child of `DragOrigin`** at the layer's absolute z
+(`z_as_relative=false`, `z_index=z`, kept in sync by `setZIndex()`), so its `COPY_MODE_VIEWPORT`
+snapshot contains exactly the layers drawn **below** this one. The wiggle ribbon shares
+`sprite.material`, so `applyBlendMode()` re-points it too.
+
+### Premultiplied-alpha compositing (the shader)
+Layer textures **and** the backbuffer are premultiplied (verified empirically on Mobile + Metal). The
+shader un-premultiplies source and backdrop, applies the W3C separable blend, then outputs a
+**premultiplied** result via `render_mode blend_premul_alpha` — so compositing stays correct over any
+backdrop alpha (opaque editor window AND a transparent NDI/stream viewport). Opacity is folded into
+`talkBlink()`'s gray `self_modulate` (`Color(o,o,o,o)`, `o = talk/blink × opacity`); the shader reads
+it as `COLOR.a` and ignores `COLOR.rgb`.
+
+### Save / Load / Undo
+- **Save**: `blendMode` + `opacity` per sprite (`main.gd _build_avatar_save_data`); load + duplicate
+  apply them with `.has()` guards. Missing fields default to Normal / fully opaque (backward-compatible).
+- **Undo**: `undo_manager.gd` snapshots both. In-place `_restore()` calls `applyBlendMode()` after
+  `setWiggle()`; the load and `_restore_full()` paths set the fields before `add_child`, so `_ready()`
+  → `applyBlendMode()` applies them.
+
 ## Wiggle (Physics)
 
 > Updated: 2026-05-29 — Per-layer wiggly-appendage (tails, ears, antennae). Cleaned-up rewrite of PNGTuberRemix's `WigglyAppendage2D`: a textured `Line2D` ribbon driven by an angular-spring/verlet chain. (An earlier shader-UV-warp implementation was replaced because it clipped to the layer rect and the Mobile renderer broke its `MODULATE`/`NORMAL_TEXTURE` usage.)

@@ -232,6 +232,37 @@ func _ready():
 	for hud_node in [controlPanel, editControls, tutorial, viewerArrows, lines, pushUpdates, shadow, $Failed, $UILayer/MouseCursor]:
 		hud_node.visibility_layer = 2
 
+	# Pre-compile the blend-mode shader pipeline during startup so the first time a layer
+	# switches to a screen-reading blend mode there's no one-frame compile hitch.
+	_prewarm_blend_shader()
+
+# Render the blend shader once, invisibly, to force Metal to build its pipeline now — the
+# compile otherwise lands on the render thread the first time a backbuffer blend mode draws.
+# One fully-transparent draw warms the whole shader (every mode shares a single program); a
+# BackBufferCopy alongside warms the screen-read path too. Both are freed after a frame.
+func _prewarm_blend_shader():
+	var img = Image.create(2, 2, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 1))
+	var warm = Sprite2D.new()
+	warm.texture = ImageTexture.create_from_image(img)
+	warm.modulate.a = 0.0       # invisible — outputs nothing, but the draw still compiles the pipeline
+	warm.visibility_layer = 2   # keep it out of NDI output just in case
+	var mat = ShaderMaterial.new()
+	mat.shader = BlendMode.SHADER
+	mat.set_shader_parameter("blend_mode", BlendMode.Mode.MULTIPLY)
+	warm.material = mat
+	var bbc = BackBufferCopy.new()
+	bbc.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+	# Parented to origin so it sits at screen centre (actually rasterized, not frustum-culled);
+	# BackBufferCopy first so the sprite's screen read is valid when it draws.
+	origin.add_child(bbc)
+	origin.add_child(warm)
+	warm.position = Vector2.ZERO
+	await get_tree().process_frame
+	await get_tree().process_frame
+	warm.queue_free()
+	bbc.queue_free()
+
 func _style_control_sliders():
 	# White circle grabber (20x20, radius ~8)
 	var sz = 20
@@ -1327,6 +1358,8 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("wiggleReactivity"): sprite.wiggleReactivity = data[item]["wiggleReactivity"]
 		if data[item].has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = data[item]["wiggleMotionIntensity"]
 		if data[item].has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = data[item]["wiggleChildrenFollow"]
+		if data[item].has("blendMode"): sprite.blendMode = data[item]["blendMode"]
+		if data[item].has("opacity"): sprite.opacity = data[item]["opacity"]
 		if data[item].has("normalPath"):
 			sprite.normalPath = data[item]["normalPath"]
 
@@ -1973,6 +2006,8 @@ func _build_avatar_save_data() -> Dictionary:
 				"wiggleReactivity": child.wiggleReactivity,
 				"wiggleMotionIntensity": child.wiggleMotionIntensity,
 				"wiggleChildrenFollow": child.wiggleChildrenFollow,
+				"blendMode": child.blendMode,
+				"opacity": child.opacity,
 				"ndiRefLayer": child.ndiRefLayer,
 				"normalPath": child.normalPath,
 			}
@@ -2613,6 +2648,9 @@ func _on_duplicate_button_pressed():
 	sprite.wiggleReactivity = Global.heldSprite.wiggleReactivity
 	sprite.wiggleMotionIntensity = Global.heldSprite.wiggleMotionIntensity
 	sprite.wiggleChildrenFollow = Global.heldSprite.wiggleChildrenFollow
+
+	sprite.blendMode = Global.heldSprite.blendMode
+	sprite.opacity = Global.heldSprite.opacity
 
 	origin.add_child(sprite)
 

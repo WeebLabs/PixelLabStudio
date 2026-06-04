@@ -119,6 +119,14 @@ var eyeTrackForward = 0  # DEPRECATED (2026-06-04): the "Up side" control was re
 var _eyeTrackOffset = Vector2.ZERO
 var _eyeTrackRotation = 0.0  # runtime: smoothed eye-track rotation, radians (Rotation mode)
 
+# Blend mode + opacity (per-layer compositing). blendMode is a BlendMode.Mode int;
+# opacity (0..1) is folded into the talk/blink self_modulate every frame (see talkBlink).
+# Normal/Add/Subtract render natively; the rest use the blend shader + a BackBufferCopy
+# (effects/blend/). Persisted; backward-compatible (default Normal / fully opaque).
+var blendMode: int = 0
+var opacity: float = 1.0
+var _blendBackBuffer: BackBufferCopy = null
+
 # Wiggle (physics) — bends this layer with a deformable textured MESH driven by an
 # angular-spring chain whose REST shape is a user-traced path over the layer's
 # content (effects/wiggle/). The mesh's per-vertex UVs map straight to the layer
@@ -278,9 +286,9 @@ func _ready():
 	else:
 		_rebuild_sprite_texture()
 
-	var mat = CanvasItemMaterial.new()
-	mat.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
-	sprite.material = mat
+	# Compositing material (blend mode) + the optional screen-read backbuffer. Defaults to
+	# Normal, i.e. a premultiplied-alpha CanvasItemMaterial (identical to the prior behaviour).
+	applyBlendMode()
 
 	# Use prebuilt polygons if available (from threaded import)
 	var polygons
@@ -547,6 +555,53 @@ func setZIndex():
 	# reordering a wiggling layer re-depths the ribbon too (not just the sprite).
 	if _wiggleAppendage != null:
 		_wiggleAppendage.z_index = z
+	# The blend backbuffer copies at the layer's depth too, so it snapshots exactly the
+	# layers drawn below this one.
+	if _blendBackBuffer != null:
+		_blendBackBuffer.z_index = z
+
+# Apply the current blend mode to the Sprite2D's material + the optional backbuffer.
+# Native tier (Normal/Add/Subtract) uses a CanvasItemMaterial and needs no screen read;
+# every other mode uses the shared blend shader fed by a BackBufferCopy. Safe to re-call.
+func applyBlendMode():
+	if BlendMode.needs_backbuffer(blendMode):
+		var sm: ShaderMaterial
+		if sprite.material is ShaderMaterial:
+			sm = sprite.material
+		else:
+			sm = ShaderMaterial.new()
+			sm.shader = BlendMode.SHADER
+			sprite.material = sm
+		sm.set_shader_parameter("blend_mode", blendMode)
+		_ensure_blend_backbuffer(true)
+	else:
+		var cm: CanvasItemMaterial
+		if sprite.material is CanvasItemMaterial:
+			cm = sprite.material
+		else:
+			cm = CanvasItemMaterial.new()
+			sprite.material = cm
+		cm.blend_mode = BlendMode.native_blend(blendMode)
+		_ensure_blend_backbuffer(false)
+	# The wiggle ribbon stands in for the (hidden) Sprite2D, so keep it on the same material.
+	if _wiggleAppendage != null:
+		_wiggleAppendage.material = sprite.material
+
+# Create/remove the BackBufferCopy that feeds screen-reading blend modes. It sits as the
+# first child of DragOrigin — drawn before the Sprite/ribbon — at the layer's absolute z,
+# so its viewport snapshot contains exactly the layers below this one.
+func _ensure_blend_backbuffer(enabled: bool):
+	if enabled:
+		if _blendBackBuffer == null:
+			_blendBackBuffer = BackBufferCopy.new()
+			_blendBackBuffer.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
+			_blendBackBuffer.z_as_relative = false
+			_blendBackBuffer.z_index = z
+			dragOrigin.add_child(_blendBackBuffer)
+			dragOrigin.move_child(_blendBackBuffer, 0)
+	elif _blendBackBuffer != null:
+		_blendBackBuffer.queue_free()
+		_blendBackBuffer = null
 
 func talkBlink():
 	var faded = 0.2 * int(Global.main.editMode)
@@ -554,7 +609,10 @@ func talkBlink():
 	var value = (showOnTalk + (blinkVal*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
 	var yes = VISIBLE_TALKBLINK_STATES.has(int(value))
 	var a = max(int(yes),faded)
-	sprite.self_modulate = Color(a, a, a, a)
+	# Fold per-layer opacity into the same gray self_modulate: premultiplied content scales
+	# correctly when every channel is multiplied by o, and shader blend modes read it as COLOR.a.
+	var o = a * opacity
+	sprite.self_modulate = Color(o, o, o, o)
 	# When the sprite is only showing because of the edit-mode faded preview, render
 	# it on layer 2 so the NDI camera (layer 1 only) doesn't pick up the preview frame.
 	sprite.visibility_layer = 2 if (!yes and faded > 0) else 1

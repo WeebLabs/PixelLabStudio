@@ -146,3 +146,18 @@ When `Global.heldSprite == null`:
 - Labels: color overridden to `Color(0.35, 0.35, 0.4)`
 - Icon sprites: `modulate = Color(0.3, 0.3, 0.35)`
 - Left sidebar sections: `modulate = Color(1, 1, 1, 0.35)` (35% opacity dim)
+
+---
+
+## Opacity + Blend Strip
+
+> Added: 2026-06-04 — `ui_scenes/spriteList/blend_section.gd` (`BlendOpacitySection`)
+
+Per-layer Opacity slider + Blend-mode dropdown, pinned to the bottom of the right sidebar's
+layer-list region (above the draggable divider). Two `HBoxContainer` rows in a `VBoxContainer`
+(`separation = Global.UI_ROW_GAP`):
+
+- **Labels** ("Blend", "Opacity"): font size 12, `Color(0.75, 0.75, 0.8)`; `Color(0.35, 0.35, 0.4)` when no sprite.
+- **OptionButton** (blend dropdown): `flat` left as default, font size 12, `SIZE_EXPAND_FILL`, `custom_minimum_size = (0, 22)`. Item id == `BlendMode.Mode` int.
+- **Opacity slider**: shared slider look (same fill/grabber resources as the eye-tracking sliders), `custom_minimum_size = (0, 16)`, double-click-resettable to 1.0.
+- **Value readout** ("100%"): font size 12, `Color(0.85, 0.85, 0.9)` (heading), right-aligned, `custom_minimum_size.x = 36`.

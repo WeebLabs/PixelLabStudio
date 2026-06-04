@@ -87,6 +87,11 @@ var _divider4: ColorRect
 
 var _filter_field: LineEdit
 
+# Opacity + Blend strip, pinned to the bottom of the layer-list region (above the draggable
+# divider). Built by a dedicated module (ui_scenes/spriteList/blend_section.gd).
+var _blend_section_helper: BlendOpacitySection
+var _blend_section: VBoxContainer
+
 var _saved_collapse_states: Dictionary = {}
 var _update_generation: int = 0
 var _pending_scroll_target = null
@@ -137,6 +142,7 @@ func _ready():
 	_build_slider_styles()
 	_create_controls()
 	_create_costume_buttons()
+	_create_blend_section()
 	_create_tabs()
 	_create_details_tab()
 	_create_eye_tracking()
@@ -268,6 +274,13 @@ func _create_costume_buttons():
 	_costume_select.scale = icon_scale
 	_costume_select.visible = false
 	add_child(_costume_select)
+
+# Build the Opacity + Blend strip and hand it the shared slider styles. The sidebar
+# positions it in _apply_size (bottom of the layer-list region, above the divider).
+func _create_blend_section():
+	_blend_section_helper = BlendOpacitySection.new()
+	_blend_section = _blend_section_helper.build(self, _slider_fill_enabled,
+		_slider_fill_disabled, _slider_grabber_enabled, _slider_grabber_disabled)
 
 # Build the tab strip + the scrollable host that holds the three tab contents.
 # Only the active content is visible; the scroll lets a tall tab (Physics) grow
@@ -593,7 +606,12 @@ func _apply_size():
 	$ScrollContainer.offset_right = panel_width - 10
 	container.custom_minimum_size.x = panel_width - 20
 	var scroll_bottom = panel_height * _divider_ratio
-	$ScrollContainer.offset_bottom = scroll_bottom
+	# Opacity + Blend strip rides the bottom of the layer-list region, just above the
+	# draggable divider — it reads as part of the list (like the filter field caps the top).
+	var blend_h = _blend_section.get_combined_minimum_size().y
+	_blend_section.position = Vector2(section_x, scroll_bottom - blend_h)
+	_blend_section.size = Vector2(section_width, blend_h)
+	$ScrollContainer.offset_bottom = scroll_bottom - blend_h - Global.UI_ROW_GAP
 
 	# === Draggable scroll divider (centered between scroll and costume) ===
 	y = scroll_bottom + Global.UI_DIVIDER_PAD
@@ -646,6 +664,7 @@ func _process(_delta):
 	refreshEyeUI()
 	_sync_details_tab()
 	_physics_tab.sync()
+	_blend_section_helper.sync()
 
 	var no_sprite = Global.heldSprite == null
 	var dim = Color(0.3, 0.3, 0.35)
@@ -729,6 +748,7 @@ func scroll_to_sprite(target_sprite):
 func updateControls():
 	_sync_details_tab()
 	_physics_tab.sync()
+	_blend_section_helper.sync()
 	if Global.heldSprite == null:
 		refreshEyeUI()
 		return
@@ -1281,7 +1301,7 @@ func _input(event):
 			get_viewport().set_input_as_handled()
 		elif _divider_dragging:
 			var local = get_local_mouse_position()
-			var min_y = (CONTROLS_ROW_HEIGHT + 60.0) / panel_height
+			var min_y = (CONTROLS_ROW_HEIGHT + 60.0 + _blend_section.get_combined_minimum_size().y) / panel_height
 			var max_y = (panel_height - 280.0) / panel_height
 			_divider_ratio = clamp(local.y / panel_height, min_y, max_y)
 			_apply_size()
