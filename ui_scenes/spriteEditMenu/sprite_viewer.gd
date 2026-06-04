@@ -812,6 +812,9 @@ func _process(delta):
 	
 	_pos_label.text = "position     X : "+str(obj.position.x)+"     Y: " + str(obj.position.y)
 	_offset_label.text = "offset         X : "+str(obj.offset.x)+"     Y: " + str(obj.offset.y)
+	# Keep the rotation-limit preview's pivot in sync with the live origin: offset changes
+	# when the origin point is moved, but setImage() only sets it on selection.
+	spriteRotDisplay.offset = obj.offset
 	_layer_label.text = "layer : "+str(obj.z)
 	
 	#Sprite Rotational Limit Display
