@@ -15,6 +15,7 @@ var _name_label: Label
 var _vis_btn: Button
 var _normal_badge: Label
 var _eye_target_badge: Label
+var _eye_track_badge: TextureRect
 var _indent_spacer: Control
 var _hovered = false
 var _was_selected = false
@@ -25,6 +26,7 @@ static var _style_normal: StyleBoxFlat
 static var _style_hover: StyleBoxFlat
 static var _style_selected: StyleBoxFlat
 static var _styles_ready = false
+static var _eye_tex: Texture2D = null
 
 func _ready():
 	_init_styles()
@@ -114,6 +116,18 @@ func _ready():
 	_eye_target_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_eye_target_badge.visible = false
 	hbox.add_child(_eye_target_badge)
+
+	# Eye-tracking-enabled indicator — monochrome GPS/target glyph, just left of the show/hide
+	# button. Shown when this layer tracks; dimmer when global eye tracking is switched off.
+	_eye_track_badge = TextureRect.new()
+	_eye_track_badge.texture = _get_eye_tex()
+	_eye_track_badge.custom_minimum_size = Vector2(16, 16)
+	_eye_track_badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # honor 16x16, not the texture's native size
+	_eye_track_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_eye_track_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_eye_track_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(_eye_track_badge)
+	_update_eye_track_badge()
 
 	# Visibility toggle — pinned to right edge
 	_vis_btn = Button.new()
@@ -232,6 +246,7 @@ func _process(_delta):
 		_update_style()
 	_normal_badge.visible = sprite.hasNormalMap()
 	_eye_target_badge.visible = _is_eye_track_target()
+	_update_eye_track_badge()
 	# Refresh the eye when effective visibility changes (e.g. a parent was hidden,
 	# cascading down via the scene tree), and force a first-frame sync so the eye
 	# matches once the sprites settle visible after a session load.
@@ -246,6 +261,23 @@ func _is_eye_track_target() -> bool:
 		if spr.eyeTrackMode == 1 and spr.eyeTrackTargetId == sprite.id:
 			return true
 	return false
+
+# Tracking-enabled badge icon: a white GPS/target glyph (gps.svg), loaded once and tinted to
+# a light / dimmed gray via modulate. Shared across all rows.
+static func _get_eye_tex() -> Texture2D:
+	if _eye_tex == null:
+		_eye_tex = load("res://ui_scenes/spriteList/gps.svg")
+	return _eye_tex
+
+# Show the eye badge when this layer has eye tracking on; light gray normally, dimmer when
+# global eye tracking is switched off.
+func _update_eye_track_badge():
+	if _eye_track_badge == null or not is_instance_valid(sprite):
+		return
+	var on: bool = sprite.eyeTrack
+	_eye_track_badge.visible = on
+	if on:
+		_eye_track_badge.modulate = Color(0.78, 0.78, 0.82) if Global.eyeTrackingGloballyEnabled else Color(0.4, 0.4, 0.45)
 
 func updateChildren():
 	if childrenTags.size() > 0:
