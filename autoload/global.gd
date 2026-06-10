@@ -57,6 +57,12 @@ var originMode = false
 # usual sprite selection while this is set.
 var wigglePathMode = false
 var awaitingToggleBind = false
+# Animation-tab "Bind key" capture: while awaitingAnimKeyBind, the next background
+# keypress is written into animKeyBindClip["key"] (a live clip dict on a sprite's
+# animClips) instead of triggering animations. Set by ui_scenes/spriteEditMenu's
+# Animation tab, consumed in main.gd's bg key handler.
+var awaitingAnimKeyBind = false
+var animKeyBindClip = null
 var _origin_press_time = 0
 var scrollSelection = 0
 var _scroll_input = 0

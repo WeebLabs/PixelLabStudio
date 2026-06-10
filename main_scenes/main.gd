@@ -1360,6 +1360,10 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = data[item]["wiggleChildrenFollow"]
 		if data[item].has("blendMode"): sprite.blendMode = data[item]["blendMode"]
 		if data[item].has("opacity"): sprite.opacity = data[item]["opacity"]
+		if data[item].has("animClips"):
+			sprite.animClips = str_to_var(data[item]["animClips"])
+		else:
+			sprite.migrateLegacyWobble()  # old save: fold wobble into a clip
 		if data[item].has("normalPath"):
 			sprite.normalPath = data[item]["normalPath"]
 
@@ -2010,6 +2014,7 @@ func _build_avatar_save_data() -> Dictionary:
 				"opacity": child.opacity,
 				"ndiRefLayer": child.ndiRefLayer,
 				"normalPath": child.normalPath,
+				"animClips": var_to_str(child.animClips),
 			}
 			if child.normalImageData != null:
 				data[id]["_normal_image_ref"] = child.normalImageData
@@ -2652,6 +2657,8 @@ func _on_duplicate_button_pressed():
 	sprite.blendMode = Global.heldSprite.blendMode
 	sprite.opacity = Global.heldSprite.opacity
 
+	sprite.animClips = Global.heldSprite.animClips.duplicate(true)
+
 	origin.add_child(sprite)
 
 	if Global.heldSprite.parentId != null and Global.heldSprite.parentSprite != null:
@@ -2762,7 +2769,15 @@ func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
 	if keyStrings.size() <= 0:
 		emit_signal("emptiedCapture")
 		return
-	
+
+	# Animation tab "Bind key": capture the next key into the target clip instead
+	# of triggering anything.
+	if Global.awaitingAnimKeyBind and Global.animKeyBindClip != null:
+		Global.animKeyBindClip["key"] = keyStrings[0]
+		Global.awaitingAnimKeyBind = false
+		Global.animKeyBindClip = null
+		return
+
 	if settingsMenu.awaitingCostumeInput >= 0:
 		
 		if keyStrings[0] == "Keycode1":
@@ -2780,6 +2795,14 @@ func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
 		var i = costumeKeys.find(key)
 		if i >= 0:
 			changeCostume(i+1)
+
+	# Animation key triggers — fire every layer's key-bound clips. Skipped while
+	# binding a costume key or typing into a text field.
+	if settingsMenu.awaitingCostumeInput < 0 and not Global._is_any_field_focused():
+		for key in keyStrings:
+			for s in get_tree().get_nodes_in_group("saved"):
+				if s.type == "sprite":
+					s.triggerAnimationKey(key)
 	
 
 

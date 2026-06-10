@@ -119,6 +119,17 @@ var eyeTrackForward = 0  # DEPRECATED (2026-06-04): the "Up side" control was re
 var _eyeTrackOffset = Vector2.ZERO
 var _eyeTrackRotation = 0.0  # runtime: smoothed eye-track rotation, radians (Rotation mode)
 
+# Animation clips — per-layer keyframe/transform animations (rotation + translation),
+# evaluated by effects/animation/layer_animator.gd. Triggered at random, by keypress,
+# always-on, or manually. The legacy wobble (xFrq/xAmp/yFrq/yAmp) migrates into an
+# always-on oscillate/translation clip here (see migrateLegacyWobble). Persisted as
+# animClips (var_to_str). _animRot rides DragOrigin (so it also swings the wiggle
+# chain); _animTrans feeds WobbleOrigin.position in wobble().
+var animClips: Array = []
+var _animator = null
+var _animRot := 0.0
+var _animTrans := Vector2.ZERO
+
 # Blend mode + opacity (per-layer compositing). blendMode is a BlendMode.Mode int;
 # opacity (0..1) is folded into the talk/blink self_modulate every frame (see talkBlink).
 # Normal/Add/Subtract render natively; the rest use the blend shader + a BackBufferCopy
@@ -464,6 +475,7 @@ func _process(delta):
 	if Global.main != null and Global.main.resize_active:
 		return
 	tick += 1
+	_anim_update(delta)
 	if Global.heldSprite == self:
 
 		grabArea.visible = true
@@ -517,6 +529,12 @@ func _process(delta):
 	# into its own _micRot (not sprite.rotation), so the look-at is added cleanly here
 	# without feeding back into that smoothing (which compounded into a runaway spin).
 	sprite.rotation = _micRot + _eyeTrackRotation
+
+	# Animation rotation rides on DragOrigin (outermost on the layer), so it swings
+	# the visible Sprite2D AND, for wiggle layers, the mesh + chain anchor — the
+	# twitch drives the verlet chain into secondary motion. Suppressed while tracing
+	# a wiggle path (the editor works over the static, un-rotated sprite).
+	dragOrigin.rotation = 0.0 if _wigglePathEditor != null else _animRot
 
 	if grabDelay > 0:
 		grabDelay -= 1
@@ -779,8 +797,10 @@ func wobble():
 	# Skip wobble while NDI ruler is being dragged (frozen at worst-case-down)
 	if Global.main.ndi_manager != null and Global.main.ndi_manager.ruler_dragging:
 		return
-	wob.position.x = sin(tick*xFrq)*xAmp
-	wob.position.y = sin(tick*yFrq)*yAmp
+	# Base layer translation comes from animation clips (the legacy wobble migrates
+	# into an oscillate/translation clip that reproduces sin(tick*freq)*amp exactly).
+	# Eye-track then adds its offset on top, below.
+	wob.position = _animTrans
 
 	# Look-at target: either the cursor (mode 0) or another sprite's live position (mode 1).
 	# Global.eyeTrackingGloballyEnabled is the kill switch from global-scope UI; sprite-level
@@ -857,6 +877,44 @@ func stretch(length,delta):
 	var target = Vector2(1.0-yvel,1.0+yvel)
 
 	sprite.scale = lerp(sprite.scale,target,0.5)
+
+# --- Animation clips ---
+
+# Advance this layer's animation clips one frame; results land in _animRot /
+# _animTrans (consumed by the rotation composite and wobble() respectively).
+func _anim_update(delta):
+	if _animator == null:
+		_animator = LayerAnimator.new()
+	_animator.evaluate(animClips, tick, delta)
+	_animRot = _animator.rot
+	_animTrans = _animator.trans
+
+# Fire every key-triggered clip bound to keystr (called from main.gd's background
+# key handler). Cheap no-op when this layer has no key clips.
+func triggerAnimationKey(keystr: String):
+	if _animator == null:
+		_animator = LayerAnimator.new()
+	_animator.fire_key(animClips, keystr)
+
+# Fire a single clip's one-shot now (the Animation tab "Test" button).
+func triggerAnimationClip(i: int):
+	if _animator == null:
+		_animator = LayerAnimator.new()
+	_animator.fire_clip(animClips, i)
+
+# Back-compat: fold a legacy wobble (xFrq/xAmp/yFrq/yAmp) into an always-on
+# oscillate/translation clip. Called on load for avatars saved before animClips
+# existed. The legacy fields are left intact (older app builds still read them).
+func migrateLegacyWobble():
+	if xAmp == 0.0 and yAmp == 0.0:
+		return
+	animClips.append({
+		"name": "Wobble",
+		"channel": "translation",
+		"shape": "oscillate",
+		"trigger": "always",
+		"ampX": xAmp, "freqX": xFrq, "ampY": yAmp, "freqY": yFrq,
+	})
 
 # --- Wiggle (physics) ---
 

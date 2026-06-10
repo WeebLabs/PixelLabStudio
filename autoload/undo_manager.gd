@@ -93,6 +93,7 @@ func _snapshot() -> Dictionary:
 			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
 			data[idx]["blendMode"] = child.blendMode
 			data[idx]["opacity"] = child.opacity
+			data[idx]["animClips"] = child.animClips.duplicate(true)
 
 			if child.normalImageData != null:
 				if !_normal_cache.has(child.id):
@@ -272,6 +273,7 @@ func _restore(data: Dictionary):
 		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
 		if d.has("blendMode"): sprite.blendMode = d["blendMode"]
 		if d.has("opacity"): sprite.opacity = d["opacity"]
+		if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
 		# Resync the bend material/chain to the restored enabled state, then the blend
 		# material/backbuffer (after setWiggle so the recreated ribbon gets the right material).
 		sprite.setWiggle(sprite.wiggleEnabled)
@@ -368,6 +370,7 @@ func _add_sprite_from_data(d: Dictionary):
 	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
 	if d.has("blendMode"): sprite.blendMode = d["blendMode"]
 	if d.has("opacity"): sprite.opacity = d["opacity"]
+	if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
 	if d.has("normalImageData") and d["normalImageData"] != null:
 		sprite.loadedNormalImage = d["normalImageData"]
 		sprite.normalPath = d.get("normalPath", "")

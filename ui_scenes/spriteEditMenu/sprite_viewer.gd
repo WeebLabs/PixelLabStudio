@@ -48,6 +48,14 @@ var _sliders: Array = []
 var _buttons: Array = []
 var _sections: Array = []
 
+# Sidebar tabs (below the sprite-sheet section): Animation (clip list + inspector,
+# absorbs the old wobble) and Reactive (drag / rotational drag + limits / squash).
+var _tab_bar: SidebarTabBar
+var _active_left_tab: int = 0
+var _anim_panel: AnimationClipPanel
+var _anim_section: Node2D       # Node2D wrapper so _place_section can lay it out
+var _anim_panel_root: Control   # the clip-panel VBox (sized via _resizables)
+
 var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
@@ -167,9 +175,14 @@ func _ready():
 	_slider_vbox = _build_section_vbox($Slider, Vector2(9, 155), 223,
 		[_drag_label, _drag_slider])
 
-	# WobbleControl — 4 label+slider pairs (xFrq, xAmp, yFrq, yAmp). Stacked
-	# uniformly with no extra mid-section spacer, so the section's internal
-	# spacing matches every other section.
+	# WobbleControl (legacy x/y wobble sliders) — wobble is now authored as an
+	# oscillate/translation clip in the Animation tab, so this scene section is
+	# hidden and left out of the layout. Old saves fold their wobble into a clip
+	# via spriteObject.migrateLegacyWobble(). The handler funcs + scene signal
+	# connections are kept (a hidden slider can't emit) so the .tscn stays valid.
+	$WobbleControl.visible = false
+	# Cache the hidden widget refs anyway so the legacy _on_x_frq_value_changed etc.
+	# handlers (still wired in the .tscn) hold valid nodes rather than nulls.
 	_xfrq_label = $WobbleControl/xFrqLabel
 	_xfrq_slider = $WobbleControl/xFrq
 	_xamp_label = $WobbleControl/xAmpLabel
@@ -178,9 +191,6 @@ func _ready():
 	_yfrq_slider = $WobbleControl/yFrq
 	_yamp_label = $WobbleControl/yAmpLabel
 	_yamp_slider = $WobbleControl/yAmp
-	_wobble_vbox = _build_section_vbox($WobbleControl, Vector2(12, 240), 223,
-		[_xfrq_label, _xfrq_slider, _xamp_label, _xamp_slider,
-		 _yfrq_label, _yfrq_slider, _yamp_label, _yamp_slider])
 
 	# Rotation — squash + rDrag (note: scene order has squash first visually)
 	_squash_label = get_node("Rotation/squashlabel")
@@ -209,8 +219,6 @@ func _ready():
 	# Collect interactive controls for enable/disable toggling
 	_sliders = [
 		_drag_slider,
-		_xfrq_slider, _xamp_slider,
-		_yfrq_slider, _yamp_slider,
 		_rdrag_slider, _squash_slider,
 		_rot_min_slider, _rot_max_slider,
 		_anim_speed_slider, _anim_frames_slider,
@@ -218,10 +226,6 @@ func _ready():
 
 	# Right-click resets each sprite-property slider to spriteObject.gd's factory default
 	Global.make_slider_resettable(_drag_slider, 0)
-	Global.make_slider_resettable(_xfrq_slider, 0)
-	Global.make_slider_resettable(_xamp_slider, 0)
-	Global.make_slider_resettable(_yfrq_slider, 0)
-	Global.make_slider_resettable(_yamp_slider, 0)
 	Global.make_slider_resettable(_rdrag_slider, 0)
 	Global.make_slider_resettable(_squash_slider, 0)
 	Global.make_slider_resettable(_rot_min_slider, -180)
@@ -234,11 +238,9 @@ func _ready():
 	# Sections to dim when no sprite is selected
 	_sections = [
 		_preview,
-		$Position, $Buttons, $Slider, $WobbleControl,
+		$Position, $Buttons, $Slider,
 		$Rotation, $RotationalLimits, $Animation,
 	]
-	_xamp_slider.max_value = 512.0
-	_yamp_slider.max_value = 512.0
 
 	_set_controls_enabled(false)
 	setImage()
@@ -274,8 +276,6 @@ func _ready():
 	# Restyle labels to match right sidebar
 	var _labels = [
 		_drag_label,
-		_xfrq_label, _xamp_label,
-		_yfrq_label, _yamp_label,
 		_rdrag_label, _squash_label,
 		_rot_min_label, _rot_max_label,
 		_anim_frames_label, _anim_speed_label,
@@ -356,6 +356,31 @@ func _ready():
 	# Now that the controls VBox exists, set the bounds Control's full height.
 	_rot_bounds.custom_minimum_size.y = (ROT_RADIUS * 2 + ROT_CONTROLS_GAP
 		+ _rot_controls_vbox.get_combined_minimum_size().y)
+
+	# --- Animation / Reactive tab strip (sits below the sprite-sheet section) ---
+	# Animation tab = the clip list + inspector (absorbs the old wobble); Reactive
+	# tab = drag, rotational drag + limits, squash. Reuses the right sidebar's
+	# SidebarTabBar. The clip panel is wrapped in a Node2D so _place_section lays
+	# it out like every other section.
+	_tab_bar = SidebarTabBar.new()
+	add_child(_tab_bar)
+	_tab_bar.add_tab("Animation")
+	_tab_bar.add_tab("Reactive")
+	_tab_bar.tab_changed.connect(_on_left_tab_changed)
+
+	_anim_panel = AnimationClipPanel.new()
+	_anim_section = Node2D.new()
+	_anim_section.name = "AnimationTab"
+	add_child(_anim_section)
+	_anim_panel_root = _anim_panel.build(_slider_fill_enabled, _slider_fill_disabled,
+		_slider_grabber_enabled, _slider_grabber_disabled, _layout_panel)
+	_anim_panel_root.position = Vector2(11, 0)
+	_anim_section.add_child(_anim_panel_root)
+	_resizables.append([_anim_panel_root, 42])
+
+	_active_left_tab = clampi(int(Saving.settings.get("leftSidebarTab", 0)), 0, 1)
+	_tab_bar.set_active(_active_left_tab, false)
+	_apply_tab_visibility()
 
 	# Lay out the panel: sections stack sequentially below the normal-map row,
 	# each section sized to its own content height; dividers fall in the
@@ -551,18 +576,6 @@ func setImage():
 	_drag_label.text = "drag: " + str(Global.heldSprite.dragSpeed)
 	_drag_slider.set_value_no_signal(Global.heldSprite.dragSpeed)
 
-	_xfrq_label.text = "x frequency: " + str(Global.heldSprite.xFrq)
-	_xamp_label.text = "x amplitude: " + str(Global.heldSprite.xAmp)
-
-	_xfrq_slider.set_value_no_signal(Global.heldSprite.xFrq)
-	_xamp_slider.set_value_no_signal(Global.heldSprite.xAmp)
-
-	_yfrq_label.text = "y frequency: " + str(Global.heldSprite.yFrq)
-	_yamp_label.text = "y amplitude: " + str(Global.heldSprite.yAmp)
-
-	_yfrq_slider.set_value_no_signal(Global.heldSprite.yFrq)
-	_yamp_slider.set_value_no_signal(Global.heldSprite.yAmp)
-
 	_rdrag_label.text = "rotational drag: " + str(Global.heldSprite.rdragStr)
 	_rdrag_slider.set_value_no_signal(Global.heldSprite.rdragStr)
 
@@ -612,39 +625,76 @@ func _place_section(section: Node2D, content: Control, y: float):
 # instead, so the divider has visible breathing room without affecting any
 # other gap. No other pixel constants.
 func _layout_panel():
+	# Re-runnable (called on tab switch): clear dividers from the prior pass so
+	# they don't accumulate.
+	for d in _dividers:
+		d.queue_free()
+	_dividers.clear()
+
 	# Layout cursor starts flush with the bottom of the normal-map row; the
 	# loop treats the normal-row → Position transition like every other
 	# divider-marked section boundary.
 	var y = _normal_section.position.y + _normal_section.size.y
 
+	# Header — always visible (Position info + sprite-sheet frames/speed).
 	# Each entry: [section_node, content_control, has_divider_above]
-	# RotationalLimits is last; its trailing gap is irrelevant.
-	var sections = [
-		[$Position,         _position_vbox,  true],
-		[$Animation,        _animation_vbox, true],
-		[$Slider,           _slider_vbox,    false],
-		[$Rotation,         _rotation_vbox,  false],
-		[$WobbleControl,    _wobble_vbox,    true],
-		[$RotationalLimits, _rot_bounds,     true],
-	]
+	for entry in [[$Position, _position_vbox, true], [$Animation, _animation_vbox, true]]:
+		y = _place_entry(y, entry[0], entry[1], entry[2])
 
-	for entry in sections:
-		var section: Node2D = entry[0]
-		var content: Control = entry[1]
-		var divider_above: bool = entry[2]
-		if divider_above:
-			y += Global.UI_DIVIDER_PAD
-			_create_divider(y)
-			y += Global.UI_DIVIDER_PAD
-		else:
-			y += Global.UI_ROW_GAP
-		_place_section(section, content, y)
-		y += content.get_combined_minimum_size().y
+	# Tab strip, with a divider above it.
+	y += Global.UI_DIVIDER_PAD
+	_create_divider(y)
+	y += Global.UI_DIVIDER_PAD
+	_tab_bar.position = Vector2(11, y)
+	_tab_bar.set_bar_size(max(0.0, panel_width - 22))
+	y += SidebarTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
+
+	# Active tab content.
+	var tab_sections: Array
+	if _active_left_tab == 0:
+		tab_sections = [[_anim_section, _anim_panel_root, false]]
+	else:
+		tab_sections = [
+			[$Slider,           _slider_vbox,    false],
+			[$Rotation,         _rotation_vbox,  false],
+			[$RotationalLimits, _rot_bounds,     true],
+		]
+	for entry in tab_sections:
+		y = _place_entry(y, entry[0], entry[1], entry[2])
 
 	# Final layout cursor = bottom of the last section. Used by the scroll
 	# clamp so we always allow scrolling all the way to the actual end of
 	# content (the previous hardcoded ~1150 estimate was stale).
 	content_height = y + Global.UI_DIVIDER_PAD  # small bottom padding
+
+# Place one section, advancing the layout cursor. A divider-marked boundary uses
+# UI_DIVIDER_PAD on each side; otherwise a single UI_ROW_GAP.
+func _place_entry(y: float, section: Node2D, content: Control, divider_above: bool) -> float:
+	if divider_above:
+		y += Global.UI_DIVIDER_PAD
+		_create_divider(y)
+		y += Global.UI_DIVIDER_PAD
+	else:
+		y += Global.UI_ROW_GAP
+	_place_section(section, content, y)
+	return y + content.get_combined_minimum_size().y
+
+# Show only the active tab's sections (hide the other tab's so they don't render
+# at stale positions or eat clicks).
+func _apply_tab_visibility():
+	var anim := _active_left_tab == 0
+	_anim_section.visible = anim
+	$Slider.visible = not anim
+	$Rotation.visible = not anim
+	$RotationalLimits.visible = not anim
+
+func _on_left_tab_changed(index: int):
+	_active_left_tab = index
+	Saving.settings["leftSidebarTab"] = index
+	Saving.write_settings(Saving.settingsPath)
+	_apply_tab_visibility()
+	_layout_panel()
+	_apply_size()
 
 # Build a VBoxContainer inside a scene-defined section node, place it at the
 # original first-widget offset, and reparent the section's widgets into it
@@ -698,6 +748,8 @@ func _apply_size():
 	for div in _dividers:
 		# Match the section VBoxes' content width (margin 42 = 265 - 223).
 		div.size.x = panel_width - 42
+	if _tab_bar:
+		_tab_bar.set_bar_size(max(0.0, panel_width - 22))
 
 	# Scale the layer preview and the rotation circle when the panel is
 	# narrower than its default; both stay at full size when wider. Both are
@@ -796,6 +848,10 @@ func _input(event):
 
 func _process(delta):
 	_apply_size()
+
+	# Sync the Animation tab (clip list + inspector) to the current selection.
+	# Dims itself when nothing is selected; rebuilds/relayouts on structural change.
+	_anim_panel.sync()
 
 	coverCollider.disabled = Global.heldSprite == null
 
