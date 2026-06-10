@@ -19,6 +19,8 @@ const _SHAPES := ["twitch", "oscillate"]
 const _SHAPE_LABELS := ["Twitch (one-shot)", "Oscillate (loop)"]
 const _TRIGGERS := ["always", "random", "key", "manual"]
 const _TRIGGER_LABELS := ["Always", "Random", "Key press", "Manual / Test"]
+const _CURVES := ["smooth", "ease", "snap", "spring", "pulse"]
+const _CURVE_LABELS := ["Smooth", "Ease in-out", "Snap", "Spring", "Pulse"]
 
 const _BODY := Color(0.75, 0.75, 0.8)
 const _ACCENT := Color(1.0, 0.7, 0.8)
@@ -126,7 +128,8 @@ func _struct_sig(spr, clips: Array) -> String:
 	var s := str(spr.get_instance_id()) + "|" + str(clips.size()) + "|" + str(_selected)
 	if _selected >= 0 and _selected < clips.size():
 		var c: Dictionary = clips[_selected]
-		s += "|" + str(c.get("channel", "")) + "|" + str(c.get("shape", "")) + "|" + str(c.get("trigger", ""))
+		s += "|" + str(c.get("channel", "")) + "|" + str(c.get("shape", "")) \
+			+ "|" + str(c.get("trigger", "")) + "|" + str(c.get("curve", ""))
 	return s
 
 # Update live values without rebuilding (handles undo of slider/name edits).
@@ -218,7 +221,17 @@ func _build_inspector(c: Dictionary) -> void:
 			_slider("amount: ", "amount", 1, 90, 1, false, "°", 15.0)
 			_slider("speed: ", "speed", 0.2, 5, 0.05, false, "", 1.5)
 
-	# Oscillate is continuous; it ignores the trigger, so only twitch shows one.
+	# Curve picker (twitch only — oscillate is a sine wave).
+	if shape == "twitch":
+		_dropdown("Curve", _CURVE_LABELS, _CURVES, String(c.get("curve", "smooth")), "curve")
+
+	# Live curve + progress preview: the dot rides the curve whenever the clip
+	# plays (Test or an organic trigger). For oscillate it shows the sine cycling.
+	var graph := AnimationCurveGraph.new()
+	graph.configure(String(c.get("curve", "smooth")), shape, _selected)
+	_inspector.add_child(graph)
+
+	# Oscillate is continuous (always-on); only twitch has a trigger + Test.
 	if shape == "twitch":
 		_dropdown("Trigger", _TRIGGER_LABELS, _TRIGGERS, String(c.get("trigger", "random")), "trigger")
 		var trig := String(c.get("trigger", "random"))
@@ -232,12 +245,12 @@ func _build_inspector(c: Dictionary) -> void:
 			_bind_btn.pressed.connect(_on_bind_pressed)
 			_inspector.add_child(_bind_btn)
 
-	var test := Button.new()
-	test.text = "▶ Test"
-	test.add_theme_font_size_override("font_size", 12)
-	test.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	test.pressed.connect(_on_test_pressed)
-	_inspector.add_child(test)
+		var test := Button.new()
+		test.text = "▶ Test"
+		test.add_theme_font_size_override("font_size", 12)
+		test.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		test.pressed.connect(_on_test_pressed)
+		_inspector.add_child(test)
 
 func _on_test_pressed() -> void:
 	if Global.heldSprite != null:
@@ -359,6 +372,7 @@ func _new_clip() -> Dictionary:
 		"channel": "rotation",
 		"shape": "twitch",
 		"trigger": "random",
+		"curve": "smooth",
 		"amount": 15.0,
 		"speed": 1.5,
 		"chance": 200,

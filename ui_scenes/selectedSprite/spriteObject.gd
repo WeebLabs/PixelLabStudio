@@ -902,6 +902,12 @@ func triggerAnimationClip(i: int):
 		_animator = LayerAnimator.new()
 	_animator.fire_clip(animClips, i)
 
+# Live {active, ph} of clip i for the Animation tab's curve-preview dot.
+func getAnimSample(i: int) -> Dictionary:
+	if _animator == null:
+		return {"active": false, "ph": 0.0}
+	return _animator.sample(i)
+
 # Back-compat: fold a legacy wobble (xFrq/xAmp/yFrq/yAmp) into an always-on
 # oscillate/translation clip. Called on load for avatars saved before animClips
 # existed. The legacy fields are left intact (older app builds still read them).
