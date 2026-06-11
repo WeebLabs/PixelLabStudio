@@ -12,11 +12,16 @@ parenting workflow.
 - [How it compares to PNGTuber Plus](#how-it-compares-to-pngtuber-plus)
 - [Who it's for](#who-its-for)
 - [GUI design](#gui-design)
-- [Getting started](#getting-started)
+- [Getting started (for avatar owners)](#getting-started-for-avatar-owners)
   - [1. Download and launch](#1-download-and-launch)
-  - [2. Loading an avatar](#2-loading-an-avatar)
-  - [3. Editing](#3-editing)
-  - [4. NDI into OBS](#4-ndi-into-obs)
+  - [2. Load your avatar](#2-load-your-avatar)
+  - [3. Set up your microphone](#3-set-up-your-microphone)
+  - [4. Get to know your avatar](#4-get-to-know-your-avatar)
+  - [5. Go live with OBS (streaming and Discord)](#5-go-live-with-obs-streaming-and-discord)
+- [For creators (building your own rig)](#for-creators-building-your-own-rig)
+  - [Importing a PSD or PNGs](#importing-a-psd-or-pngs)
+  - [Rigging and editing](#rigging-and-editing)
+  - [Saving your work](#saving-your-work)
 - [Features in detail](#features-in-detail)
   - [Animation and physics](#animation-and-physics)
   - [Layer system](#layer-system)
@@ -142,73 +147,179 @@ The whole UI lives on a CanvasLayer, so it stays put when you pan or zoom
 the canvas. Spacing follows two shared constants (a per-row gap and a
 divider padding) so adjusting one value reflows the whole panel.
 
-## Getting started
+## Getting started (for avatar owners)
+
+> **This section is for people who bought a ready-made avatar** and just
+> want to get it on screen and into a stream or a Discord call. You don't
+> need any art or software experience — if you've got the `.save` file
+> that came with your purchase, you're a few minutes away from your
+> character talking along with you.
+>
+> If instead you want to *build* an avatar from scratch — importing
+> Photoshop files, arranging sprites, setting up the physics — head to
+> [For creators](#for-creators-building-your-own-rig) below.
 
 ### 1. Download and launch
 
-Grab the latest release for your platform from the Releases page.
+Grab the latest release for your platform from the
+[Releases page](https://github.com/WeebLabs/PixelLabStudio/releases).
 
-- **macOS**: a `.dmg` containing `PixelLab Studio.app`. Drag it to
-  Applications. On first run, macOS may show a Gatekeeper warning;
-  right-click the app and choose Open.
-- **Windows**: a `.zip` containing the executable. Extract it anywhere
-  and run.
+- **macOS**: you'll get a `.dmg` file. Open it and drag **PixelLab
+  Studio** into your Applications folder. The first time you open it,
+  macOS may warn that it's from an unidentified developer — that's
+  normal for indie apps. Right-click (or Control-click) the app icon and
+  choose **Open**, then confirm. You only have to do this once.
+- **Windows**: you'll get a `.zip` file. Right-click it, choose **Extract
+  All**, then open the folder and double-click `PixelLab Studio.exe`. You
+  can move that folder anywhere you like (for example, your Desktop).
 
-On first launch you'll see an empty canvas. Use Import or Load from the
-top menu to bring a character in.
+When the app opens you'll see an empty stage with some controls along the
+edges. Next we'll bring your character in.
 
-### 2. Loading an avatar
+### 2. Load your avatar
 
-Three ways to start:
+Your purchase came with a **`.save` file** — that single file *is* your
+avatar (artwork, layers, and movement all bundled together).
 
-- **Import a PSD.** Pick a `.psd` from Import. Each Photoshop layer
-  becomes a sprite, groups become parent relationships, and the rig is
-  positioned around the world origin. Layers ending in `_NRML`
-  (case-insensitive) auto-pair as normal maps for their matching diffuse
-  layer.
-- **Import PNGs.** Import accepts one or more `.png` files. Once they're
-  in the scene you can set frame count (for sprite sheets), parents, and
-  per-sprite properties.
-- **Load a saved rig.** Load opens a `.save` file from any previous
-  session. The most recently saved or loaded avatar reopens
-  automatically the next time you launch the app.
+1. Click **Load** in the menu bar across the top.
+2. In the file window that opens, find the `.save` file you downloaded
+   (check your Downloads folder if you're not sure where it went) and
+   open it.
 
-Save with Save in the top menu. A progress bar appears while images
-encode, then a confirmation toast appears on completion. Saves default
-to the user data directory; the native file picker lets you navigate
-anywhere from there.
+Your character appears on the stage. That's it — you don't need to set
+anything up. The next time you launch the app, your avatar **reopens
+automatically**, so you only have to load it this once.
 
-### 3. Editing
+### 3. Set up your microphone
 
-Click any sprite on the canvas to select it; its controls appear in the
+This is what makes the magic happen: the app listens to your mic and your
+avatar's mouth moves when you talk.
+
+1. Click the **gear icon** in the bottom-right corner to open settings.
+2. Find the **microphone** option and pick the same mic you use for
+   streaming or calls (a headset, USB mic, etc.).
+3. Speak normally and watch the meters next to the mic icon move. If your
+   avatar isn't reacting, nudge the **sensitivity** up; if it looks like
+   it's talking constantly, nudge it down.
+
+To **mute** quickly, right-click the mic icon in the bottom-right corner.
+
+### 4. Get to know your avatar
+
+A few things worth knowing so you feel at home:
+
+- **Costumes / outfits.** If your avatar came with extra looks, press the
+  number keys **`1`–`0`** to switch between them on the fly.
+- **Move the camera.** Scroll to zoom in or out, and hold the middle
+  mouse button (or spacebar) to drag the view around. This only changes
+  what *you* see — it doesn't affect your stream.
+- **Edit mode.** The button in the bottom-right corner toggles edit mode.
+  With it on, you can click your avatar and **drag it to reposition** it,
+  or use the on-screen handles to **resize** it so it sits where you want
+  on screen. Turn edit mode back off when you're done so you don't move
+  things by accident.
+- **Reset a setting.** If you ever change a slider and want it back to how
+  it was, right-click that slider.
+
+That's all most people ever need. If you get curious later, the
+[Features in detail](#features-in-detail) section and the
+[keyboard shortcuts list](docs/keyboard_shortcuts.md) cover everything
+else.
+
+### 5. Go live with OBS (streaming and Discord)
+
+PixelLab Studio sends your avatar to OBS as a clean, **transparent video
+source** — no green screen and no screen-grabbing a window. Here's the
+one-time setup.
+
+**In PixelLab Studio:**
+
+1. Open settings (the **gear icon**, bottom-right) and turn on **NDI
+   Output**. (NDI is just the technology that carries the video to OBS —
+   you don't need to understand it, only switch it on.)
+2. Leave the source name as is, or give it a name you'll recognize in the
+   next step.
+
+**In OBS (one-time install):**
+
+3. If you've never used NDI with OBS, install the free **DistroAV**
+   plugin from
+   [distroav.org](https://github.com/DistroAV/DistroAV), then restart
+   OBS.
+
+**In OBS (add your avatar):**
+
+4. Under **Sources**, click **+** → **NDI Source**.
+5. In the dropdown, choose **PixelLab Studio** (or the name you set), then
+   click **OK**.
+
+Your avatar now appears in OBS with a see-through background, ready to
+layer over your game, camera, or scene. Back in PixelLab Studio you'll
+see a dashed **orange line** across the stage — that's the bottom edge of
+what OBS receives. Drag it up if you only want a head-and-shoulders view.
+The framing follows your avatar automatically as it moves.
+
+**Using your avatar on Discord (or Zoom, Meet, etc.):**
+
+Discord can't read NDI directly, but OBS bridges the gap with a built-in
+**Virtual Camera**:
+
+6. In OBS, click **Start Virtual Camera** (right-hand controls).
+7. In Discord, open **User Settings → Voice & Video** (or your video
+   options on a call) and choose **OBS Virtual Camera** as your camera.
+
+Your avatar now shows up anywhere that picks a webcam. The same OBS setup
+covers both your stream and your calls, so you only build it once.
+
+## For creators (building your own rig)
+
+The steps above assume someone already assembled your avatar for you. If
+you're making one yourself — or tweaking the rigging of one you bought —
+this is where you bring in artwork and wire up how the pieces move. This
+part expects some comfort with layered image files (Photoshop/PSD) and a
+bit of patience for fiddling with settings.
+
+### Importing a PSD or PNGs
+
+Two ways to bring artwork in, both from **Import** in the top menu bar:
+
+- **Import a PSD.** Pick a `.psd` and each Photoshop layer becomes its
+  own sprite, Photoshop groups become parent/child relationships, and the
+  whole rig is positioned around the world origin. Layers whose names end
+  in `_NRML` (case-insensitive) automatically pair up as normal maps for
+  their matching artwork layer — handy for lighting later.
+- **Import PNGs.** Import also accepts one or more `.png` files. Once
+  they're on the stage you can set a frame count (for sprite-sheet
+  animations like talking mouths), choose parents, and tune each sprite's
+  properties individually.
+
+### Rigging and editing
+
+Click any sprite on the stage to select it; its controls appear in the
 left sidebar. Right-click any slider to reset that property to its
 default.
 
-To set a sprite's pivot point (the white dot), use origin mode and drag
-the dot to the desired pivot. To parent one sprite to another, use the
-Link button at the top of the right sidebar and connect the child to its
-parent. Eye-tracking layer mode uses a similar pick-and-connect flow from
-the Pick button next to the eye-tracking mode dropdown.
+- **Pivot points.** To set where a sprite rotates from (the white dot),
+  enter origin mode and drag the dot to the spot you want.
+- **Parenting.** To attach one sprite to another so it follows along, use
+  the **Link** button at the top of the right sidebar and connect the
+  child to its parent.
+- **Eye tracking.** Layer mode uses the same pick-and-connect flow: hit
+  the **Pick** button next to the eye-tracking mode dropdown and draw a
+  line to the sprite the eyes should follow.
 
-For a full list of keyboard shortcuts (editing, camera, undo/redo,
+For the full set of keyboard shortcuts (editing, camera, undo/redo,
 recording, costumes, mouse interactions, and the Mac-specific notes on
-modifier keys), see [docs/keyboard_shortcuts.md](docs/keyboard_shortcuts.md).
+modifier keys), see
+[docs/keyboard_shortcuts.md](docs/keyboard_shortcuts.md).
 
-### 4. NDI into OBS
+### Saving your work
 
-1. Open the settings menu (gear icon, bottom-right) and turn on **NDI
-   Output**.
-2. Optionally set the NDI source name (this is what OBS will see).
-3. In OBS, install the obs-ndi plugin
-   ([DistroAV](https://github.com/DistroAV/DistroAV)) if you don't have
-   it.
-4. Add Source → NDI Source, pick `PixelLab Studio` (or your custom name)
-   from the dropdown.
-
-The avatar shows up in OBS with a transparent background. A dashed
-orange line on the canvas marks the bottom crop boundary for the NDI
-frame. Drag it up to crop tighter for a head-and-shoulders shot. The
-NDI output dynamically reframes based on the rig.
+Click **Save** in the top menu. A progress bar appears while the images
+encode, followed by a confirmation message when it's done. Saves default
+to the app's data folder, but the file window lets you navigate anywhere
+— and the resulting `.save` file is exactly the kind of self-contained
+avatar file an end user loads in step 2 above.
 
 ## Features in detail
 
