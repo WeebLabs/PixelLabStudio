@@ -181,22 +181,33 @@ it.
 
 ### 2. Load your avatar
 
-Your purchase came with a **`.save` file** — that single file *is* your
-avatar (artwork, layers, and movement all bundled together). Loading it
-takes a moment because the menu with the **Load** button only appears
-once you switch the app into **Edit mode**. Follow these steps in order:
+Your purchase downloads as a **`.zip` file**. Inside it is a **`.save`
+file** — that single file *is* your avatar (artwork, layers, and movement
+all bundled together). Before you can load it, you need to **unzip
+(extract)** the download so the app can see the `.save` file inside.
+Follow these steps in order:
 
-1. Look at the **bottom-right corner** of the window. Find the **pencil
-   icon** (it sits near the microphone and gear icons) and click it. This
-   switches the app from display mode into **Edit mode**.
-2. A **menu bar now appears across the top** of the window, with buttons
+1. Find the **`.zip` file** you downloaded (usually in your **Downloads**
+   folder) and extract it:
+   - **Windows**: right-click the `.zip`, choose **Extract All…**, then
+     click **Extract**. A new folder opens with the contents inside.
+   - **macOS**: double-click the `.zip`. A new folder with the same name
+     appears right next to it.
+   You should now see a **`.save` file** in the extracted folder — that's
+   your avatar. (Loading straight from inside the `.zip` won't work, which
+   is why this step matters.)
+2. Now open the app's loading menu. In the **bottom-right corner** of the
+   window, find the **pencil icon** (it sits near the microphone and gear
+   icons) and click it. This switches the app from display mode into
+   **Edit mode**.
+3. A **menu bar now appears across the top** of the window, with buttons
    like Exit, Import, Save, and **Load**.
-3. Click **Load** in that top menu bar.
-4. A file window opens (Finder on macOS, File Explorer on Windows). Find
-   the `.save` file you downloaded — if you're not sure where it went,
-   check your **Downloads** folder — click it, and choose **Open**.
-5. Your character appears on the stage. 🎉
-6. When you're happy, click **Exit** at the far-left of the top menu bar
+4. Click **Load** in that top menu bar.
+5. A file window opens (Finder on macOS, File Explorer on Windows).
+   Navigate to the **extracted folder** from step 1, click the **`.save`
+   file**, and choose **Open**.
+6. Your character appears on the stage. 🎉
+7. When you're happy, click **Exit** at the far-left of the top menu bar
    to leave Edit mode and return to the clean display view. (You can
    always click the pencil icon again later if you need the menu back.)
 
