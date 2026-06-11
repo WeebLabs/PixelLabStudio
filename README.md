@@ -173,22 +173,36 @@ Grab the latest release for your platform from the
   All**, then open the folder and double-click `PixelLab Studio.exe`. You
   can move that folder anywhere you like (for example, your Desktop).
 
-When the app opens you'll see an empty stage with some controls along the
-edges. Next we'll bring your character in.
+When the app opens you'll see an empty stage with a small cluster of
+controls in the **bottom-right corner**. The app starts in *display
+mode*, which keeps the screen clean for streaming — so the menu you need
+for loading isn't showing yet. The next step walks you through revealing
+it.
 
 ### 2. Load your avatar
 
 Your purchase came with a **`.save` file** — that single file *is* your
-avatar (artwork, layers, and movement all bundled together).
+avatar (artwork, layers, and movement all bundled together). Loading it
+takes a moment because the menu with the **Load** button only appears
+once you switch the app into **Edit mode**. Follow these steps in order:
 
-1. Click **Load** in the menu bar across the top.
-2. In the file window that opens, find the `.save` file you downloaded
-   (check your Downloads folder if you're not sure where it went) and
-   open it.
+1. Look at the **bottom-right corner** of the window. Find the **pencil
+   icon** (it sits near the microphone and gear icons) and click it. This
+   switches the app from display mode into **Edit mode**.
+2. A **menu bar now appears across the top** of the window, with buttons
+   like Exit, Import, Save, and **Load**.
+3. Click **Load** in that top menu bar.
+4. A file window opens (Finder on macOS, File Explorer on Windows). Find
+   the `.save` file you downloaded — if you're not sure where it went,
+   check your **Downloads** folder — click it, and choose **Open**.
+5. Your character appears on the stage. 🎉
+6. When you're happy, click **Exit** at the far-left of the top menu bar
+   to leave Edit mode and return to the clean display view. (You can
+   always click the pencil icon again later if you need the menu back.)
 
-Your character appears on the stage. That's it — you don't need to set
-anything up. The next time you launch the app, your avatar **reopens
-automatically**, so you only have to load it this once.
+That's it — you don't need to set anything else up. The next time you
+launch the app, your avatar **reopens automatically**, so you only have
+to load it this once.
 
 ### 3. Set up your microphone
 
@@ -213,11 +227,12 @@ A few things worth knowing so you feel at home:
 - **Move the camera.** Scroll to zoom in or out, and hold the middle
   mouse button (or spacebar) to drag the view around. This only changes
   what *you* see — it doesn't affect your stream.
-- **Edit mode.** The button in the bottom-right corner toggles edit mode.
-  With it on, you can click your avatar and **drag it to reposition** it,
-  or use the on-screen handles to **resize** it so it sits where you want
-  on screen. Turn edit mode back off when you're done so you don't move
-  things by accident.
+- **Edit mode.** The **pencil icon** in the bottom-right corner switches
+  Edit mode on and off (the same one you used to load your avatar). With
+  it on, you can click your avatar and **drag it to reposition** it, or
+  use the on-screen handles to **resize** it so it sits where you want on
+  screen. Click **Exit** in the top menu bar (or the pencil again) when
+  you're done, so you don't move things by accident.
 - **Reset a setting.** If you ever change a slider and want it back to how
   it was, right-click that slider.
 
