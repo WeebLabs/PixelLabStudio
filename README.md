@@ -220,14 +220,35 @@ to load it this once.
 This is what makes the magic happen: the app listens to your mic and your
 avatar's mouth moves when you talk.
 
-1. Click the **gear icon** in the bottom-right corner to open settings.
-2. Find the **microphone** option and pick the same mic you use for
-   streaming or calls (a headset, USB mic, etc.).
-3. Speak normally and watch the meters next to the mic icon move. If your
-   avatar isn't reacting, nudge the **sensitivity** up; if it looks like
-   it's talking constantly, nudge it down.
+1. Click the **microphone icon** in the bottom-right corner. A list of
+   your microphones pops up — click the same one you use for streaming or
+   calls (a headset, USB mic, etc.).
+2. Speak normally. Just to the left of the mic icon are **two horizontal
+   bars, stacked one above the other**. They glow as the app hears you,
+   and each has a slider you can drag to fine-tune how your avatar reacts.
 
-To **mute** quickly, right-click the mic icon in the bottom-right corner.
+**Which bar is which:**
+
+- **Lower bar — Sensitivity.** This sets how loud a sound has to be before
+  your avatar counts it as talking. Its glow shows your live mic level.
+  - Drag it **right** (more sensitive) if the avatar ignores your normal
+    speaking voice or only reacts when you get loud.
+  - Drag it **left** (less sensitive) if the avatar's mouth flaps on its
+    own from background noise — a fan, keyboard, or room hum.
+- **Upper bar — Release time.** This sets how long the mouth stays in the
+  talking pose *after* you stop making sound. Its glow shows that
+  hold-over fading out.
+  - Drag it **right** for a longer hold — smoother, more natural mouth
+    movement that doesn't snap shut between words.
+  - Drag it **left** for a shorter hold — the mouth closes quickly the
+    instant you go quiet.
+
+A good starting point: set Sensitivity so the avatar reliably opens its
+mouth when you talk and stays still when you're silent, then adjust
+Release time to taste.
+
+To **mute** quickly, right-click the microphone icon in the bottom-right
+corner; it turns red while muted. Right-click again to unmute.
 
 ### 4. Get to know your avatar
 
