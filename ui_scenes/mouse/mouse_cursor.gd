@@ -36,8 +36,11 @@ func _process(delta):
 					if !a.is_in_group("penis") and _is_pixel_opaque(a, world_mouse):
 						opaque.append(a)
 				opaque.sort_custom(_compare_z_descending)
-				# Block click only when over a UI panel with no visible sprite
-				if !opaque.is_empty() or !_is_over_panel():
+				# A click over a sidebar/menu panel must never select avatar
+				# elements behind it (including the gaps between layer-list rows).
+				# Only clicks that land on open canvas reach selection; clicking a
+				# panel leaves the current selection untouched.
+				if !_is_over_panel():
 					Global.select(opaque)
 	else:
 		_click_pending = false
@@ -102,11 +105,12 @@ func _is_over_panel() -> bool:
 	# Menu bar
 	if screen_pos.y < 28:
 		return true
-	# Left panel (SpriteViewer)
+	# Left panel (SpriteViewer). Always present in edit mode (dimmed, not
+	# hidden, when nothing is selected), so its strip always blocks.
 	if Global.spriteEdit != null:
 		if screen_pos.x < Global.spriteEdit.panel_width + 19:
 			return true
-	# Right panel (SpriteList)
+	# Right panel (SpriteList). Visible whenever edit mode is on.
 	if Global.spriteList != null:
 		if screen_pos.x > viewport_size.x - Global.spriteList.panel_width - 7:
 			return true

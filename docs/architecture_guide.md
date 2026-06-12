@@ -174,6 +174,12 @@ Decorative `ColorRect` background panels must have `mouse_filter = MOUSE_FILTER_
 
 Interactive controls (buttons, sliders, scroll containers) keep the default `MOUSE_FILTER_STOP` so they still receive input normally.
 
+### Panel click-through guard
+
+> Updated: 2026-06-12. Never select avatar elements behind a sidebar.
+
+Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas click over a panel still reaches `mouse_cursor.gd` and runs the physics pick. `mouse_cursor.gd:_is_over_panel()` is the screen-space guard that rejects those clicks: the pick is applied via `Global.select()` only when `!_is_over_panel()`. Previously the guard also let the click through whenever an opaque sprite sat behind the panel, so clicking blank sidebar space (or the gaps between layer-list rows) could select the element behind it; it now blocks unconditionally while over a panel. Both sidebars are always present in edit mode (the left SpriteViewer dims to 35% but stays visible when nothing is selected; the right SpriteList tracks `editMode`) and selection runs only in edit mode, so the guard does not gate on per-panel visibility. Bounds use each panel's live `panel_width`, so they track sidebar resizing.
+
 ### Auto-scroll sprite list on selection
 
 > Updated: 2026-02-16 — auto-scroll to selected layer
