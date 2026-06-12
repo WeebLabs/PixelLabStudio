@@ -319,43 +319,9 @@ always understand NDI.
 Your avatar now appears in OBS with a see-through background, ready to
 layer over your game, camera, or scene.
 
-**About the crop box.** The video OBS receives is exactly the area inside
-PixelLab Studio's dashed **orange crop box**: that rectangle *is* the
-frame. Everything inside it goes out to your stream; everything outside
-it stays off screen.
-
-The **bottom edge** of the box is smart. Place it flush with the lowest
-part of your avatar you want on stream (the waist of a half-body rig, for
-example) and the app automatically keeps anything below that edge out of
-frame, even while your avatar bounces and moves around. You don't need to
-leave any extra space under your avatar; the compensation is worked out
-for you.
-
-In OBS you'd usually line the feed up against the bottom edge of your
-scene. Because the frame stops right at the box's bottom edge, your
-avatar rests flush along the bottom of your stream, fully in shot, with
-no empty gap beneath it.
-
-The box only shows up while you're in **Edit mode** (the pencil icon)
-with NDI turned on, so you won't see it in the normal display view, and
-that's expected.
-
-**The crop box is saved inside the avatar file itself and applied
-automatically when the avatar loads. Avatars from our store come with it
-already set for you, so you normally won't need to touch it.**
-
-If you ever do want to change the framing, you can resize the box
-yourself:
-
-1. Make sure **NDI Output** is turned on (settings gear).
-2. Click the **pencil icon** to enter **Edit mode**. The orange box now
-   appears around the stage.
-3. Drag the **square handles** to resize it. The handle in the middle of
-   each side moves just that side; the corner handles resize two sides at
-   once, diagonally. You can also grab anywhere along a dashed edge and
-   drag it.
-4. Click **Save** in the top menu bar to keep the new framing with your
-   avatar, then click **Exit** to return to the display view.
+The area OBS receives is set by a **crop box** that comes pre-configured
+with your avatar, so you normally won't need to touch it. (If you ever do
+want to reframe, see [NDI output](#ndi-output) further down.)
 
 **Using your avatar on Discord (or Zoom, Meet, etc.):**
 
@@ -493,13 +459,33 @@ roadmap.
 
 ### NDI output
 
-- The broadcast frame is a user-drawn **crop box**, resized in Edit mode
-  via handles at each edge midpoint and corner. The box is stored in the
-  avatar save file and applied on load, so shared avatars arrive
-  pre-framed with no adjustment needed.
-- The box's bottom edge compensates automatically for bounce and wobble
-  (via the NDI reference layer): content below it never enters the
-  frame, even mid-bounce.
+The video OBS receives is exactly the area inside the dashed **orange
+crop box**: that rectangle *is* the frame. The box is saved inside the
+avatar file and applied automatically on load, so store-bought and shared
+avatars arrive pre-framed and you normally won't need to touch it.
+
+The box's **bottom edge** is the one part worth understanding. Place it
+flush with the lowest part of your avatar you want on stream (the waist
+of a half-body rig, say) and the app automatically keeps anything below
+that edge out of frame, even while the avatar bounces and moves. There's
+no need to leave extra space underneath; the compensation is worked out
+for you from the **NDI reference layer**. In OBS you can then line the
+feed up against the bottom of your scene and your avatar sits flush along
+it, fully in shot, with no gap beneath.
+
+To reframe an avatar:
+
+1. Turn on **NDI Output** (settings gear) and click the **pencil icon**
+   to enter Edit mode. The orange box appears around the stage (it's
+   hidden in the normal display view).
+2. Drag the **square handles** to resize: the handle in the middle of
+   each side moves just that side; the corner handles resize two sides
+   at once, diagonally. You can also grab anywhere along a dashed edge.
+3. Click **Save** in the top menu bar to store the framing with the
+   avatar, then **Exit**.
+
+Other details:
+
 - Auto width or manual width/height.
 - Custom source name (what shows up in OBS's NDI Source dropdown).
 - Renders on its own SubViewport, so the editor UI doesn't appear in
