@@ -794,8 +794,8 @@ func drag(delta):
 		dragOrigin.global_position = dragger.global_position
 
 func wobble():
-	# Skip wobble while NDI ruler is being dragged (frozen at worst-case-down)
-	if Global.main.ndi_manager != null and Global.main.ndi_manager.ruler_dragging:
+	# Skip wobble while the NDI crop box is being dragged (frozen at worst-case-down)
+	if Global.main.ndi_manager != null and Global.main.ndi_manager.crop_dragging:
 		return
 	# Base layer translation comes from animation clips (the legacy wobble migrates
 	# into an oscillate/translation clip that reproduces sin(tick*freq)*amp exactly).

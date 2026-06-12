@@ -67,7 +67,7 @@ PNGTuberPlus/
 │
 ├── ndi/                           NDI video output system
 │   ├── ndi_output_manager.gd      SubViewport + Camera + NDIOutput orchestrator
-│   └── ndi_ruler.gd               Draggable bottom crop line
+│   └── ndi_crop_box.gd            Resizable crop box (8 gizmos) defining the output frame
 │
 ├── addons/
 │   ├── godot-ndi/                 NDI GDExtension plugin (optional)
@@ -320,7 +320,7 @@ Key signals defined in `global.gd`:
 
 ### Overview
 
-PNGTuberPlus can output an NDI video stream ("PixelLab Studio") that auto-frames the avatar with transparency. This enables direct capture in OBS and other NDI-compatible tools without green screen or window capture.
+PNGTuberPlus can output an NDI video stream ("PixelLab Studio") framing the avatar with transparency. This enables direct capture in OBS and other NDI-compatible tools without green screen or window capture. The frame is the user-drawn crop box (see below); there is no automatic content framing.
 
 ### Architecture
 
@@ -341,22 +341,23 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 
 | File | Purpose |
 |------|---------|
-| `ndi/ndi_output_manager.gd` | Orchestrator: creates SubViewport + Camera + NDIOutput, auto-framing logic, dirty flag |
-| `ndi/ndi_ruler.gd` | Draggable horizontal crop line, draws dashed orange line in edit mode |
+| `ndi/ndi_output_manager.gd` | Orchestrator: creates SubViewport + Camera + NDIOutput, crop-box framing, dirty flag |
+| `ndi/ndi_crop_box.gd` | Resizable dashed-orange crop box with 8 gizmos, drawn in edit mode |
 
-### Auto-Framing
+### Framing (manual crop box)
 
-1. Iterates visible sprites in `"saved"` group, computes union bounding box
-2. Calculates bounce headroom: `bounceSlider^2 / (2 * bounceGravity)` + max wobble `yAmp` + 15% safety margin
-3. Top = highest sprite edge - headroom; Bottom = ruler `crop_y`
-4. Viewport sizing: user picks width preset (512/720/1080/1920), height computed from aspect ratio (auto mode) or user-set (manual mode)
-5. Recalculation only when dirty flag set (avatar load, sprite change, settings change, costume change)
+> Updated: 2026-06-12 — **The auto-framing is gone.** The old system computed a union bounding box of per-sprite envelopes (texture opaque rects grown by wobble/rotation/eye-track/wiggle margins) above a draggable horizontal crop line. Estimating every motion system's reach (wiggle chains, drag lag, rotational drag, animation clips...) proved impractical — margins were always too tight somewhere and too generous elsewhere — so the user now draws the frame directly. `_compute_sprite_envelope()`, `_get_opaque_rect_local()`, `_rotation_expanded_aabb()`, `_get_rest_position()`, `spriteObject.wiggle_bounds_local()`, and `ndi/ndi_ruler.gd` were removed.
 
-### NDI Ruler
+1. The frame is the user-drawn **crop box**: origin-relative edges `[left, top, right, bottom]` in `Saving.settings["ndiCropRect"]`.
+2. **Bottom compensation (kept from the crop line)**: the output bottom is pinned above the box's drawn bottom edge by `bottom_margin = ref_y_amp + ref_eye + peak_displacement` (reference layer's wobble + eye-track, plus bounce peak `bounceSlider² / (2·bounceGravity) + 16`), so the user places the bottom edge flush with the bottom of the desired avatar part and below-box content never pops into frame during bounce. The `ndiRefLayer` flag + Neck/Body auto-detect on load feed this margin.
+3. Viewport sizing: user picks width preset (512/720/1080/1920), height computed from the box's (margin-adjusted) aspect ratio (auto mode) or user-set with letterbox fit (manual mode). Camera centered on the adjusted box.
+4. Recalculation only when dirty flag set (avatar load, box edit, settings change; debounced 1 s).
 
-A draggable horizontal dashed orange line visible in edit mode when NDI is enabled. Marks the avatar's bottom boundary for framing. The live working value is `Saving.settings["ndiRulerY"]` (origin-relative Y offset).
+### NDI Crop Box
 
-> Updated: 2026-06-12. The crop is now **persisted per-avatar**. `_build_avatar_save_data()` writes the current `ndiRulerY` to the avatar JSON under the metadata key `"_ndiRulerY"` (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), and `_on_load_dialog_file_selected()` restores it into `Saving.settings["ndiRulerY"]` before `ndi_manager.recalculate_now()` reframes. Saves without the key (old/third-party avatars) keep the current crop. This lets purchased/shared avatars arrive pre-framed with no manual re-cropping. The ruler drag itself remains non-undoable, so the crop is intentionally NOT part of UndoManager snapshots.
+A dashed orange rectangle (`ndi/ndi_crop_box.gd`, spawned by the manager onto `Global.main`, visibility layer 2) visible in edit mode when NDI is enabled — same look as the old crop line. Resize via 8 constant-screen-size gizmos: 4 edge midpoints (move that edge, H/V resize cursors) and 4 corners (move both adjacent edges, diagonal cursors); grabbing anywhere along an edge's dashed line also moves that edge, so the bottom edge handles exactly like the old crop line. Minimum box size 64 px; sidebars block grabs (same screen-space guard as before). While dragging, bounce/wobble freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in `main._process` and `spriteObject.wobble`).
+
+> Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `_on_load_dialog_file_selected()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
 
 ### Settings (`Saving.settings`)
 
@@ -364,7 +365,7 @@ A draggable horizontal dashed orange line visible in edit mode when NDI is enabl
 - `ndiWidth` (int) — output width preset
 - `ndiMode` (string) — "auto" or "manual"
 - `ndiManualWidth` / `ndiManualHeight` (int) — manual resolution
-- `ndiRulerY` (float) — ruler Y offset from origin
+- `ndiCropRect` (Array [l, t, r, b]) — crop box edges, origin-relative (replaced `ndiRulerY`, 2026-06-12)
 
 ### Graceful Degradation
 

@@ -83,8 +83,9 @@ What's added on top:
   while still receiving its own wobble, drag, and rotation.
 - **Clip linked sprites.** Render a child sprite only inside its
   parent's bounds.
-- **NDI reference layer.** Designate one sprite as the framing anchor
-  so the NDI broadcast doesn't drift when other sprites move.
+- **NDI reference layer.** Designate one sprite as the bounce anchor:
+  its movement sets the safety margin above the crop box's bottom edge,
+  so content below the box never pops into frame mid-bounce.
 - **Squash/stretch.** Vertical-velocity-driven scaling for a more
   exaggerated bounce feel.
 - **Resizable, persistent sidebars.** Drag the inner edge of either
@@ -316,34 +317,44 @@ always understand NDI.
     Studio** (or the name you set), then click **OK**.
 
 Your avatar now appears in OBS with a see-through background, ready to
-layer over your game, camera, or scene. The framing follows your avatar
-automatically as it moves.
+layer over your game, camera, or scene.
 
-**About the crop line.** PixelLab Studio automatically frames your avatar
-into a neat video feed for OBS, keeping it well positioned as it moves and
-bounces. The crop line sets where the **bottom of that frame** sits.
+**About the crop box.** The video OBS receives is exactly the area inside
+PixelLab Studio's dashed **orange crop box**: that rectangle *is* the
+frame. Everything inside it goes out to your stream; everything outside
+it stays off screen.
+
+The **bottom edge** of the box is smart. Place it flush with the lowest
+part of your avatar you want on stream (the waist of a half-body rig, for
+example) and the app automatically keeps anything below that edge out of
+frame, even while your avatar bounces and moves around. You don't need to
+leave any extra space under your avatar; the compensation is worked out
+for you.
 
 In OBS you'd usually line the feed up against the bottom edge of your
-scene. Because the frame stops right at the crop line, your avatar rests
-flush along the bottom of your stream, fully in shot, with no empty gap
-beneath it. Raising or lowering the line simply changes how much of your
-avatar is included from the bottom.
+scene. Because the frame stops right at the box's bottom edge, your
+avatar rests flush along the bottom of your stream, fully in shot, with
+no empty gap beneath it.
 
-The line only shows up as a dashed **orange line** while you're in **Edit
-mode** (the pencil icon) with NDI turned on, so you won't see it in the
-normal display view, and that's expected.
+The box only shows up while you're in **Edit mode** (the pencil icon)
+with NDI turned on, so you won't see it in the normal display view, and
+that's expected.
 
-**Avatars from our store come with this line already set for you, so you
-normally won't need to touch it.**
+**The crop box is saved inside the avatar file itself and applied
+automatically when the avatar loads. Avatars from our store come with it
+already set for you, so you normally won't need to touch it.**
 
-If you ever do want to change the framing, you can move the line yourself:
+If you ever do want to change the framing, you can resize the box
+yourself:
 
 1. Make sure **NDI Output** is turned on (settings gear).
-2. Click the **pencil icon** to enter **Edit mode**. The orange line now
-   appears across the stage.
-3. Hover your mouse over the line until the cursor becomes an up-and-down
-   arrow, then click and drag it up or down. Drag up to crop tighter.
-4. Click **Save** in the top menu bar to keep the new position with your
+2. Click the **pencil icon** to enter **Edit mode**. The orange box now
+   appears around the stage.
+3. Drag the **square handles** to resize it. The handle in the middle of
+   each side moves just that side; the corner handles resize two sides at
+   once, diagonally. You can also grab anywhere along a dashed edge and
+   drag it.
+4. Click **Save** in the top menu bar to keep the new framing with your
    avatar, then click **Exit** to return to the display view.
 
 **Using your avatar on Discord (or Zoom, Meet, etc.):**
@@ -482,8 +493,13 @@ roadmap.
 
 ### NDI output
 
-- Dynamic framing based on the rig's silhouette plus a user-placed
-  bottom crop line.
+- The broadcast frame is a user-drawn **crop box**, resized in Edit mode
+  via handles at each edge midpoint and corner. The box is stored in the
+  avatar save file and applied on load, so shared avatars arrive
+  pre-framed with no adjustment needed.
+- The box's bottom edge compensates automatically for bounce and wobble
+  (via the NDI reference layer): content below it never enters the
+  frame, even mid-bounce.
 - Auto width or manual width/height.
 - Custom source name (what shows up in OBS's NDI Source dropdown).
 - Renders on its own SubViewport, so the editor UI doesn't appear in

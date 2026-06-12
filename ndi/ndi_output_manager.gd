@@ -2,27 +2,24 @@ extends Node
 
 ## NDI Output Manager
 ## Creates a SubViewport with shared world_2d, Camera2D, and NDIOutput node.
-## Auto-frames the avatar with transparency and outputs an NDI stream.
+## Frames the user-drawn crop box (see ndi_crop_box.gd) with transparency and
+## outputs an NDI stream. The output bottom is pinned above the box's bottom
+## edge by the avatar's worst-case upward travel (bounce peak + reference
+## layer wobble/eye-track), so below-box content never pops into frame.
 
 var ndi_viewport: SubViewport = null
 var ndi_camera: Camera2D = null
 var ndi_output: Node = null
-var ruler: Node2D = null
+var crop_box: Node2D = null
 
 var _dirty: bool = true
 var _enabled: bool = false
 var _plugin_available: bool = false
-var ruler_dragging: bool = false
+var crop_dragging: bool = false
 var _debounce_timer: Timer = null
 const DEBOUNCE_DELAY = 1.0
 
-# Framing state
-var _content_top: float = 0.0
-var _content_bottom: float = 200.0
-var _content_left: float = 0.0
-var _content_right: float = 0.0
-
-const RULER_SCENE = preload("res://ndi/ndi_ruler.gd")
+const CROP_BOX_SCRIPT = preload("res://ndi/ndi_crop_box.gd")
 
 func _ready():
 	_plugin_available = ClassDB.class_exists("NDIOutput")
@@ -50,8 +47,10 @@ func _load_settings():
 		Saving.settings["ndiManualWidth"] = 800
 	if !Saving.settings.has("ndiManualHeight"):
 		Saving.settings["ndiManualHeight"] = 1200
-	if !Saving.settings.has("ndiRulerY"):
-		Saving.settings["ndiRulerY"] = 200.0
+	if !Saving.settings.has("ndiCropRect"):
+		# Migrate from the old crop line: its Y becomes the box bottom
+		var bottom = float(Saving.settings.get("ndiRulerY", 200.0))
+		Saving.settings["ndiCropRect"] = [-500.0, bottom - 1000.0, 500.0, bottom]
 	if !Saving.settings.has("ndiSourceName"):
 		Saving.settings["ndiSourceName"] = "PixelLab Studio"
 
@@ -86,10 +85,6 @@ func set_manual_size(w: int, h: int):
 	Saving.settings["ndiManualHeight"] = h
 	mark_dirty()
 
-func set_ruler_y(y: float):
-	Saving.settings["ndiRulerY"] = y
-	mark_dirty()
-
 func set_source_name(name: String):
 	var clean = name.strip_edges()
 	if clean == "":
@@ -102,8 +97,14 @@ func set_source_name(name: String):
 		_destroy_ndi_pipeline()
 		_create_ndi_pipeline()
 
-func get_ruler_y() -> float:
-	return Saving.settings["ndiRulerY"]
+# Crop box edges, origin-relative: [left, top, right, bottom]
+func get_crop_edges() -> Array:
+	var a = Saving.settings.get("ndiCropRect", [-500.0, -800.0, 500.0, 200.0])
+	return [float(a[0]), float(a[1]), float(a[2]), float(a[3])]
+
+func set_crop_edges(e: Array):
+	Saving.settings["ndiCropRect"] = [float(e[0]), float(e[1]), float(e[2]), float(e[3])]
+	mark_dirty()
 
 func mark_dirty():
 	_debounce_timer.start(DEBOUNCE_DELAY)
@@ -155,10 +156,10 @@ func _create_ndi_pipeline():
 
 	print("[NDI] Pipeline created. Viewport size: ", ndi_viewport.size, " Plugin: ", _plugin_available)
 
-	# Create ruler (visible only in edit mode)
-	_create_ruler()
-	if ruler != null:
-		ruler.visible = Global.main.editMode
+	# Create crop box (visible only in edit mode)
+	_create_crop_box()
+	if crop_box != null:
+		crop_box.visible = Global.main.editMode
 
 	_dirty = true
 
@@ -168,25 +169,25 @@ func _destroy_ndi_pipeline():
 		ndi_viewport = null
 		ndi_camera = null
 		ndi_output = null
-	_destroy_ruler()
+	_destroy_crop_box()
 
-func _create_ruler():
-	if ruler != null:
+func _create_crop_box():
+	if crop_box != null:
 		return
-	ruler = Node2D.new()
-	ruler.set_script(RULER_SCENE)
-	ruler.name = "NDIRuler"
-	ruler.visibility_layer = 2
-	Global.main.add_child(ruler)
+	crop_box = Node2D.new()
+	crop_box.set_script(CROP_BOX_SCRIPT)
+	crop_box.name = "NDICropBox"
+	crop_box.visibility_layer = 2
+	Global.main.add_child(crop_box)
 
-func _destroy_ruler():
-	if ruler != null:
-		ruler.queue_free()
-		ruler = null
+func _destroy_crop_box():
+	if crop_box != null:
+		crop_box.queue_free()
+		crop_box = null
 
-func set_ruler_visible(vis: bool):
-	if ruler != null:
-		ruler.visible = vis
+func set_crop_visible(vis: bool):
+	if crop_box != null:
+		crop_box.visible = vis
 
 func _process(_delta):
 	if !_enabled or ndi_viewport == null:
@@ -194,100 +195,6 @@ func _process(_delta):
 	if _dirty:
 		_dirty = false
 		_recalculate_framing()
-
-func _get_opaque_rect_local(sprite_obj) -> Rect2:
-	var img = sprite_obj.imageData
-	if img == null:
-		return Rect2()
-	# Cached: get_used_rect() scans every pixel; calling it once per sprite per recalc
-	# would block the main thread on large avatars
-	var used = sprite_obj.get_image_used_rect()
-	if used.size.x == 0 or used.size.y == 0:
-		return Rect2()
-	var tex_size = Vector2(img.get_size())
-	var frame_w = tex_size.x
-	if sprite_obj.frames > 1:
-		frame_w = tex_size.x / sprite_obj.frames
-		# Clamp used rect to single-frame width (conservative union across frames)
-		used = used.intersection(Rect2i(0, 0, int(frame_w), int(tex_size.y)))
-		if used.size.x == 0 or used.size.y == 0:
-			return Rect2()
-	# Convert to centered coords (Godot draws textures centered) + user offset
-	return Rect2(
-		Vector2(used.position) - Vector2(frame_w, tex_size.y) * 0.5 + sprite_obj.offset,
-		Vector2(used.size)
-	)
-
-func _rotation_expanded_aabb(rect: Rect2, min_angle: float, max_angle: float) -> Rect2:
-	var result = rect
-	for angle in [min_angle, max_angle]:
-		if is_zero_approx(angle):
-			continue
-		var cos_a = cos(angle)
-		var sin_a = sin(angle)
-		var corners = [rect.position, Vector2(rect.end.x, rect.position.y),
-					   Vector2(rect.position.x, rect.end.y), rect.end]
-		var rmin = Vector2(INF, INF)
-		var rmax = Vector2(-INF, -INF)
-		for c in corners:
-			var rc = Vector2(c.x * cos_a - c.y * sin_a, c.x * sin_a + c.y * cos_a)
-			rmin = Vector2(min(rmin.x, rc.x), min(rmin.y, rc.y))
-			rmax = Vector2(max(rmax.x, rc.x), max(rmax.y, rc.y))
-		result = result.merge(Rect2(rmin, rmax - rmin))
-	return result
-
-func _get_rest_position(sprite_obj, rest_origin_pos: Vector2) -> Vector2:
-	if sprite_obj.parentSprite == null or sprite_obj.parentId == null:
-		return rest_origin_pos + sprite_obj.position
-	return _get_rest_position(sprite_obj.parentSprite, rest_origin_pos) + sprite_obj.position
-
-func _compute_sprite_envelope(sprite_obj, crop_bottom: float, rest_origin_pos: Vector2) -> Rect2:
-	var opaque = _get_opaque_rect_local(sprite_obj)
-	if opaque.size == Vector2.ZERO:
-		return Rect2()
-
-	# Rotation expansion
-	var expanded = opaque
-	if sprite_obj.rdragStr > 0:
-		expanded = _rotation_expanded_aabb(opaque,
-			deg_to_rad(sprite_obj.rLimitMin), deg_to_rad(sprite_obj.rLimitMax))
-
-	# Own wobble + eye tracking
-	var eye_dist = sprite_obj.eyeTrackDistance if sprite_obj.eyeTrack else 0.0
-	var ex = abs(sprite_obj.xAmp) + eye_dist
-	var ey = abs(sprite_obj.yAmp) + eye_dist
-	expanded = expanded.grow_individual(ex, ey, ex, ey)
-
-	# Parent chain contributions
-	var parent = sprite_obj.parentSprite
-	var child_offset_from_parent = sprite_obj.position
-	while parent != null:
-		var p_eye = parent.eyeTrackDistance if parent.eyeTrack else 0.0
-		var px = abs(parent.xAmp) + p_eye
-		var py = abs(parent.yAmp) + p_eye
-		expanded = expanded.grow_individual(px, py, px, py)
-		# Parent rotation swings child in arc around parent center
-		if parent.rdragStr > 0:
-			var p_rot_max = max(abs(parent.rLimitMin), abs(parent.rLimitMax))
-			if p_rot_max > 0:
-				var dist = child_offset_from_parent.length()
-				var angle = deg_to_rad(min(p_rot_max, 90.0))
-				var arc_x = dist * sin(angle)
-				var arc_y = dist * (1.0 - cos(angle))
-				expanded = expanded.grow_individual(arc_x, arc_y, arc_x, arc_y)
-		child_offset_from_parent += parent.position
-		parent = parent.parentSprite
-
-	# Place in global space
-	var rest_pos = _get_rest_position(sprite_obj, rest_origin_pos)
-	var global_env = Rect2(rest_pos + expanded.position, expanded.size)
-
-	# Crop clamp
-	if global_env.position.y >= crop_bottom:
-		return Rect2()  # Entirely below crop
-	if global_env.end.y > crop_bottom:
-		global_env.size.y = crop_bottom - global_env.position.y
-	return global_env
 
 func _recalculate_framing():
 	if ndi_viewport == null or ndi_camera == null:
@@ -308,37 +215,8 @@ func _recalculate_framing():
 	if gravity > 0:
 		peak_displacement = (bounce_vel * bounce_vel) / (2.0 * gravity) + 16.0
 
-	# Crop bottom at rest position
-	var ruler_y = Saving.settings["ndiRulerY"]
-	var crop_bottom = rest_origin_pos.y + ruler_y
-
-	# Compute per-sprite envelopes
-	var sprites = get_tree().get_nodes_in_group("saved")
-	var content_min = Vector2(INF, INF)
-	var content_max = Vector2(-INF, -INF)
-	var has_content = false
-
-	for sprite_obj in sprites:
-		if !sprite_obj.visible:
-			continue
-		if sprite_obj.sprite.self_modulate.a < 0.1:
-			continue
-		var env = _compute_sprite_envelope(sprite_obj, crop_bottom, rest_origin_pos)
-		if env.size == Vector2.ZERO:
-			continue
-		has_content = true
-		content_min.x = min(content_min.x, env.position.x)
-		content_min.y = min(content_min.y, env.position.y)
-		content_max.x = max(content_max.x, env.end.x)
-		content_max.y = max(content_max.y, env.end.y)
-
-	if !has_content:
-		ndi_viewport.size = Vector2i(Saving.settings["ndiWidth"], Saving.settings["ndiWidth"])
-		ndi_camera.position = rest_origin_pos
-		ndi_camera.zoom = Vector2.ONE
-		return
-
 	# Find reference sprite's vertical amplitude (or fallback to global max)
+	var sprites = get_tree().get_nodes_in_group("saved")
 	var ref_y_amp = 0.0
 	var ref_eye = 0.0
 	var ref_sprite = null
@@ -353,24 +231,23 @@ func _recalculate_framing():
 			if sprite_obj.visible:
 				ref_y_amp = max(ref_y_amp, abs(sprite_obj.yAmp))
 
-	# Extend top by bounce peak so sprites don't clip out during bounce
-	content_min.y -= peak_displacement
+	# The frame is the user-drawn crop box (origin-relative), placed in world space
+	var e = get_crop_edges()
+	var content_min = rest_origin_pos + Vector2(e[0], e[1])
+	var content_max = rest_origin_pos + Vector2(e[2], e[3])
 
-	# Pin viewport bottom above crop line by enough margin that below-crop
-	# content never becomes visible during wobble or bounce
+	# Pin the output bottom above the box's bottom edge by enough margin that
+	# below-box content never becomes visible during wobble or bounce — the user
+	# places the bottom edge flush with the bottom of the desired avatar part,
+	# exactly like the old crop line.
 	var bottom_margin = ref_y_amp + ref_eye + peak_displacement
-	content_max.y = crop_bottom - bottom_margin
+	content_max.y -= bottom_margin
 
 	# Content area
 	var content_width = content_max.x - content_min.x
 	var content_height = content_max.y - content_min.y
 	if content_width <= 0: content_width = 100
 	if content_height <= 0: content_height = 100
-
-	_content_top = content_min.y
-	_content_bottom = content_max.y
-	_content_left = content_min.x
-	_content_right = content_max.x
 
 	# Viewport sizing
 	var mode = Saving.settings["ndiMode"]

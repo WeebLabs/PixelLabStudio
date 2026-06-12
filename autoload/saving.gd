@@ -61,7 +61,7 @@ var settings = {
 	"ndiMode":"auto",
 	"ndiManualWidth":800,
 	"ndiManualHeight":1200,
-	"ndiRulerY":200.0,
+	"ndiCropRect":[-500.0, -800.0, 500.0, 200.0],
 	"recordingFormat":"webm",
 	"recordingFPS":30,
 	"leftSidebarWidth":265,

@@ -373,9 +373,9 @@ func ndi_mark_dirty():
 func _process(delta):
 	_update_resize_state()
 
-	# Freeze bounce while dragging NDI ruler
-	var ruler_frozen = ndi_manager != null and ndi_manager.ruler_dragging
-	if ruler_frozen:
+	# Freeze bounce while dragging the NDI crop box
+	var crop_frozen = ndi_manager != null and ndi_manager.crop_dragging
+	if crop_frozen:
 		origin.get_parent().position.y = 0
 		yVel = 0
 		bounceChange = 0
@@ -604,7 +604,7 @@ func swapMode():
 	spriteList.visible = editMode
 	viewerArrows.visible = editMode
 	if ndi_manager != null:
-		ndi_manager.set_ruler_visible(editMode and ndi_manager.is_enabled())
+		ndi_manager.set_crop_visible(editMode and ndi_manager.is_enabled())
 	if _light_gizmo != null:
 		_light_gizmo.queue_redraw()
 	onWindowSizeChange()
@@ -1246,7 +1246,7 @@ func _on_load_dialog_file_selected(path):
 	_load_keys = []
 	for _it in data:
 		var _it_s = str(_it)
-		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled" or _it_s == "_ndiRulerY":
+		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled" or _it_s == "_ndiRulerY" or _it_s == "_ndiCropRect":
 			continue
 		_load_keys.append(_it)
 	var _load_total = _load_keys.size()
@@ -1425,11 +1425,18 @@ func _on_load_dialog_file_selected(path):
 	# Restore the global eye-tracking kill switch (legacy avatars default to on)
 	Global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
 
-	# Restore the per-avatar NDI crop line so the avatar arrives pre-framed.
+	# Restore the per-avatar NDI crop box so the avatar arrives pre-framed.
 	# Absent in old/third-party saves; keep the current crop in that case rather
 	# than snapping to a default. recalculate_now() below reframes off this value.
-	if data.has("_ndiRulerY"):
-		Saving.settings["ndiRulerY"] = float(data["_ndiRulerY"])
+	if data.has("_ndiCropRect"):
+		var _cr = data["_ndiCropRect"]
+		if _cr is Array and _cr.size() == 4:
+			Saving.settings["ndiCropRect"] = [float(_cr[0]), float(_cr[1]), float(_cr[2]), float(_cr[3])]
+	elif data.has("_ndiRulerY"):
+		# Legacy crop-line-only save: keep the current box, snap its bottom to the line
+		var _b = float(data["_ndiRulerY"])
+		var _cur = Saving.settings.get("ndiCropRect", [-500.0, _b - 1000.0, 500.0, _b])
+		Saving.settings["ndiCropRect"] = [float(_cur[0]), minf(float(_cur[1]), _b - 64.0), float(_cur[2]), _b]
 
 	changeCostume(1)
 	# The session-recovery file is ephemeral — never promote it to lastAvatar,
@@ -2036,9 +2043,13 @@ func _build_avatar_save_data() -> Dictionary:
 			"enabled": _light_gizmo.light_enabled,
 		}
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
-	# Per-avatar NDI crop line (origin-relative Y). Travels with the avatar so a
-	# purchased/shared avatar arrives pre-framed and never needs manual re-cropping.
-	data["_ndiRulerY"] = Saving.settings.get("ndiRulerY", 200.0)
+	# Per-avatar NDI crop box (origin-relative [left, top, right, bottom]). Travels
+	# with the avatar so a purchased/shared avatar arrives pre-framed and never needs
+	# manual re-cropping. The legacy "_ndiRulerY" (box bottom) is written too so the
+	# save still pre-frames on older builds.
+	var _crop = Saving.settings.get("ndiCropRect", [-500.0, -800.0, 500.0, 200.0])
+	data["_ndiCropRect"] = _crop
+	data["_ndiRulerY"] = float(_crop[3])
 	return data
 
 #SAVE AVATAR

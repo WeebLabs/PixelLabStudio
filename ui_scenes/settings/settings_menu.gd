@@ -452,9 +452,9 @@ func _on_ndi_toggle(pressed: bool):
 		return
 	ndi.set_enabled(pressed)
 	_update_ndi_ui()
-	# Update ruler visibility
+	# Update crop box visibility
 	if Global.main.editMode:
-		ndi.set_ruler_visible(pressed)
+		ndi.set_crop_visible(pressed)
 	# Refresh window transparency (NDI disables it for performance)
 	Global.main.updateWindowTransparency()
 	if pressed:
