@@ -260,11 +260,10 @@ A few things worth knowing so you feel at home:
   mouse button (or spacebar) to drag the view around. This only changes
   what *you* see; it doesn't affect your stream.
 - **Edit mode.** The **pencil icon** in the bottom-right corner switches
-  Edit mode on and off (the same one you used to load your avatar). With
-  it on, you can click your avatar and **drag it to reposition** it, or
-  use the on-screen handles to **resize** it so it sits where you want on
-  screen. Click **Exit** in the top menu bar (or the pencil again) when
-  you're done, so you don't move things by accident.
+  Edit mode on and off (the same one you used to load your avatar). Edit
+  mode is where the top menu bar lives, with options like Load and Save.
+  When you're finished in it, click **Exit** in the top menu bar (or the
+  pencil again) to return to the clean display view.
 - **Reset a setting.** If you ever change a slider and want it back to how
   it was, right-click that slider.
 
@@ -287,24 +286,52 @@ one-time setup.
 2. Leave the source name as is, or give it a name you'll recognize in the
    next step.
 
-**In OBS (one-time install):**
+**In OBS (one-time install of the NDI plug-in):**
 
-3. If you've never used NDI with OBS, install the free **DistroAV**
-   plugin from
-   [distroav.org](https://github.com/DistroAV/DistroAV), then restart
-   OBS.
+OBS can't receive NDI on its own. It needs a small, free add-on called
+**DistroAV**. You only have to install this once, and then OBS will
+always understand NDI.
+
+3. Fully close OBS if it's open (quit it, don't just minimize it).
+4. In your web browser, go to the DistroAV download page at
+   [distroav.org](https://distroav.org) and click the **Download**
+   button.
+5. Download the installer that matches your computer (one for **Windows**,
+   one for **macOS**). Pick the one for your system.
+6. Find the file you just downloaded (usually in your **Downloads**
+   folder) and double-click it to run the installer. Follow the prompts
+   and accept the default options by clicking **Next** / **Continue**
+   through to the end. If it ever asks to also install the **NDI runtime**
+   or **NDI tools**, allow it.
+7. Open OBS again. It now understands NDI, and you won't need to repeat
+   these steps in future.
 
 **In OBS (add your avatar):**
 
-4. Under **Sources**, click **+** → **NDI Source**.
-5. In the dropdown, choose **PixelLab Studio** (or the name you set), then
+8. Under **Sources**, click **+** → **NDI Source**.
+9. In the dropdown, choose **PixelLab Studio** (or the name you set), then
    click **OK**.
 
 Your avatar now appears in OBS with a see-through background, ready to
-layer over your game, camera, or scene. Back in PixelLab Studio you'll
-see a dashed **orange line** across the stage. That's the bottom edge of
-what OBS receives. Drag it up if you only want a head-and-shoulders view.
-The framing follows your avatar automatically as it moves.
+layer over your game, camera, or scene. The framing follows your avatar
+automatically as it moves.
+
+**About the crop line.** PixelLab Studio sends OBS everything down to an
+invisible bottom edge, drawn in the app as a dashed **orange line**.
+Anything below that line is left out of what OBS receives, which lets you
+frame a tighter head-and-shoulders shot if you want one. **Avatars from
+our store come with this line already set for you, so you normally won't
+need to touch it.**
+
+If you ever do want to change the framing, you can move the line yourself:
+
+1. Make sure **NDI Output** is turned on (settings gear).
+2. Click the **pencil icon** to enter **Edit mode**. The orange line now
+   appears across the stage.
+3. Hover your mouse over the line until the cursor becomes an up-and-down
+   arrow, then click and drag it up or down. Drag up to crop tighter.
+4. Click **Save** in the top menu bar to keep the new position with your
+   avatar, then click **Exit** to return to the display view.
 
 **Using your avatar on Discord (or Zoom, Meet, etc.):**
 
