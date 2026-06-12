@@ -320,8 +320,9 @@ Your avatar now appears in OBS with a see-through background, ready to
 layer over your game, camera, or scene.
 
 The area OBS receives is set by a **crop box** that comes pre-configured
-with your avatar, so you normally won't need to touch it. (If you ever do
-want to reframe, see [NDI output](#ndi-output) further down.)
+with your avatar, so you normally won't need to touch it. It only shows up
+in **Edit mode** (the pencil icon), not in the normal display view. (If
+you ever do want to reframe, see [NDI output](#ndi-output) further down.)
 
 **Using your avatar on Discord (or Zoom, Meet, etc.):**
 
