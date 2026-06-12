@@ -320,11 +320,13 @@ layer over your game, camera, or scene. The framing follows your avatar
 automatically as it moves.
 
 **About the crop line.** PixelLab Studio sends OBS everything down to an
-invisible bottom edge, drawn in the app as a dashed **orange line**.
-Anything below that line is left out of what OBS receives, which lets you
-frame a tighter head-and-shoulders shot if you want one. **Avatars from
-our store come with this line already set for you, so you normally won't
-need to touch it.**
+invisible bottom edge. Anything below that edge is left out of what OBS
+receives, which lets you frame a tighter head-and-shoulders shot if you
+want one. This edge only shows up as a dashed **orange line** while
+you're in **Edit mode** (the pencil icon) with NDI turned on; you won't
+see it in the normal display view, and that's perfectly fine. **Avatars
+from our store come with this line already set for you, so you normally
+won't need to touch it.**
 
 If you ever do want to change the framing, you can move the line yourself:
 
