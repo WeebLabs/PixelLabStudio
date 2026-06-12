@@ -18,11 +18,12 @@ config/name="PixelLab Studio"
 run/main_scene="res://main_scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 run/max_fps=60
-boot_splash/bg_color=Color(0.0313726, 0.0313726, 0.0313726, 1)
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/show_image=false
 boot_splash/stretch_mode=0
 boot_splash/use_filter=false
 boot_splash/image="res://splash.png"
-config/icon="res://icon.png"
+config/icon="res://icons/pixellabstudio.png"
 
 [audio]
 
