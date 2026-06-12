@@ -256,9 +256,10 @@ A few things worth knowing so you feel at home:
 
 - **Costumes / outfits.** If your avatar came with extra looks, press the
   number keys **`1`–`0`** to switch between them on the fly.
-- **Move the camera.** Scroll to zoom in or out, and hold the middle
-  mouse button (or spacebar) to drag the view around. This only changes
-  what *you* see; it doesn't affect your stream.
+- **Move the camera.** Hold the **Ctrl** key and scroll the mouse wheel
+  to zoom in or out, and hold the middle mouse button (or spacebar) to
+  drag the view around. This only changes what *you* see; it doesn't
+  affect your stream.
 - **Edit mode.** The **pencil icon** in the bottom-right corner switches
   Edit mode on and off (the same one you used to load your avatar). Edit
   mode is where the top menu bar lives, with options like Load and Save.
