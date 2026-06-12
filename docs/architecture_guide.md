@@ -337,7 +337,9 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 
 ### NDI Ruler
 
-A draggable horizontal dashed orange line visible in edit mode when NDI is enabled. Marks the avatar's bottom boundary for framing. Y offset stored in `Saving.settings["ndiRulerY"]`.
+A draggable horizontal dashed orange line visible in edit mode when NDI is enabled. Marks the avatar's bottom boundary for framing. The live working value is `Saving.settings["ndiRulerY"]` (origin-relative Y offset).
+
+> Updated: 2026-06-12. The crop is now **persisted per-avatar**. `_build_avatar_save_data()` writes the current `ndiRulerY` to the avatar JSON under the metadata key `"_ndiRulerY"` (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), and `_on_load_dialog_file_selected()` restores it into `Saving.settings["ndiRulerY"]` before `ndi_manager.recalculate_now()` reframes. Saves without the key (old/third-party avatars) keep the current crop. This lets purchased/shared avatars arrive pre-framed with no manual re-cropping. The ruler drag itself remains non-undoable, so the crop is intentionally NOT part of UndoManager snapshots.
 
 ### Settings (`Saving.settings`)
 

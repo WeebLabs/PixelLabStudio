@@ -1245,7 +1245,7 @@ func _on_load_dialog_file_selected(path):
 	_load_keys = []
 	for _it in data:
 		var _it_s = str(_it)
-		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled":
+		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled" or _it_s == "_ndiRulerY":
 			continue
 		_load_keys.append(_it)
 	var _load_total = _load_keys.size()
@@ -1423,6 +1423,12 @@ func _on_load_dialog_file_selected(path):
 
 	# Restore the global eye-tracking kill switch (legacy avatars default to on)
 	Global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
+
+	# Restore the per-avatar NDI crop line so the avatar arrives pre-framed.
+	# Absent in old/third-party saves; keep the current crop in that case rather
+	# than snapping to a default. recalculate_now() below reframes off this value.
+	if data.has("_ndiRulerY"):
+		Saving.settings["ndiRulerY"] = float(data["_ndiRulerY"])
 
 	changeCostume(1)
 	# The session-recovery file is ephemeral — never promote it to lastAvatar,
@@ -2029,6 +2035,9 @@ func _build_avatar_save_data() -> Dictionary:
 			"enabled": _light_gizmo.light_enabled,
 		}
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
+	# Per-avatar NDI crop line (origin-relative Y). Travels with the avatar so a
+	# purchased/shared avatar arrives pre-framed and never needs manual re-cropping.
+	data["_ndiRulerY"] = Saving.settings.get("ndiRulerY", 200.0)
 	return data
 
 #SAVE AVATAR
