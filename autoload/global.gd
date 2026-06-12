@@ -433,16 +433,63 @@ func _input(event):
 			pushUpdate("Eye target pick cancelled.")
 			get_viewport().set_input_as_handled()
 			return
+	# Wheel while the cursor is over a sidebar (left/right panel or top bar):
+	# the avatar must not zoom or cycle selection. A slider/spinbox under the
+	# cursor changes only while Ctrl is held; otherwise the wheel is swallowed so
+	# it never adjusts by accident. Over the layer-list scroll area or blank
+	# panel space the wheel is left for the ScrollContainer (we don't consume it)
+	# but still returns here so it never reaches the sprite-cycle accumulator.
+	# Sliders outside the sidebars (settings, volume) keep default wheel behavior.
+	if event is InputEventMouseButton and event.pressed \
+			and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+		if isMouseOverSidebar():
+			var rng := _hovered_range()
+			if rng != null:
+				var ed = rng.get("editable")
+				var can_edit: bool = ed == null or bool(ed)
+				if can_edit and Input.is_action_pressed("control"):
+					var stp: float = rng.step if rng.step > 0.0 else 1.0
+					if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+						stp = -stp
+					rng.value = clampf(rng.value + stp, rng.min_value, rng.max_value)
+				# Swallow the wheel over a slider so it never adjusts without Ctrl.
+				get_viewport().set_input_as_handled()
+			return
 	if !Input.is_action_pressed("control"):
-		# Skip scroll accumulation when cursor is over the left sidebar
-		if event is InputEventMouseButton:
-			if main != null and main.editMode and spriteEdit != null and spriteEdit.visible:
-				if event.position.x < spriteEdit.panel_width + 19:
-					return
 		if event.is_action_pressed("scrollUp"):
 			_scroll_input += 1
 		if event.is_action_pressed("scrollDown"):
 			_scroll_input -= 1
+
+# True while the cursor is over the editing chrome (left/right sidebar or the
+# top menu bar) in edit mode. Screen-space bounds are used because the sidebar
+# backgrounds are MOUSE_FILTER_IGNORE, so gui_get_hovered_control() reads null
+# over their blank areas. Shared by the zoom guard, the Ctrl+scroll slider
+# nudge, and the sprite-cycle scroll accumulator. Bounds match mouse_cursor.gd.
+func isMouseOverSidebar() -> bool:
+	if main == null or not main.editMode:
+		return false
+	var vp = get_viewport()
+	if vp == null:
+		return false
+	var sp = vp.get_mouse_position()
+	if sp.y < 28:
+		return true
+	if spriteEdit != null and sp.x < spriteEdit.panel_width + 19:
+		return true
+	if spriteList != null and sp.x > vp.get_visible_rect().size.x - spriteList.panel_width - 7:
+		return true
+	return false
+
+# Walk up from the control under the cursor to the nearest Range (HSlider /
+# VSlider / SpinBox). Null when the cursor is not over an adjustable range.
+func _hovered_range() -> Range:
+	var ctl = get_viewport().gui_get_hovered_control()
+	while ctl != null:
+		if ctl is Range:
+			return ctl
+		ctl = ctl.get_parent_control()
+	return null
 
 func select(areas):
 

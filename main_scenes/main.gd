@@ -537,8 +537,9 @@ func onWindowSizeChange():
 	pushUpdates.position = Vector2(0, s.y)  # bottom-left anchor
 
 func zoomScene():
-	#Handles Zooming
-	if Input.is_action_pressed("control"):
+	# Handles Zooming. Only over the open viewport, never while the cursor is
+	# over a sidebar (there Ctrl+scroll nudges the hovered slider instead).
+	if Input.is_action_pressed("control") and not Global.isMouseOverSidebar():
 		if Input.is_action_just_pressed("scrollUp"):
 			if scaleOverall < 400:
 				camera.zoom += Vector2(0.1,0.1)

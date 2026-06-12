@@ -190,6 +190,17 @@ When a sprite is selected (canvas click, keyboard scroll, or any path through `s
 
 The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `Area2D.get_overlapping_areas()` because the latter returns cached results from the previous physics step, creating a one-frame timing mismatch with the cursor position updated in `_process()`.
 
+### Scroll wheel routing (cycle / zoom / slider nudge)
+
+> Updated: 2026-06-12. Ctrl+scroll nudges the hovered sidebar slider; the viewport never zooms or cycles over a sidebar.
+
+Three behaviors share the wheel, routed by cursor location:
+
+- **Over the open viewport.** Plain scroll cycles sprite selection (`global.gd:scrollSprites()`, fed by a `_scroll_input` accumulator in `Global._input`); `Ctrl`+scroll zooms (`main.gd:zoomScene()`, polled).
+- **Over a sidebar.** Neither of the above fires. `Global._input` intercepts the wheel first (it runs before GUI `_gui_input`): if a `Range` (HSlider/VSlider/SpinBox) is under the cursor it is consumed, and value changes by one `step` only while `Ctrl` is held; otherwise (layer-list scroll area, blank space) it is left for the `ScrollContainer` but still returns early so it never reaches the cycle accumulator.
+
+`zoomScene()` polls the `Input` singleton, so consuming the event cannot stop it; it is gated directly on `Global.isMouseOverSidebar()` instead. That helper is a shared screen-space bounds check (left/right sidebar or top menu bar, in edit mode), kept in screen space because the sidebar backgrounds are `MOUSE_FILTER_IGNORE`, so `gui_get_hovered_control()` reads null over their blank areas. Sliders outside the sidebars (Settings, the volume/sensitivity sliders) keep their default wheel behavior.
+
 ---
 
 ## Sprite Object (`spriteObject.gd`)
@@ -276,8 +287,8 @@ Key bindings (edit mode, handled in `global.gd`):
 | P          | Toggle reparent/link mode                 |
 | Right-click | Cancel linking mode (when active)         |
 | Z / Y      | Undo / Redo                               |
-| Mouse wheel| Scroll through sprite list                |
-| Ctrl+Scroll| Zoom viewport (10%-400%)                  |
+| Mouse wheel| Cycle sprite selection (only while the cursor is over the open viewport) |
+| Ctrl+Scroll| Over the viewport: zoom (10%-400%). Over a sidebar: nudge the hovered slider/spinbox by one `step`. Sliders never adjust without Ctrl, and the viewport never zooms while the cursor is over a sidebar |
 | Middle drag| Pan viewport                              |
 | Ctrl+K     | Tap: screenshot; Hold (≥1s): record transparent video. Format (WebM/APNG/GIF) and FPS (15/30/60) configurable in Settings. APNG/GIF default to 15 FPS, WebM defaults to 30 FPS. When NDI is enabled, captures the NDI crop view (auto-framed avatar) instead of the main camera view (updated 2026-03-12) |
 | Left click | Select sprite / deselect on empty space   |
