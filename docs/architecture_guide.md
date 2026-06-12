@@ -527,7 +527,9 @@ it as `COLOR.a` and ignores `COLOR.rgb`.
 
 ### Children ride the bend
 
-When `wiggleChildrenFollow` is on, `_apply_wiggle_to_children()` places each directly-linked child (`getAllLinkedSprites()`) at `appendage.sample_local(t)`, where `t` is the child's rest distance along the appendage; rotation follows the local chain tangent. The hidden sprite is held at identity so its local space matches the appendage's. Deeper descendants follow for free via the scene tree. Rest transforms are captured lazily and restored by `_release_wiggle_children()`.
+`_apply_wiggle_to_children()` places each directly-linked child (`getAllLinkedSprites()`) at `appendage.sample_local(t)`, where `t` is the child's rest distance along the appendage; rotation follows the local chain tangent. The hidden sprite is held at identity so its local space matches the appendage's. Deeper descendants follow for free via the scene tree.
+
+> Updated: 2026-06-10 — **Linked children are now reparented so they stay visible, and they always ride the bend** (the per-layer *Linked layers follow* toggle was removed; `wiggleChildrenFollow` persists but is unused). Linked children are parented under the layer's `Sprite2D`, which wiggle hides (`sprite.visible = false`) — so the whole subtree vanished. `_attach_wiggle_children()` (called each frame from `_update_wiggle`) reparents direct linked children off the Sprite2D onto **`DragOrigin`** (visible, and where the mesh lives), capturing each child's authored rest offset first; `_release_wiggle_children()` (now called from `_set_wiggle_active(false)`) reparents them back under the Sprite2D and restores that rest exactly (no drift). **Caveat:** a child that was clip-masked by this layer (`setClip` → `sprite.clip_children`) loses the mask while the parent wiggles (clipping to a deforming mesh isn't supported) and re-clips once wiggle turns off.
 
 ### Parameters (`spriteObject.gd`)
 

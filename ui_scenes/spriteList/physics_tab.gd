@@ -49,7 +49,6 @@ var _grab_on: ImageTexture
 var _grab_off: ImageTexture
 
 var _cb_enabled: CheckBox
-var _cb_children: CheckBox
 var _cb_wag: CheckBox
 
 var _edit_btn: Button
@@ -80,7 +79,6 @@ func build(content: VBoxContainer, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat
 	_grab_off = grab_off
 
 	_cb_enabled = _checkbox("Wiggle this layer", _on_enabled_toggled)
-	_cb_children = _checkbox("Linked layers follow", _on_children_toggled)
 
 	_header("Presets")
 	_build_presets()
@@ -114,7 +112,6 @@ func sync() -> void:
 	var active = has and spr.wiggleEnabled
 
 	_cb_enabled.disabled = not has
-	_cb_children.disabled = not active
 	_cb_wag.disabled = not active
 
 	# Presets apply to / capture from the active layer, so they enable with it.
@@ -137,11 +134,9 @@ func sync() -> void:
 		Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
 	if has:
 		_cb_enabled.set_pressed_no_signal(spr.wiggleEnabled)
-		_cb_children.set_pressed_no_signal(spr.wiggleChildrenFollow)
 		_cb_wag.set_pressed_no_signal(spr.wiggleWagEnabled)
 	else:
 		_cb_enabled.set_pressed_no_signal(false)
-		_cb_children.set_pressed_no_signal(false)
 		_cb_wag.set_pressed_no_signal(false)
 
 	for prop in _rows:
@@ -405,11 +400,6 @@ func _on_enabled_toggled(pressed: bool) -> void:
 	if not pressed:
 		Global.wigglePathMode = false    # ribbon controls disable with wiggle
 	Global.heldSprite.setWiggle(pressed)
-
-func _on_children_toggled(pressed: bool) -> void:
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.setWiggleChildrenFollow(pressed)
 
 func _on_wag_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return

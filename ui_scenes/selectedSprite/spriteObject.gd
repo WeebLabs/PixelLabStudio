@@ -929,9 +929,7 @@ func migrateLegacyWobble():
 # the spring chain. The Physics tab calls this; safe to call any time.
 func setWiggle(on: bool):
 	wiggleEnabled = on
-	_set_wiggle_active(on)
-	if not on:
-		_release_wiggle_children()
+	_set_wiggle_active(on)   # _set_wiggle_active(false) releases linked children
 
 func setWiggleChildrenFollow(on: bool):
 	wiggleChildrenFollow = on
@@ -964,6 +962,8 @@ func _set_wiggle_active(on: bool):
 		_wiggleAppendage.reset()
 		sprite.visible = false
 	else:
+		# Return linked children under the Sprite2D before it becomes visible again.
+		_release_wiggle_children()
 		if _wiggleAppendage != null:
 			_wiggleAppendage.queue_free()
 			_wiggleAppendage = null
@@ -1377,8 +1377,10 @@ func _update_wiggle(delta: float):
 		_apply_wiggle_geometry()
 	_wiggleAppendage.configure(_wiggle_params())
 	_wiggleAppendage.tick(delta, tick)
-	if wiggleChildrenFollow:
-		_apply_wiggle_to_children()
+	# Linked children sit under this layer's Sprite2D, which wiggle hides — reparent
+	# them onto DragOrigin (visible) so they stay on screen, then ride the bend.
+	_attach_wiggle_children()
+	_apply_wiggle_to_children()
 
 func _wiggle_params() -> Dictionary:
 	return {
@@ -1465,10 +1467,27 @@ func _smooth_tangent(t: float) -> Vector2:
 	var i := clampi(int(t * float(n - 1)), 0, n - 2)
 	return _wiggleSmooth[i + 1] - _wiggleSmooth[i]
 
-# Restore any children we were driving back to their captured rest transform.
+# Reparent linked children off the (wiggle-hidden) Sprite2D onto DragOrigin so they
+# stay visible and ride the bend. Capture each child's authored rest offset BEFORE
+# reparenting so _release can restore it exactly (no drift across on/off cycles).
+# keep_global_transform on the move avoids a visual pop; the follow pass repositions
+# them next. NOTE: a child that was clip-masked by this layer (setClip) loses that
+# mask while the parent wiggles — clipping to a deforming mesh isn't supported; it
+# re-clips when wiggle turns off and the child returns under the Sprite2D.
+func _attach_wiggle_children():
+	for child in getAllLinkedSprites():
+		if child.get_parent() == sprite:
+			child._wiggleRestPos = child.position
+			child._wiggleRestRot = child.rotation
+			child._wiggleFollowing = true
+			child.reparent(dragOrigin, true)
+
+# Return any children we were driving back under the Sprite2D at their captured rest.
 func _release_wiggle_children():
 	for child in getAllLinkedSprites():
 		if child._wiggleFollowing:
+			if child.get_parent() == dragOrigin:
+				child.reparent(sprite, false)
 			child.position = child._wiggleRestPos
 			child.rotation = child._wiggleRestRot
 			child._wiggleFollowing = false
