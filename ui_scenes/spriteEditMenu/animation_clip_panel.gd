@@ -271,6 +271,8 @@ func _slider(prefix: String, field: String, minv: float, maxv: float, step: floa
 	_inspector.add_child(label)
 
 	var slider := HSlider.new()
+	# Plain scroll scrolls the section; only Ctrl+scroll adjusts (global.gd:_input).
+	slider.scrollable = false
 	slider.min_value = minv
 	slider.max_value = maxv
 	slider.step = step

@@ -435,24 +435,25 @@ func _input(event):
 			return
 	# Wheel while the cursor is over a sidebar (left/right panel or top bar):
 	# the avatar must not zoom or cycle selection. A slider/spinbox under the
-	# cursor changes only while Ctrl is held; otherwise the wheel is swallowed so
-	# it never adjusts by accident. Over the layer-list scroll area or blank
-	# panel space the wheel is left for the ScrollContainer (we don't consume it)
-	# but still returns here so it never reaches the sprite-cycle accumulator.
+	# cursor adjusts by one step only while Ctrl is held, and that case is
+	# consumed so the section doesn't move. Without Ctrl the wheel is NOT
+	# consumed: it falls through so the enclosing scrollable section scrolls
+	# instead (sidebar sliders are scrollable=false, so they don't self-adjust on
+	# the pass-through; the right sidebar's ScrollContainer and the left sidebar's
+	# position.y scroll in sprite_viewer._input both pick it up). Either way we
+	# return so the wheel never reaches the sprite-cycle accumulator below.
 	# Sliders outside the sidebars (settings, volume) keep default wheel behavior.
 	if event is InputEventMouseButton and event.pressed \
 			and (event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN):
 		if isMouseOverSidebar():
 			var rng := _hovered_range()
-			if rng != null:
+			if rng != null and Input.is_action_pressed("control"):
 				var ed = rng.get("editable")
-				var can_edit: bool = ed == null or bool(ed)
-				if can_edit and Input.is_action_pressed("control"):
+				if ed == null or bool(ed):
 					var stp: float = rng.step if rng.step > 0.0 else 1.0
 					if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 						stp = -stp
 					rng.value = clampf(rng.value + stp, rng.min_value, rng.max_value)
-				# Swallow the wheel over a slider so it never adjusts without Ctrl.
 				get_viewport().set_input_as_handled()
 			return
 	if !Input.is_action_pressed("control"):

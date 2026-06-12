@@ -197,6 +197,8 @@ func _slider(prefix: String, prop: String, minv: float, maxv: float, step: float
 	_content.add_child(label)
 
 	var slider = HSlider.new()
+	# Plain scroll scrolls the section; only Ctrl+scroll adjusts (global.gd:_input).
+	slider.scrollable = false
 	slider.min_value = minv
 	slider.max_value = maxv
 	slider.step = step

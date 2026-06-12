@@ -111,6 +111,8 @@ func build(parent: Node, fill_on: StyleBoxFlat, fill_off: StyleBoxFlat, grab_on:
 	_opacity_popup = PopupPanel.new()
 	parent.add_child(_opacity_popup)
 	_opacity_slider = HSlider.new()
+	# Plain scroll scrolls the section; only Ctrl+scroll adjusts (global.gd:_input).
+	_opacity_slider.scrollable = false
 	_opacity_slider.min_value = 0.0
 	_opacity_slider.max_value = 1.0
 	_opacity_slider.step = 0.01

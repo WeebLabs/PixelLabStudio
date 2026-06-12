@@ -223,6 +223,9 @@ func _ready():
 		_rot_min_slider, _rot_max_slider,
 		_anim_speed_slider, _anim_frames_slider,
 	]
+	# Plain scroll scrolls the panel; only Ctrl+scroll adjusts (global.gd:_input).
+	for _s in _sliders:
+		_s.scrollable = false
 
 	# Right-click resets each sprite-property slider to spriteObject.gd's factory default
 	Global.make_slider_resettable(_drag_slider, 0)
@@ -826,6 +829,11 @@ func _input(event):
 	if !Global.main.editMode:
 		return
 	if event.position.x > panel_width + 19:
+		return
+	# Ctrl+scroll over a slider is an intentional adjust (global.gd:_input), so
+	# don't steal it to scroll the panel. This runs in the same _input stage as
+	# global.gd, so guarding on Ctrl here keeps the two order-independent.
+	if Input.is_action_pressed("control"):
 		return
 	var s = get_viewport().get_visible_rect().size
 	# Only enable scroll when the viewport can't fit the whole panel.

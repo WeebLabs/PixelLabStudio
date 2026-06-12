@@ -484,6 +484,8 @@ func _create_eye_tracking():
 	_eye_section.add_child(_eye_dist_label)
 
 	_eye_dist_slider = HSlider.new()
+	# Plain scroll scrolls the section; only Ctrl+scroll adjusts (global.gd:_input).
+	_eye_dist_slider.scrollable = false
 	_eye_dist_slider.min_value = 1.0
 	_eye_dist_slider.max_value = 200.0
 	_eye_dist_slider.step = 1.0
@@ -507,6 +509,7 @@ func _create_eye_tracking():
 	_eye_section.add_child(_eye_speed_label)
 
 	_eye_speed_slider = HSlider.new()
+	_eye_speed_slider.scrollable = false
 	_eye_speed_slider.min_value = 0.01
 	_eye_speed_slider.max_value = 1.0
 	_eye_speed_slider.step = 0.01
