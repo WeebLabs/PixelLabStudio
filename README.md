@@ -319,14 +319,18 @@ Your avatar now appears in OBS with a see-through background, ready to
 layer over your game, camera, or scene. The framing follows your avatar
 automatically as it moves.
 
-**About the crop line.** PixelLab Studio sends OBS everything down to an
-invisible bottom edge. Anything below that edge is left out of what OBS
-receives, which lets you frame a tighter head-and-shoulders shot if you
-want one. This edge only shows up as a dashed **orange line** while
-you're in **Edit mode** (the pencil icon) with NDI turned on; you won't
-see it in the normal display view, and that's perfectly fine. **Avatars
-from our store come with this line already set for you, so you normally
-won't need to touch it.**
+**About the crop line.** PixelLab Studio automatically frames your avatar
+into a neat video feed for OBS, keeping it well positioned as it moves and
+bounces. The crop line sets where the **bottom of that frame** sits. In
+OBS you'd usually line the feed up against the bottom edge of your scene,
+and because the frame stops right at the crop line, your avatar rests
+flush along the bottom of your stream, fully in shot, with no empty gap
+beneath it. Raising or lowering the line simply changes how much of your
+avatar is included from the bottom. It only shows up as a dashed **orange
+line** while you're in **Edit mode** (the pencil icon) with NDI turned on,
+so you won't see it in the normal display view, and that's expected.
+**Avatars from our store come with this line already set for you, so you
+normally won't need to touch it.**
 
 If you ever do want to change the framing, you can move the line yourself:
 
