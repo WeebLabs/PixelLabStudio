@@ -151,12 +151,12 @@ divider padding) so adjusting one value reflows the whole panel.
 
 > **This section is for people who bought a ready-made avatar** and just
 > want to get it on screen and into a stream or a Discord call. You don't
-> need any art or software experience — if you've got the `.save` file
+> need any art or software experience. If you've got the `.save` file
 > that came with your purchase, you're a few minutes away from your
 > character talking along with you.
 >
-> If instead you want to *build* an avatar from scratch — importing
-> Photoshop files, arranging sprites, setting up the physics — head to
+> If instead you want to *build* an avatar from scratch (importing
+> Photoshop files, arranging sprites, setting up the physics), head to
 > [For creators](#for-creators-building-your-own-rig) below.
 
 ### 1. Download and launch
@@ -166,7 +166,7 @@ Grab the latest release for your platform from the
 
 - **macOS**: you'll get a `.dmg` file. Open it and drag **PixelLab
   Studio** into your Applications folder. The first time you open it,
-  macOS may warn that it's from an unidentified developer — that's
+  macOS may warn that it's from an unidentified developer. That's
   normal for indie apps. Right-click (or Control-click) the app icon and
   choose **Open**, then confirm. You only have to do this once.
 - **Windows**: you'll get a `.zip` file. Right-click it, choose **Extract
@@ -175,14 +175,14 @@ Grab the latest release for your platform from the
 
 When the app opens you'll see an empty stage with a small cluster of
 controls in the **bottom-right corner**. The app starts in *display
-mode*, which keeps the screen clean for streaming — so the menu you need
+mode*, which keeps the screen clean for streaming, so the menu you need
 for loading isn't showing yet. The next step walks you through revealing
 it.
 
 ### 2. Load your avatar
 
 Your purchase downloads as a **`.zip` file**. Inside it is a **`.save`
-file** — that single file *is* your avatar (artwork, layers, and movement
+file**. That single file *is* your avatar (artwork, layers, and movement
 all bundled together). Before you can load it, you need to **unzip
 (extract)** the download so the app can see the `.save` file inside.
 Follow these steps in order:
@@ -193,7 +193,7 @@ Follow these steps in order:
      click **Extract**. A new folder opens with the contents inside.
    - **macOS**: double-click the `.zip`. A new folder with the same name
      appears right next to it.
-   You should now see a **`.save` file** in the extracted folder — that's
+   You should now see a **`.save` file** in the extracted folder. That's
    your avatar. (Loading straight from inside the `.zip` won't work, which
    is why this step matters.)
 2. Now open the app's loading menu. In the **bottom-right corner** of the
@@ -211,7 +211,7 @@ Follow these steps in order:
    to leave Edit mode and return to the clean display view. (You can
    always click the pencil icon again later if you need the menu back.)
 
-That's it — you don't need to set anything else up. The next time you
+That's it. You don't need to set anything else up. The next time you
 launch the app, your avatar **reopens automatically**, so you only have
 to load it this once.
 
@@ -221,7 +221,7 @@ This is what makes the magic happen: the app listens to your mic and your
 avatar's mouth moves when you talk.
 
 1. Click the **microphone icon** in the bottom-right corner. A list of
-   your microphones pops up — click the same one you use for streaming or
+   your microphones pops up. Click the same one you use for streaming or
    calls (a headset, USB mic, etc.).
 2. Speak normally. Just to the left of the mic icon are **two horizontal
    bars, stacked one above the other**. They glow as the app hears you,
@@ -229,18 +229,18 @@ avatar's mouth moves when you talk.
 
 **Which bar is which:**
 
-- **Lower bar — Sensitivity.** This sets how loud a sound has to be before
+- **Lower bar (Sensitivity).** This sets how loud a sound has to be before
   your avatar counts it as talking. Its glow shows your live mic level.
   - Drag it **right** (more sensitive) if the avatar ignores your normal
     speaking voice or only reacts when you get loud.
   - Drag it **left** (less sensitive) if the avatar's mouth flaps on its
-    own from background noise — a fan, keyboard, or room hum.
-- **Upper bar — Release time.** This sets how long the mouth stays in the
+    own from background noise like a fan, keyboard, or room hum.
+- **Upper bar (Release time).** This sets how long the mouth stays in the
   talking pose *after* you stop making sound. Its glow shows that
   hold-over fading out.
-  - Drag it **right** for a longer hold — smoother, more natural mouth
+  - Drag it **right** for a longer hold: smoother, more natural mouth
     movement that doesn't snap shut between words.
-  - Drag it **left** for a shorter hold — the mouth closes quickly the
+  - Drag it **left** for a shorter hold: the mouth closes quickly the
     instant you go quiet.
 
 A good starting point: set Sensitivity so the avatar reliably opens its
@@ -258,7 +258,7 @@ A few things worth knowing so you feel at home:
   number keys **`1`–`0`** to switch between them on the fly.
 - **Move the camera.** Scroll to zoom in or out, and hold the middle
   mouse button (or spacebar) to drag the view around. This only changes
-  what *you* see — it doesn't affect your stream.
+  what *you* see; it doesn't affect your stream.
 - **Edit mode.** The **pencil icon** in the bottom-right corner switches
   Edit mode on and off (the same one you used to load your avatar). With
   it on, you can click your avatar and **drag it to reposition** it, or
@@ -276,13 +276,13 @@ else.
 ### 5. Go live with OBS (streaming and Discord)
 
 PixelLab Studio sends your avatar to OBS as a clean, **transparent video
-source** — no green screen and no screen-grabbing a window. Here's the
+source**: no green screen and no screen-grabbing a window. Here's the
 one-time setup.
 
 **In PixelLab Studio:**
 
 1. Open settings (the **gear icon**, bottom-right) and turn on **NDI
-   Output**. (NDI is just the technology that carries the video to OBS —
+   Output**. (NDI is just the technology that carries the video to OBS;
    you don't need to understand it, only switch it on.)
 2. Leave the source name as is, or give it a name you'll recognize in the
    next step.
@@ -302,7 +302,7 @@ one-time setup.
 
 Your avatar now appears in OBS with a see-through background, ready to
 layer over your game, camera, or scene. Back in PixelLab Studio you'll
-see a dashed **orange line** across the stage — that's the bottom edge of
+see a dashed **orange line** across the stage. That's the bottom edge of
 what OBS receives. Drag it up if you only want a head-and-shoulders view.
 The framing follows your avatar automatically as it moves.
 
@@ -321,7 +321,7 @@ covers both your stream and your calls, so you only build it once.
 ## For creators (building your own rig)
 
 The steps above assume someone already assembled your avatar for you. If
-you're making one yourself — or tweaking the rigging of one you bought —
+you're making one yourself (or tweaking the rigging of one you bought),
 this is where you bring in artwork and wire up how the pieces move. This
 part expects some comfort with layered image files (Photoshop/PSD) and a
 bit of patience for fiddling with settings.
@@ -334,7 +334,7 @@ Two ways to bring artwork in, both from **Import** in the top menu bar:
   own sprite, Photoshop groups become parent/child relationships, and the
   whole rig is positioned around the world origin. Layers whose names end
   in `_NRML` (case-insensitive) automatically pair up as normal maps for
-  their matching artwork layer — handy for lighting later.
+  their matching artwork layer (handy for lighting later).
 - **Import PNGs.** Import also accepts one or more `.png` files. Once
   they're on the stage you can set a frame count (for sprite-sheet
   animations like talking mouths), choose parents, and tune each sprite's
@@ -364,9 +364,9 @@ modifier keys), see
 
 Click **Save** in the top menu. A progress bar appears while the images
 encode, followed by a confirmation message when it's done. Saves default
-to the app's data folder, but the file window lets you navigate anywhere
-— and the resulting `.save` file is exactly the kind of self-contained
-avatar file an end user loads in step 2 above.
+to the app's data folder, but the file window lets you navigate anywhere.
+The resulting `.save` file is exactly the kind of self-contained avatar
+file an end user loads in step 2 above.
 
 ## Features in detail
 
