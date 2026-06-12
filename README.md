@@ -287,7 +287,7 @@ one-time setup.
 2. Leave the source name as is, or give it a name you'll recognize in the
    next step.
 
-**In OBS (one-time install of the NDI plug-in):**
+**Install the NDI plug-in for OBS (one time only):**
 
 OBS can't receive NDI on its own. It needs a small, free add-on called
 **DistroAV**. You only have to install this once, and then OBS will
@@ -307,11 +307,13 @@ always understand NDI.
 7. Open OBS again. It now understands NDI, and you won't need to repeat
    these steps in future.
 
-**In OBS (add your avatar):**
+**Add your avatar as a source in OBS:**
 
-8. Under **Sources**, click **+** → **NDI Source**.
-9. In the dropdown, choose **PixelLab Studio** (or the name you set), then
-   click **OK**.
+8. Under **Sources**, click **+** and choose **NDI Source**.
+9. OBS asks you to name the new source. Type any name you like (or leave
+   the default) and click **OK**.
+10. A properties window then opens with a **dropdown**. Choose **PixelLab
+    Studio** (or the name you set), then click **OK**.
 
 Your avatar now appears in OBS with a see-through background, ready to
 layer over your game, camera, or scene. The framing follows your avatar
