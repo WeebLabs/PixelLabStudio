@@ -321,14 +321,18 @@ automatically as it moves.
 
 **About the crop line.** PixelLab Studio automatically frames your avatar
 into a neat video feed for OBS, keeping it well positioned as it moves and
-bounces. The crop line sets where the **bottom of that frame** sits. In
-OBS you'd usually line the feed up against the bottom edge of your scene,
-and because the frame stops right at the crop line, your avatar rests
+bounces. The crop line sets where the **bottom of that frame** sits.
+
+In OBS you'd usually line the feed up against the bottom edge of your
+scene. Because the frame stops right at the crop line, your avatar rests
 flush along the bottom of your stream, fully in shot, with no empty gap
 beneath it. Raising or lowering the line simply changes how much of your
-avatar is included from the bottom. It only shows up as a dashed **orange
-line** while you're in **Edit mode** (the pencil icon) with NDI turned on,
-so you won't see it in the normal display view, and that's expected.
+avatar is included from the bottom.
+
+The line only shows up as a dashed **orange line** while you're in **Edit
+mode** (the pencil icon) with NDI turned on, so you won't see it in the
+normal display view, and that's expected.
+
 **Avatars from our store come with this line already set for you, so you
 normally won't need to touch it.**
 
