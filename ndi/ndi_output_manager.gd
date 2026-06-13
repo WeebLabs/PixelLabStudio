@@ -200,48 +200,21 @@ func _recalculate_framing():
 	if ndi_viewport == null or ndi_camera == null:
 		return
 
-	var main = Global.main
-	var origin = main.origin
+	var origin = Global.main.origin
 
-	# Rest origin position (subtract current bounce offset)
+	# Rest origin position (subtract current bounce offset) so the frame is fixed at the
+	# avatar's resting pose; the avatar then visibly bounces WITHIN the frame.
 	var bounce_offset = origin.get_parent().position.y
 	var rest_origin_pos = origin.global_position - Vector2(0, bounce_offset)
 
-	# Bounce peak displacement
-	# Bounce re-triggers at 16px above rest, so actual peak is up to 16px higher
-	var bounce_vel = float(main.bounceSlider)
-	var gravity = float(main.bounceGravity)
-	var peak_displacement = 0.0
-	if gravity > 0:
-		peak_displacement = (bounce_vel * bounce_vel) / (2.0 * gravity) + 16.0
-
-	# Find reference sprite's vertical amplitude (or fallback to global max)
-	var sprites = get_tree().get_nodes_in_group("saved")
-	var ref_y_amp = 0.0
-	var ref_eye = 0.0
-	var ref_sprite = null
-	for sprite_obj in sprites:
-		if sprite_obj.visible and sprite_obj.ndiRefLayer:
-			ref_sprite = sprite_obj
-			ref_y_amp = abs(sprite_obj.yAmp)
-			ref_eye = sprite_obj.eyeTrackDistance if sprite_obj.eyeTrack else 0.0
-			break
-	if ref_sprite == null:
-		for sprite_obj in sprites:
-			if sprite_obj.visible:
-				ref_y_amp = max(ref_y_amp, abs(sprite_obj.yAmp))
-
-	# The frame is the user-drawn crop box (origin-relative), placed in world space
+	# The frame is exactly the user-drawn crop box (origin-relative), placed in world
+	# space: one-to-one with the rectangle OBS receives, on all four edges. No bounce
+	# headroom is subtracted from the bottom now. The crop ships pre-configured per
+	# avatar, so it's WYSIWYG: whoever sets it up bakes any desired margin into the box
+	# itself, just like the top and sides.
 	var e = get_crop_edges()
 	var content_min = rest_origin_pos + Vector2(e[0], e[1])
 	var content_max = rest_origin_pos + Vector2(e[2], e[3])
-
-	# Pin the output bottom above the box's bottom edge by enough margin that
-	# below-box content never becomes visible during wobble or bounce — the user
-	# places the bottom edge flush with the bottom of the desired avatar part,
-	# exactly like the old crop line.
-	var bottom_margin = ref_y_amp + ref_eye + peak_displacement
-	content_max.y -= bottom_margin
 
 	# Content area
 	var content_width = content_max.x - content_min.x

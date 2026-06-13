@@ -45,8 +45,14 @@ func _process(_delta):
 	if !visible:
 		return
 
+	# Anchor to the avatar's REST position, not its live (bouncing) position. The NDI
+	# camera frames the box at rest and stays put while the avatar bounces through it
+	# (see ndi_output_manager._recalculate_framing), so anchoring the box to the live
+	# origin made it ride the bounce here while the real OBS frame stayed still. Subtract
+	# the bounce offset (OriginMotion.position.y) so the on-canvas box matches the output.
 	var origin = Global.main.origin
-	position = origin.global_position
+	var bounce_offset = origin.get_parent().position.y
+	position = origin.global_position - Vector2(0, bounce_offset)
 
 	# Update hover state. Hover applies only when the cursor is near a gizmo or
 	# edge AND not over either sidebar — sidebars block dragging and the cursors.

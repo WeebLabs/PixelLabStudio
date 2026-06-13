@@ -83,9 +83,8 @@ What's added on top:
   while still receiving its own wobble, drag, and rotation.
 - **Clip linked sprites.** Render a child sprite only inside its
   parent's bounds.
-- **NDI reference layer.** Designate one sprite as the bounce anchor:
-  its movement sets the safety margin above the crop box's bottom edge,
-  so content below the box never pops into frame mid-bounce.
+- **NDI crop box.** Draw the exact rectangle OBS receives; it's saved per
+  avatar and applied on load, so shared avatars arrive pre-framed.
 - **Squash/stretch.** Vertical-velocity-driven scaling for a more
   exaggerated bounce feel.
 - **Resizable, persistent sidebars.** Drag the inner edge of either
@@ -416,8 +415,6 @@ file an end user loads in step 2 above.
   wobble, drag, and rotation. Useful for backdrops or stable accessories.
 - **Clip linked.** Render a sprite only inside its parent's visual
   bounds.
-- **NDI reference layer.** Mark one sprite so the NDI output framing
-  anchors to it instead of drifting.
 
 ### Eye tracking
 
@@ -461,18 +458,16 @@ roadmap.
 ### NDI output
 
 The video OBS receives is exactly the area inside the dashed **orange
-crop box**: that rectangle *is* the frame. The box is saved inside the
-avatar file and applied automatically on load, so store-bought and shared
-avatars arrive pre-framed and you normally won't need to touch it.
+crop box**: that rectangle *is* the frame, matched edge for edge. The box
+is saved inside the avatar file and applied automatically on load, so
+store-bought and shared avatars arrive pre-framed and you normally won't
+need to touch it.
 
-The box's **bottom edge** is the one part worth understanding. Place it
-flush with the lowest part of your avatar you want on stream (the waist
-of a half-body rig, say) and the app automatically keeps anything below
-that edge out of frame, even while the avatar bounces and moves. There's
-no need to leave extra space underneath; the compensation is worked out
-for you from the **NDI reference layer**. In OBS you can then line the
-feed up against the bottom of your scene and your avatar sits flush along
-it, fully in shot, with no gap beneath.
+The frame stays fixed while your avatar bounces and moves inside it (just
+as it does in OBS), so the box is framed once, when the avatar is set up,
+with a little headroom built in for that movement. In OBS you can then
+line the feed up against the bottom of your scene and your avatar sits
+flush along it, fully in shot.
 
 To reframe an avatar:
 
