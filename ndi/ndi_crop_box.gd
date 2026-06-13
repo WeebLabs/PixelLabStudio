@@ -21,8 +21,9 @@ const GRAB_THRESHOLD = 12.0
 const HANDLE_SIZE = 8.0     # half-size of the gizmo squares, screen px
 const MIN_SIZE = 64.0       # minimum box width/height, world px
 
-# Handle ids. Edges move one side; corners move two.
-enum { H_NONE = -1, H_L, H_R, H_T, H_B, H_TL, H_TR, H_BL, H_BR }
+# Handle ids. Edge midpoints move one side; corners move two; H_MOVE (grabbing a
+# bare edge line, away from any gizmo) translates the whole box without resizing.
+enum { H_NONE = -1, H_L, H_R, H_T, H_B, H_TL, H_TR, H_BL, H_BR, H_MOVE }
 
 var _dragging: int = H_NONE
 var _drag_start_edges: Array = []
@@ -158,15 +159,22 @@ func _unhandled_input(event):
 	elif event is InputEventMouseMotion and _dragging != H_NONE:
 		var d = get_global_mouse_position() - _drag_start_mouse
 		var e = _drag_start_edges.duplicate()
-		# Move the edges this handle controls, never collapsing below MIN_SIZE
-		if _dragging in [H_L, H_TL, H_BL]:
-			e[0] = min(_drag_start_edges[0] + d.x, e[2] - MIN_SIZE)
-		if _dragging in [H_R, H_TR, H_BR]:
-			e[2] = max(_drag_start_edges[2] + d.x, e[0] + MIN_SIZE)
-		if _dragging in [H_T, H_TL, H_TR]:
-			e[1] = min(_drag_start_edges[1] + d.y, e[3] - MIN_SIZE)
-		if _dragging in [H_B, H_BL, H_BR]:
-			e[3] = max(_drag_start_edges[3] + d.y, e[1] + MIN_SIZE)
+		if _dragging == H_MOVE:
+			# Translate all four edges together: reposition without resizing.
+			e[0] = _drag_start_edges[0] + d.x
+			e[1] = _drag_start_edges[1] + d.y
+			e[2] = _drag_start_edges[2] + d.x
+			e[3] = _drag_start_edges[3] + d.y
+		else:
+			# Move the edges this handle controls, never collapsing below MIN_SIZE
+			if _dragging in [H_L, H_TL, H_BL]:
+				e[0] = min(_drag_start_edges[0] + d.x, e[2] - MIN_SIZE)
+			if _dragging in [H_R, H_TR, H_BR]:
+				e[2] = max(_drag_start_edges[2] + d.x, e[0] + MIN_SIZE)
+			if _dragging in [H_T, H_TL, H_TR]:
+				e[1] = min(_drag_start_edges[1] + d.y, e[3] - MIN_SIZE)
+			if _dragging in [H_B, H_BL, H_BR]:
+				e[3] = max(_drag_start_edges[3] + d.y, e[1] + MIN_SIZE)
 		_write_edges(e)
 		queue_redraw()
 		get_viewport().set_input_as_handled()
@@ -196,7 +204,7 @@ func _handle_points(e: Array) -> Dictionary:
 	}
 
 # Nearest handle within grab range of a local-space point, or the edge line
-# under it (corners win over midpoints, gizmos win over bare edge lines).
+# under it (a gizmo resizes; a bare edge line, away from any gizmo, moves the box).
 func _hit_test(p: Vector2) -> int:
 	var zoom = Global.main.camera.zoom.x
 	var thr = GRAB_THRESHOLD / zoom
@@ -205,19 +213,14 @@ func _hit_test(p: Vector2) -> int:
 	for h in [H_TL, H_TR, H_BL, H_BR, H_L, H_R, H_T, H_B]:
 		if p.distance_to(points[h]) < thr:
 			return h
-	# Edge lines (the dashed sides themselves), old-crop-line-style grabbing
+	# Bare edge lines (away from the gizmos above): grab anywhere along a side to
+	# drag the whole box without resizing.
 	var in_x = p.x > e[0] - thr and p.x < e[2] + thr
 	var in_y = p.y > e[1] - thr and p.y < e[3] + thr
-	if in_x:
-		if abs(p.y - e[1]) < thr:
-			return H_T
-		if abs(p.y - e[3]) < thr:
-			return H_B
-	if in_y:
-		if abs(p.x - e[0]) < thr:
-			return H_L
-		if abs(p.x - e[2]) < thr:
-			return H_R
+	if in_x and (abs(p.y - e[1]) < thr or abs(p.y - e[3]) < thr):
+		return H_MOVE
+	if in_y and (abs(p.x - e[0]) < thr or abs(p.x - e[2]) < thr):
+		return H_MOVE
 	return H_NONE
 
 func _cursor_for(h: int) -> int:
@@ -230,6 +233,8 @@ func _cursor_for(h: int) -> int:
 			return Input.CURSOR_FDIAGSIZE
 		H_TR, H_BL:
 			return Input.CURSOR_BDIAGSIZE
+		H_MOVE:
+			return Input.CURSOR_MOVE
 	return Input.CURSOR_ARROW
 
 func _set_freeze(frozen: bool):

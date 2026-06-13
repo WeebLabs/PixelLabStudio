@@ -476,7 +476,8 @@ To reframe an avatar:
    hidden in the normal display view).
 2. Drag the **square handles** to resize: the handle in the middle of
    each side moves just that side; the corner handles resize two sides
-   at once, diagonally. You can also grab anywhere along a dashed edge.
+   at once, diagonally. To **move** the whole box without resizing, grab
+   it anywhere along a dashed edge (away from the handles) and drag.
 3. Click **Save** in the top menu bar to store the framing with the
    avatar, then **Exit**.
 
