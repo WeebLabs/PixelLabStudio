@@ -283,6 +283,8 @@ func _slider(prefix: String, field: String, minv: float, maxv: float, step: floa
 	slider.add_theme_icon_override("grabber", _grab_on)
 	slider.add_theme_icon_override("grabber_highlight", _grab_on)
 	slider.value_changed.connect(func(value): _set_value(field, value, is_int, label, prefix, suffix))
+	# Right-click resets to the field's factory default, like every other slider.
+	Global.make_slider_resettable(slider, default)
 	_inspector.add_child(slider)
 
 	_value_rows.append({"slider": slider, "label": label, "field": field,
