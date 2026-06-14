@@ -20,7 +20,7 @@ var animationTick = 0
 var cursorWorldPos = Vector2.ZERO
 var _cursorScreenToWorldOffset: Vector2 = Vector2.ZERO
 
-var filtering = false
+var filtering = true
 var _text_field_active: bool = false
 var _z_overlay: Node2D = null
 var _z_input: LineEdit = null

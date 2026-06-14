@@ -51,7 +51,7 @@ var settings = {
 	"gravity":1000,
 	"maxFPS":60,
 	"backgroundColor":var_to_str(Color(0.0,0.0,0.0,0.0)),
-	"filtering":false,
+	"filtering":true,
 	"costumeKeys":["1","2","3","4","5","6","7","8","9","0"],
 	"blinkSpeed":1.0,
 	"blinkChance":200,

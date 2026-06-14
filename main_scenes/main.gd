@@ -188,7 +188,7 @@ func _ready():
 	if Saving.settings.has("filtering"):
 		Global.filtering = Saving.settings["filtering"]
 	else:
-		Saving.settings["filtering"] = false
+		Saving.settings["filtering"] = true
 
 	if Saving.settings.has("gravity"):
 		bounceGravity = Saving.settings["gravity"]
