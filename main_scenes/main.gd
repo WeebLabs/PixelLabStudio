@@ -123,6 +123,19 @@ func _ready():
 
 	screen_scale = DisplayServer.screen_get_scale()
 
+	# DPI-aware UI scale. The project stretch scale (window/stretch/scale=1.5) is a flat
+	# content multiplier tuned for macOS Retina, where it composes with Retina rendering
+	# and the screen_scale-driven window sizing below. screen_get_scale() is macOS-only
+	# (returns 1.0 on Windows/Linux), so off macOS that flat 1.5 was the ONLY scaling
+	# applied and the UI came out oversized (1.5x at 100% display scaling). Off macOS,
+	# drive content_scale_factor from the display's real DPI instead: 96dpi(100%)->1.0,
+	# 120(125%)->1.25, 144(150%)->1.5, etc. NDI output is a separate SubViewport and is
+	# unaffected.
+	if OS.get_name() != "macOS":
+		var _dpi := DisplayServer.screen_get_dpi(DisplayServer.window_get_current_screen())
+		var _ui_scale := clampf(snappedf(float(_dpi) / 96.0, 0.25), 1.0, 3.0)
+		get_window().content_scale_factor = _ui_scale
+
 	Global.connect("startSpeaking",onSpeak)
 
 	$UILayer/ControlPanel/MicButtong/Button.gui_input.connect(_on_mic_button_gui_input)
