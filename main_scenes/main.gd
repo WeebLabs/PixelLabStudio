@@ -575,14 +575,27 @@ func updateWindowTransparency():
 	if ndi_active and !editMode:
 		# NDI handles transparency via SubViewport — disable expensive window compositing
 		get_viewport().transparent_bg = false
-		get_window().transparent = false
+		_set_window_transparent(false)
 		RenderingServer.set_default_clear_color(Global.backgroundColor if Global.backgroundColor.a != 0.0 else Color(0.3, 0.3, 0.3))
 	else:
 		get_viewport().transparent_bg = !editMode
 		if Global.backgroundColor.a != 0.0:
 			get_viewport().transparent_bg = false
-		get_window().transparent = get_viewport().transparent_bg
+		_set_window_transparent(get_viewport().transparent_bg)
 		RenderingServer.set_default_clear_color(Global.backgroundColor)
+
+# On Windows, turning the native transparent-window flag off at runtime can
+# leave the transparent main viewport backed by black after NDI or edit mode
+# toggles. Never turn it off there; only restore it when a transparent viewport
+# needs it. Viewport alpha/clear color still control whether each frame is
+# actually transparent or opaque.
+func _set_window_transparent(want: bool):
+	if OS.get_name() == "Windows":
+		if want and !get_window().transparent:
+			get_window().transparent = true
+		return
+	if get_window().transparent != want:
+		get_window().transparent = want
 
 #Swaps between edit mode and view mode
 func swapMode():
