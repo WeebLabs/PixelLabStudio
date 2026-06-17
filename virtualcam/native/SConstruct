@@ -1,0 +1,37 @@
+#!/usr/bin/env python
+"""
+Build script for the Virtual Camera GDExtension (softcam sender bridge).
+
+godot-cpp is shared with the psd-native extension. Locally we reuse that already
+built copy; CI clones a fresh godot-cpp into ./godot-cpp (branch 4.4) so the build
+is self-contained. Mirrors addons/psd-native/SConstruct.
+
+    scons platform=macos   target=template_debug arch=universal
+    scons platform=windows target=template_debug arch=x86_64
+"""
+
+import os
+
+godot_cpp = "godot-cpp" if os.path.exists("godot-cpp/SConstruct") \
+	else "../../addons/psd-native/godot-cpp"
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+platform = env["platform"]
+arch = env.get("arch", "x86_64")
+
+if platform == "macos":
+	libpath = "bin/macos/libvirtualcam.macos.{}.dylib".format(arch)
+elif platform == "windows":
+	libpath = "bin/windows/libvirtualcam.windows.{}.dll".format(arch)
+elif platform == "linux":
+	libpath = "bin/linux/libvirtualcam.linux.{}.so".format(arch)
+else:
+	libpath = "bin/libvirtualcam.{}".format(platform)
+
+library = env.SharedLibrary(libpath, source=sources)
+
+Default(library)

@@ -1,0 +1,15 @@
+# godot-cpp is reused from addons/psd-native locally, and cloned fresh by CI into
+# this folder. Never commit it.
+godot-cpp/
+
+# SCons build intermediates.
+*.os
+*.obj
+*.o
+.sconsign.dblite
+
+# Windows DLL is produced by CI (and bundled in Phase 3); not committed from here.
+bin/windows/
+
+# The macOS dylib IS committed so the extension loads on the dev box.
+!bin/macos/

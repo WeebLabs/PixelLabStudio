@@ -1,0 +1,42 @@
+name: Build Virtual Cam (Windows)
+
+# Builds the Virtual Camera GDExtension DLL for Windows x86_64 with MSVC.
+# Mirrors the local/psd-native flow: clone godot-cpp (branch 4.4) next to the
+# SConstruct, then build with SCons. Produces the DLL as a downloadable artifact.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'virtualcam/native/**'
+      - '.github/workflows/windows-build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install SCons
+        run: pip install scons
+
+      - name: Clone godot-cpp (branch 4.4)
+        run: git clone https://github.com/godotengine/godot-cpp --branch 4.4 --depth 1 virtualcam/native/godot-cpp
+
+      - name: Build extension (MSVC, x86_64)
+        working-directory: virtualcam/native
+        run: scons platform=windows target=template_debug arch=x86_64
+
+      - name: Upload DLL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libvirtualcam-windows-x86_64
+          path: virtualcam/native/bin/windows/libvirtualcam.windows.x86_64.dll
+          if-no-files-found: error
