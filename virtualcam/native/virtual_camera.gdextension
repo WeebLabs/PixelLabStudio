@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "virtual_camera_init"
+compatibility_minimum = "4.4"
+reloadable = false
+
+[libraries]
+macos.single = "bin/macos/libvirtualcam.macos.universal.dylib"
+windows.x86_64.single = "bin/windows/libvirtualcam.windows.x86_64.dll"

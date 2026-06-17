@@ -9,10 +9,10 @@ softcam/
 *.os
 *.obj
 *.o
+*.lib
+*.exp
+*.pdb
 .sconsign.dblite
 
-# Windows DLL is produced by CI (and bundled in Phase 3); not committed from here.
-bin/windows/
-
-# The macOS dylib IS committed so the extension loads on the dev box.
-!bin/macos/
+# The built libraries ARE committed (mirrors psd-native): bin/macos/<dylib> +
+# bin/windows/<dll> (the CI-built DLL). Only the MSVC sidecar files above are ignored.

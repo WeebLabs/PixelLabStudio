@@ -8,7 +8,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'virtualcam/native/**'
+      - 'virtualcam/native/src/**'
+      - 'virtualcam/native/SConstruct'
       - '.github/workflows/windows-build.yml'
   workflow_dispatch: {}
 
