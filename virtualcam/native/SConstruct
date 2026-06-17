@@ -30,7 +30,11 @@ arch = env.get("arch", "x86_64")
 softcam_core = "softcam/src/softcamcore"
 if platform == "windows" and os.path.exists(softcam_core + "/SenderAPI.cpp"):
 	env.Append(CPPPATH=[softcam_core])
-	env.Append(CPPDEFINES=["VCAM_HAS_SOFTCAM", "NOMINMAX", "WIN32_LEAN_AND_MEAN"])
+	# NOMINMAX so windows.h min/max macros don't clash with std::min/max. Do NOT set
+	# WIN32_LEAN_AND_MEAN: it strips mmsystem.h, and Misc.cpp uses the multimedia
+	# timer (timeSetEvent), which also needs winmm.lib.
+	env.Append(CPPDEFINES=["VCAM_HAS_SOFTCAM", "NOMINMAX"])
+	env.Append(LIBS=["winmm"])
 	sources += [
 		softcam_core + "/SenderAPI.cpp",
 		softcam_core + "/FrameBuffer.cpp",
