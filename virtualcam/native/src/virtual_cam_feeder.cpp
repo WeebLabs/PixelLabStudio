@@ -3,7 +3,7 @@
 #include <godot_cpp/core/class_db.hpp>
 
 #ifdef VCAM_HAS_SOFTCAM
-#include "softcam.h" // vendored softcam sender API (Phase 3)
+#include "SenderAPI.h" // softcam sender API: softcam::sender::CreateCamera/SendFrame/DeleteCamera
 #endif
 
 using namespace godot;
@@ -31,24 +31,33 @@ bool VirtualCamFeeder::available() const {
 }
 
 bool VirtualCamFeeder::start(int width, int height, int fps) {
+	stop();
 	_w = width;
 	_h = height;
 #ifdef VCAM_HAS_SOFTCAM
-	// TODO(phase3): _cam = scCreateCamera(width, height, fps); return _cam != nullptr;
+	_cam = softcam::sender::CreateCamera(width, height, (float)fps);
+	return _cam != nullptr;
+#else
+	return false;
 #endif
-	return available();
 }
 
 void VirtualCamFeeder::send_frame(const PackedByteArray &data) {
 #ifdef VCAM_HAS_SOFTCAM
-	// TODO(phase3): if (_cam && data.size() >= _w * _h * 3) scSendFrame(_cam, data.ptr());
-#endif
+	// FrameBuffer expects tightly-packed width*height*3 (it adds DIB row stride itself).
+	if (_cam != nullptr && data.size() >= (int64_t)_w * (int64_t)_h * 3) {
+		softcam::sender::SendFrame(_cam, data.ptr());
+	}
+#else
 	(void)data;
+#endif
 }
 
 void VirtualCamFeeder::stop() {
 #ifdef VCAM_HAS_SOFTCAM
-	// TODO(phase3): if (_cam) { scDeleteCamera(_cam); }
+	if (_cam != nullptr) {
+		softcam::sender::DeleteCamera(_cam);
+	}
 #endif
 	_cam = nullptr;
 }

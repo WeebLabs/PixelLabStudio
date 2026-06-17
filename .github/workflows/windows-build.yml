@@ -30,6 +30,9 @@ jobs:
       - name: Clone godot-cpp (branch 4.4)
         run: git clone https://github.com/godotengine/godot-cpp --branch 4.4 --depth 1 virtualcam/native/godot-cpp
 
+      - name: Clone softcam (v1.8.1)
+        run: git clone https://github.com/tshino/softcam --branch v1.8.1 --depth 1 virtualcam/native/softcam
+
       - name: Build extension (MSVC, x86_64)
         working-directory: virtualcam/native
         run: scons platform=windows target=template_debug arch=x86_64

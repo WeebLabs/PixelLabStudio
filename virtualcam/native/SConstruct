@@ -23,6 +23,21 @@ sources = Glob("src/*.cpp")
 platform = env["platform"]
 arch = env.get("arch", "x86_64")
 
+# softcam sender (Windows only). CI clones softcam into ./softcam; on macOS it is
+# absent, so we build a stub (available() == false). Only the sender is compiled
+# (SenderAPI + FrameBuffer + Misc + Watchdog) — not the DirectShow filter or
+# baseclasses, so no DirectShow/strmiids dependency.
+softcam_core = "softcam/src/softcamcore"
+if platform == "windows" and os.path.exists(softcam_core + "/SenderAPI.cpp"):
+	env.Append(CPPPATH=[softcam_core])
+	env.Append(CPPDEFINES=["VCAM_HAS_SOFTCAM", "NOMINMAX", "WIN32_LEAN_AND_MEAN"])
+	sources += [
+		softcam_core + "/SenderAPI.cpp",
+		softcam_core + "/FrameBuffer.cpp",
+		softcam_core + "/Misc.cpp",
+		softcam_core + "/Watchdog.cpp",
+	]
+
 if platform == "macos":
 	libpath = "bin/macos/libvirtualcam.macos.{}.dylib".format(arch)
 elif platform == "windows":

@@ -2,6 +2,9 @@
 # this folder. Never commit it.
 godot-cpp/
 
+# softcam is cloned by CI (and locally, for Windows builds) into this folder.
+softcam/
+
 # SCons build intermediates.
 *.os
 *.obj
