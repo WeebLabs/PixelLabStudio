@@ -1,5 +1,7 @@
 extends Node2D
 
+const HotkeyBindingUtil = preload("res://autoload/hotkey_binding.gd")
+
 var editMode = true
 
 #Node Reference
@@ -114,6 +116,9 @@ signal pressedKey
 var costumeKeys = ["1","2","3","4","5","6","7","8","9","0"]
 signal spriteVisToggles(keysPressed:Array)
 signal fatfuckingballs
+var _backgroundKeysDown: Array[String] = []
+var _activeHotkeyBindings: Dictionary = {}
+var _capturedToggleBindingThisEvent := ""
 
 func _ready():
 	Global.main = self
@@ -2802,54 +2807,76 @@ func _on_settings_buttons_pressed():
 
 
 func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
-	if Global._z_input_active:
-		return
-	var keyStrings = []
+	var keyStrings := _background_key_strings(keys_pressed)
+	var newlyPressed := _newly_pressed_background_keys(keyStrings)
+	_backgroundKeysDown = keyStrings.duplicate()
 
-	for i in keys_pressed:
-		if keys_pressed[i]:
-			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
-
-	if fileSystemOpen:
+	if Global._z_input_active or fileSystemOpen:
+		_activeHotkeyBindings.clear()
 		return
 	
 	if keyStrings.size() <= 0:
+		_activeHotkeyBindings.clear()
 		emit_signal("emptiedCapture")
 		return
+
+	if _capturedToggleBindingThisEvent != "":
+		_activeHotkeyBindings[_capturedToggleBindingThisEvent] = true
+		_capturedToggleBindingThisEvent = ""
+		return
+	if Global.awaitingToggleBind:
+		return
+
+	var transition := HotkeyBindingUtil.newly_activated(
+		_configured_hotkey_bindings(), keyStrings, newlyPressed, _activeHotkeyBindings
+	)
+	_activeHotkeyBindings = transition["active"]
+
+	var capturedBinding := HotkeyBindingUtil.from_pressed(keyStrings, newlyPressed)
 
 	# Animation tab "Bind key": capture the next key into the target clip instead
 	# of triggering anything.
 	if Global.awaitingAnimKeyBind and Global.animKeyBindClip != null:
-		Global.animKeyBindClip["key"] = keyStrings[0]
+		if capturedBinding == "":
+			return
+		Global.animKeyBindClip["key"] = capturedBinding
 		Global.awaitingAnimKeyBind = false
 		Global.animKeyBindClip = null
+		_activeHotkeyBindings[capturedBinding] = true
 		return
 
 	if settingsMenu.awaitingCostumeInput >= 0:
-		
-		if keyStrings[0] == "Keycode1":
+		if capturedBinding == "":
+			return
+		if capturedBinding == "Keycode1":
 			if !settingsMenu.hasMouse:
 				emit_signal("pressedKey")
 				return
 		
 		var currentButton = costumeKeys[settingsMenu.awaitingCostumeInput]
-		costumeKeys[settingsMenu.awaitingCostumeInput] = keyStrings[0]
+		costumeKeys[settingsMenu.awaitingCostumeInput] = capturedBinding
 		Saving.settings["costumeKeys"] = costumeKeys
-		Global.pushUpdate("Changed costume " + str(settingsMenu.awaitingCostumeInput+1) + " hotkey from \"" + currentButton + "\" to \"" + keyStrings[0] + "\"")
+		Global.pushUpdate("Changed costume " + str(settingsMenu.awaitingCostumeInput+1) + " hotkey from \"" + currentButton + "\" to \"" + capturedBinding + "\"")
+		_activeHotkeyBindings[capturedBinding] = true
 		emit_signal("pressedKey")
+		return
 	
-	for key in keyStrings:
-		var i = costumeKeys.find(key)
+	var activatedBindings: Array = transition["activated"]
+	for binding in activatedBindings:
+		var i := _costume_index_for_binding(binding)
 		if i >= 0:
 			changeCostume(i+1)
 
+	if not Global.awaitingToggleBind and not activatedBindings.is_empty():
+		spriteVisToggles.emit(activatedBindings)
+
 	# Animation key triggers — fire every layer's key-bound clips. Skipped while
 	# binding a costume key or typing into a text field.
-	if settingsMenu.awaitingCostumeInput < 0 and not Global._is_any_field_focused():
-		for key in keyStrings:
+	if not Global._is_any_field_focused():
+		for binding in activatedBindings:
 			for s in get_tree().get_nodes_in_group("saved"):
 				if s.type == "sprite":
-					s.triggerAnimationKey(key)
+					s.triggerAnimationKey(binding)
 	
 
 
@@ -2858,17 +2885,58 @@ func bgInputSprite(node, keys_pressed):
 		return
 	if fileSystemOpen:
 		return
-	var keyStrings = []
-	
-	for i in keys_pressed:
-		if keys_pressed[i]:
-			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
+	var keyStrings := _background_key_strings(keys_pressed)
 	
 	if keyStrings.size() <= 0:
 		emit_signal("fatfuckingballs")
 		return
-	
-	spriteVisToggles.emit(keyStrings)
+	if not Global.awaitingToggleBind:
+		return
+
+	var capturedBinding := HotkeyBindingUtil.from_pressed(
+		keyStrings, _newly_pressed_background_keys(keyStrings)
+	)
+	if capturedBinding == "":
+		return
+	_capturedToggleBindingThisEvent = capturedBinding
+	spriteVisToggles.emit([capturedBinding])
+
+
+func _background_key_strings(keys_pressed) -> Array[String]:
+	var keyStrings: Array[String] = []
+	for keycode in keys_pressed:
+		if keys_pressed[keycode]:
+			var keyString := OS.get_keycode_string(keycode)
+			keyStrings.append(keyString if not keyString.strip_edges().is_empty() else "Keycode" + str(keycode))
+	return keyStrings
+
+
+func _newly_pressed_background_keys(keyStrings: Array[String]) -> Array[String]:
+	var newlyPressed: Array[String] = []
+	for keyString in keyStrings:
+		if not _backgroundKeysDown.has(keyString):
+			newlyPressed.append(keyString)
+	return newlyPressed
+
+
+func _configured_hotkey_bindings() -> Array:
+	var bindings: Array = costumeKeys.duplicate()
+	for sprite in get_tree().get_nodes_in_group("saved"):
+		if sprite.type != "sprite":
+			continue
+		bindings.append(sprite.toggle)
+		for clip in sprite.animClips:
+			if str(clip.get("trigger", "")) == "key":
+				bindings.append(str(clip.get("key", "")))
+	return bindings
+
+
+func _costume_index_for_binding(binding: String) -> int:
+	for i in range(costumeKeys.size()):
+		if HotkeyBindingUtil.canonicalize(str(costumeKeys[i])) == binding:
+			return i
+	return -1
+
 
 func _on_clear_avatar_pressed():
 	UndoManager.save_state()

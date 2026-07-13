@@ -36,7 +36,7 @@ From the repository root, with a Godot 4.6 console binary available as
 `godot4`:
 
 ```powershell
-godot4 --headless --path . --script test/hotkey_binding_test.gd
+godot4 --headless --path test --script hotkey_binding_test.gd
 godot4 --headless --path . --editor --quit
 godot4 --headless --path . --export-release "Windows Desktop" build/PixelLabStudio.exe
 ```

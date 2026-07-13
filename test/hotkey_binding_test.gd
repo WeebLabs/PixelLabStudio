@@ -12,6 +12,8 @@ func _initialize() -> void:
 	_test_single_key_backward_compatibility()
 	_test_modifier_matching_is_exact()
 	_test_unrelated_gameplay_keys_are_ignored()
+	_test_activation_is_edge_triggered()
+	_test_releasing_modifier_does_not_activate_plain_binding()
 	_test_modifier_aliases_are_normalized()
 	_test_invalid_bindings_do_not_activate()
 
@@ -79,6 +81,40 @@ func _test_unrelated_gameplay_keys_are_ignored() -> void:
 	_assert_true(
 		HotkeyBinding.is_active("Shift+2", ["W", "A", "Shift", "2"]),
 		"unrelated held non-modifier keys do not block a chord"
+	)
+
+
+func _test_activation_is_edge_triggered() -> void:
+	var first := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["W", "Shift", "2"], ["2"], {}
+	)
+	_assert_equal(first["activated"], ["Shift+2"], "activates a chord on its leading edge")
+
+	var repeated := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["W", "Shift", "2"], [], first["active"]
+	)
+	_assert_equal(repeated["activated"], [], "does not repeat while the chord remains held")
+
+	var released := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["W"], [], repeated["active"]
+	)
+	var pressed_again := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["W", "Shift", "2"], ["Shift", "2"], released["active"]
+	)
+	_assert_equal(pressed_again["activated"], ["Shift+2"], "activates again after release")
+
+
+func _test_releasing_modifier_does_not_activate_plain_binding() -> void:
+	var chord := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["Shift", "2"], ["2"], {}
+	)
+	var shift_released := HotkeyBinding.newly_activated(
+		["2", "Shift+2"], ["2"], [], chord["active"]
+	)
+	_assert_equal(
+		shift_released["activated"],
+		[],
+		"releasing a modifier while the primary is held does not trigger another binding"
 	)
 
 

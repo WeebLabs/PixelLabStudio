@@ -98,6 +98,14 @@ between the 10 costume slots. Each slot can be re-bound from
 **Settings → Costume hotkeys**, and individual costume hotkeys can be
 disabled if you want to free up a key.
 
+Configurable keyboard bindings support native modifier chords. Hold any
+combination of **Ctrl**, **Alt**, **Shift**, or **Meta/Windows**, then press one
+primary key; for example, hold Shift and press 2 to save `Shift+2`. Modifier
+matching is exact, so `2` and `Shift+2` can be assigned to different actions.
+Other non-modifier keys already being held (such as W while playing a game) do
+not block the chord. The same chord support applies to per-sprite visibility
+toggles and key-triggered animation clips.
+
 | Default key | Costume |
 |---|---|
 | `1` | Costume 1 |
@@ -159,7 +167,8 @@ section. Each entry binds an action name (e.g., `undo`, `screenshot`,
 entries. To remap globally, edit the relevant entry's `physical_keycode`
 in `project.godot` and rebuild the app.
 
-Costume keys and per-sprite visibility toggles aren't in the input map;
-they're stored in `Saving.settings["costumeKeys"]` and each sprite's
-`toggle` property, respectively, and are user-editable at runtime via
-the settings menu and the right sidebar.
+Costume keys, per-sprite visibility toggles, and animation trigger keys aren't
+in the input map. They are stored as canonical binding strings in
+`Saving.settings["costumeKeys"]`, each sprite's `toggle` property, and the
+animation clip's `key` field, respectively. Existing single-key strings remain
+compatible.

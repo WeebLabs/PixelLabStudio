@@ -71,6 +71,28 @@ static func is_active(binding: String, pressed_keys: Array) -> bool:
 	return true
 
 
+static func newly_activated(
+	bindings: Array,
+	pressed_keys: Array,
+	newly_pressed_keys: Array,
+	previously_active: Dictionary
+) -> Dictionary:
+	var active: Dictionary = {}
+	var activated: Array[String] = []
+	var newly_pressed := _normalized_key_set(newly_pressed_keys)
+	for binding in bindings:
+		var canonical := canonicalize(str(binding))
+		if canonical == "" or active.has(canonical):
+			continue
+		if is_active(canonical, pressed_keys):
+			active[canonical] = true
+			var parts := canonical.split("+", false)
+			var primary := parts[parts.size() - 1]
+			if newly_pressed.has(primary) and not previously_active.has(canonical):
+				activated.append(canonical)
+	return {"active": active, "activated": activated}
+
+
 static func normalize_key_name(key: String) -> String:
 	var trimmed := key.strip_edges()
 	var compact := trimmed.to_lower().replace(" ", "").replace("_", "")
