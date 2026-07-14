@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_test_capture_waits_for_primary_key()
 	_test_single_key_backward_compatibility()
 	_test_modifier_matching_is_exact()
+	_test_ctrl_shift_number_chord()
 	_test_unrelated_gameplay_keys_are_ignored()
 	_test_activation_is_edge_triggered()
 	_test_releasing_modifier_does_not_activate_plain_binding()
@@ -74,6 +75,17 @@ func _test_modifier_matching_is_exact() -> void:
 	_assert_false(
 		HotkeyBinding.is_active("Shift+2", ["Ctrl", "Shift", "2"]),
 		"a chord does not activate with an additional modifier"
+	)
+
+
+func _test_ctrl_shift_number_chord() -> void:
+	var transition := HotkeyBinding.newly_activated(
+		["Ctrl+Shift+1"], ["Ctrl", "Shift", "1"], ["1"], {}
+	)
+	_assert_equal(
+		transition["activated"],
+		["Ctrl+Shift+1"],
+		"activates the requested Ctrl+Shift+1 costume chord"
 	)
 
 
