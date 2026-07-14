@@ -1,5 +1,7 @@
 extends Node2D
 
+const HotkeyBindingUtil = preload("res://autoload/hotkey_binding.gd")
+
 # talkBlink() looks up whether a (showOnTalk + 3*blinkVal + 10*speaking + 20*blink)
 # combination should be visible. The values mirror the original literal
 # [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value)) — moving them
@@ -1559,8 +1561,12 @@ func getAllDescendants() -> Array:
 
 func visToggle(keys):
 	if Global.awaitingToggleBind: return
-	if keys.has(toggle):
-		$WobbleOrigin/DragOrigin.visible = !$WobbleOrigin/DragOrigin.visible
+	var canonicalToggle := HotkeyBindingUtil.canonicalize(toggle)
+	if canonicalToggle == "": return
+	for key in keys:
+		if HotkeyBindingUtil.canonicalize(str(key)) == canonicalToggle:
+			$WobbleOrigin/DragOrigin.visible = !$WobbleOrigin/DragOrigin.visible
+			return
 
 func makeVis():
 	$WobbleOrigin/DragOrigin.visible = true
