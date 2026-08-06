@@ -308,6 +308,8 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 > collision-checked ID allocator on `main.gd`; creating a fresh default-seeded
 > generator per layer is no longer allowed.
 
+> Updated: 2026-08-06 — Legacy saves without `animClips` migrate their x/y wobble fields into the runtime animation system during shared sprite-state application. Hierarchy changes use `Node.reparent()` consistently. Because reparenting emits `_exit_tree()` / `_enter_tree()` without running `_ready()` again, sprite registry enrollment is owned by `_enter_tree()` and removal by `_exit_tree()`; registration in `_ready()` would permanently lose parented layers from indexed ID lookup.
+
 > Updated: 2026-03-07 — Parenting & hierarchy hardening (14 bugs fixed)
 > - `getAllDescendants()` added for recursive descendant collection (used by `setClip()`)
 > - `unlinkChildren(parentSpr)` on `Global` unlinks direct children before parent delete, preserving grandchild chains

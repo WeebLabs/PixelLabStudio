@@ -100,6 +100,8 @@ static func apply_before_ready(sprite: Object, data: Dictionary) -> void:
 	sprite.set("id", data.get("identification", 0))
 	sprite.set("parentId", data.get("parentId"))
 	_apply_value_fields(sprite, data)
+	if not data.has("animClips"):
+		sprite.call("migrateLegacyWobble")
 
 
 static func _apply_value_fields(sprite: Object, data: Dictionary) -> void:

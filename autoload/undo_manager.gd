@@ -129,9 +129,8 @@ func _restore(data: Dictionary):
 		var new_parent_id = d["parentId"]
 		if sprite.parentId != new_parent_id:
 			reparented = true
-			sprite.get_parent().remove_child(sprite)
 			if new_parent_id == null:
-				Global.main.origin.add_child(sprite)
+				sprite.reparent(Global.main.origin, false)
 				sprite.parentId = null
 				sprite.parentSprite = null
 			else:
@@ -139,15 +138,15 @@ func _restore(data: Dictionary):
 				if parent_nodes.size() > 0:
 					var new_parent = parent_nodes[0]
 					if sprite.is_ancestor_of(new_parent):
-						Global.main.origin.add_child(sprite)
+						sprite.reparent(Global.main.origin, false)
 						sprite.parentId = null
 						sprite.parentSprite = null
 					else:
-						new_parent.sprite.add_child(sprite)
+						sprite.reparent(new_parent.sprite, false)
 						sprite.parentId = new_parent_id
 						sprite.parentSprite = new_parent
 				else:
-					Global.main.origin.add_child(sprite)
+					sprite.reparent(Global.main.origin, false)
 					sprite.parentId = null
 					sprite.parentSprite = null
 

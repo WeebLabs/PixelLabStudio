@@ -815,8 +815,7 @@ func unlinkChildren(parentSpr):
 	parentSpr.wob.position = Vector2.ZERO
 	for child in children:
 		var glob = child.global_position
-		child.get_parent().remove_child(child)
-		main.origin.add_child(child)
+		child.reparent(main.origin, false)
 		child.parentId = null
 		child.parentSprite = null
 		child.position = glob - main.origin.position
@@ -839,8 +838,7 @@ func unlinkSprite():
 	var glob = heldSprite.global_position
 	glob = Vector2(int(glob.x),int(glob.y))
 
-	heldSprite.get_parent().remove_child(heldSprite)
-	main.origin.add_child(heldSprite)
+	heldSprite.reparent(main.origin, false)
 	heldSprite.set_owner(main.origin)
 	heldSprite.parentId = null
 	heldSprite.parentSprite = null

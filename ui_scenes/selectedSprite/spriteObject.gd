@@ -341,7 +341,6 @@ func _ready():
 	
 	
 	add_to_group(str(id))
-	Global.register_sprite(self)
 
 	# Avatar load handles reparenting synchronously and sets _skip_ready_reparent,
 	# so we don't need to suspend on a timer that does nothing afterwards
@@ -350,8 +349,7 @@ func _ready():
 		if parentId != null:
 			var nodes = get_tree().get_nodes_in_group(str(parentId))
 			if nodes.size() > 0:
-				get_parent().remove_child(self)
-				nodes[0].sprite.add_child(self)
+				reparent(nodes[0].sprite, false)
 				parentSprite = nodes[0]
 				set_owner(nodes[0].sprite)
 				# Reparent changed our global transform — re-snap the top_level dragger
@@ -368,6 +366,11 @@ func _ready():
 
 	if wiggleEnabled:
 		_set_wiggle_active(true)
+
+func _enter_tree() -> void:
+	# Reparenting emits _exit_tree/_enter_tree without running _ready again.
+	# Register here so hierarchy changes cannot permanently evict live sprites.
+	Global.register_sprite(self)
 
 func _exit_tree() -> void:
 	Global.unregister_sprite(self)

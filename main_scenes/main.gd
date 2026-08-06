@@ -1169,8 +1169,7 @@ func _on_load_dialog_file_selected(path):
 		if spr.parentId != null:
 			var parent_sprite := Global.sprite_by_id(spr.parentId)
 			if parent_sprite != null:
-				spr.get_parent().remove_child(spr)
-				parent_sprite.sprite.add_child(spr)
+				spr.reparent(parent_sprite.sprite, false)
 				spr.parentSprite = parent_sprite
 				spr.set_owner(parent_sprite.sprite)
 				spr._force_drag_snap = true
@@ -1667,8 +1666,7 @@ func _on_duplicate_button_pressed():
 	if Global.heldSprite.parentId != null and Global.heldSprite.parentSprite != null:
 		sprite._skip_ready_reparent = true
 		var newParent = Global.heldSprite.parentSprite
-		sprite.get_parent().remove_child(sprite)
-		newParent.sprite.add_child(sprite)
+		sprite.reparent(newParent.sprite, false)
 		sprite.parentId = Global.heldSprite.parentId
 		sprite.parentSprite = newParent
 		sprite.position = Global.heldSprite.position

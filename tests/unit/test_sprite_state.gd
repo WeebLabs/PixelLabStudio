@@ -4,9 +4,29 @@ const SpriteStateDomain = preload("res://autoload/domain/sprite_state.gd")
 const CollisionDomain = preload("res://ui_scenes/selectedSprite/sprite_collision_builder.gd")
 
 
+class LegacyWobbleProbe:
+	extends RefCounted
+	var path := ""
+	var id := 0
+	var parentId: Variant = null
+	var offset := Vector2.ZERO
+	var xFrq := 0.0
+	var xAmp := 0.0
+	var yFrq := 0.0
+	var yAmp := 0.0
+	var animClips: Array = []
+	var migration_calls := 0
+
+	func migrateLegacyWobble() -> void:
+		migration_calls += 1
+		if xAmp != 0.0 or yAmp != 0.0:
+			animClips.append({"ampX": xAmp, "freqX": xFrq, "ampY": yAmp, "freqY": yFrq})
+
+
 func run(t) -> void:
 	_test_persistent_property_contract(t)
 	_test_structured_value_round_trip(t)
+	_test_legacy_wobble_migration(t)
 	_test_costume_compatibility(t)
 	_test_clone_ownership(t)
 	_test_collision_geometry(t)
@@ -48,6 +68,35 @@ func _test_structured_value_round_trip(t) -> void:
 	t.assert_equal(clips[0]["name"], "Idle", "decoded animation clips do not alias their source")
 
 
+func _test_legacy_wobble_migration(t) -> void:
+	var legacy := LegacyWobbleProbe.new()
+	SpriteStateDomain.apply_before_ready(legacy, {
+		"path": "legacy.png",
+		"identification": 1,
+		"parentId": null,
+		"offset": "Vector2(0, 0)",
+		"xFrq": 0.0,
+		"xAmp": 0.0,
+		"yFrq": 0.041,
+		"yAmp": 11.0,
+	})
+	t.assert_equal(legacy.migration_calls, 1, "legacy loads invoke wobble migration when animClips is absent")
+	t.assert_equal(legacy.animClips.size(), 1, "legacy sway becomes an animation clip")
+	t.assert_approx(legacy.animClips[0]["ampY"], 11.0, 0.00001, "legacy sway amplitude is preserved")
+
+	var modern := LegacyWobbleProbe.new()
+	SpriteStateDomain.apply_before_ready(modern, {
+		"path": "modern.png",
+		"identification": 2,
+		"parentId": null,
+		"offset": "Vector2(0, 0)",
+		"yFrq": 0.041,
+		"yAmp": 11.0,
+		"animClips": "[]",
+	})
+	t.assert_equal(modern.migration_calls, 0, "modern saves do not duplicate explicit animation state")
+
+
 func _test_costume_compatibility(t) -> void:
 	var legacy := SpriteStateDomain.normalize_costume_layers([0, 1, 0])
 	t.assert_equal(legacy.size(), 10, "legacy costume membership expands to ten slots")
@@ -83,18 +132,25 @@ func _test_collision_geometry(t) -> void:
 func _test_shared_call_sites(t) -> void:
 	var source_root := _source_root()
 	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
+	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
 	var undo_source := FileAccess.get_file_as_string(source_root.path_join("autoload/undo_manager.gd"))
 	var sprite_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/selectedSprite/spriteObject.gd"))
 	t.assert_true(main_source.contains("SpriteState.capture_save"), "manual save uses the shared sprite-state map")
 	t.assert_true(main_source.contains("SpriteState.apply_before_ready"), "avatar load uses the shared sprite-state map")
+	t.assert_true(main_source.contains("spr.reparent(parent_sprite.sprite, false)"), "avatar hierarchy reconstruction preserves registry membership")
 	t.assert_true(main_source.contains("SpriteState.copy_for_duplicate"), "sprite duplication uses the shared sprite-state map")
 	t.assert_equal(main_source.count("func _next_sprite_id"), 1, "sprite IDs are allocated through one collision-checked path")
 	t.assert_equal(main_source.count("RandomNumberGenerator.new()"), 1, "sprite creation reuses one randomized ID generator")
 	t.assert_true(undo_source.contains("SpriteState.capture_snapshot"), "undo capture uses the shared sprite-state map")
 	t.assert_true(undo_source.contains("SpriteState.apply_existing"), "undo restore uses the shared sprite-state map")
+	t.assert_false(undo_source.contains("sprite.get_parent().remove_child(sprite)"), "undo reparenting does not unregister live sprites")
+	t.assert_false(global_source.contains("heldSprite.get_parent().remove_child(heldSprite)"), "unlinking does not unregister live sprites")
 	t.assert_false(undo_source.contains("sprite.wiggleStiffness = d"), "undo no longer carries a parallel wiggle property map")
 	t.assert_true(sprite_source.contains("CollisionBuilder.alpha_polygons"), "sprite collision construction uses the shared geometry boundary")
 	t.assert_false(sprite_source.contains("BitMap.new()"), "sprite object no longer rebuilds alpha geometry itself")
+	t.assert_true(sprite_source.contains("func _enter_tree() -> void:"), "sprites expose a hierarchy re-entry lifecycle hook")
+	t.assert_equal(sprite_source.count("Global.register_sprite(self)"), 1, "sprite registry enrollment has one lifecycle owner")
+	t.assert_false(sprite_source.contains("get_parent().remove_child(self)"), "deferred parenting does not unregister live sprites")
 	t.assert_equal(sprite_source.count("grabArea.monitorable = enable"), 1, "collision enablement performs one state write")
 
 
