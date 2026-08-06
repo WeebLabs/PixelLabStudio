@@ -104,6 +104,20 @@ Additional parsers (not autoloaded, instantiated on demand):
 - `PSDParser` (`autoload/psd_parser.gd`) — threaded PSD file parsing
 - `APNGParser` (`autoload/apng_parser.gd`) — APNG/GIF detection and sprite sheet assembly
 
+> Updated: 2026-08-06 — `Global` remains the compatibility-facing application
+> state autoload, but runtime ownership is delegated under `autoload/runtime/`.
+> `MicrophoneMonitor` owns exactly one tracked capture player, resolves the MIC
+> spectrum analyzer by bus/type instead of numeric indexes, applies the level
+> envelope and speaking transitions, validates device selection, and owns a
+> generation-guarded delayed restart. It never frees unrelated autoload
+> children and shuts down explicitly. `BlinkScheduler` owns deterministic blink
+> timing and random-roll evaluation. `Global` mirrors their established public
+> fields/signals so existing sprite/UI polling remains compatible. Toasts flow
+> through `Global.notification_requested` rather than a retained UI-node
+> pointer. `main.gd` attaches/detaches itself explicitly so scene-bound Global
+> references and interaction modes are cleared during shutdown or scene swaps.
+> Pure transition tests live in `tests/unit/test_runtime_services.gd`.
+
 ---
 
 ## Main Scene Hierarchy

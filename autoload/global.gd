@@ -1,5 +1,8 @@
 extends Node
 
+const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
+const BlinkSchedulerService = preload("res://autoload/runtime/blink_scheduler.gd")
+
 # Shared UI layout constants used by both sidebar panels. ROW_GAP is the
 # baseline vertical distance between adjacent widgets; DIVIDER_PAD is the
 # padding on EACH side of a divider line. Tuning either reflows every panel
@@ -77,8 +80,6 @@ var blinkTick = 0
 
 #Audio Listener
 
-var currentMicrophone = null
-
 var speaking = false
 var micMuted = false
 var spectrum
@@ -91,10 +92,10 @@ var senseLimit = 0.0
 #Speak Signals
 signal startSpeaking
 signal stopSpeaking
+signal notification_requested(text: String)
 
-var updatePusherNode = null
-
-var rand = RandomNumberGenerator.new()
+var _microphone_monitor = null
+var _blink_scheduler = BlinkSchedulerService.new()
 
 # Right-click a slider to reset it to its registered default. Stores the default
 # in node metadata and attaches a one-shot gui_input listener; calling again on
@@ -122,62 +123,68 @@ func make_slider_resettable(slider: Range, default_value):
 		pushUpdate("Reset to default."))
 
 func _ready():
-	spectrum = AudioServer.get_bus_effect_instance(1, 1)
-	
-	if !Saving.settings.has("useStreamDeck"):
-		Saving.settings["useStreamDeck"] = false
+	_microphone_monitor = MicrophoneMonitorService.new()
+	_microphone_monitor.name = "MicrophoneMonitor"
+	add_child(_microphone_monitor)
+	_microphone_monitor.speaking_started.connect(_on_microphone_speaking_started)
+	_microphone_monitor.speaking_stopped.connect(_on_microphone_speaking_stopped)
+	_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
+	spectrum = _microphone_monitor.spectrum
 
-	if Saving.settings.has("audioDevice") and Saving.settings["audioDevice"] != "":
-		var saved_device = Saving.settings["audioDevice"]
-		if saved_device in AudioServer.get_input_device_list():
-			AudioServer.input_device = saved_device
 
-	createMicrophone()
+func attach_main(main_node: Node) -> void:
+	main = main_node
 
-func createMicrophone():
-	deleteAllMics()
-	var playa = AudioStreamPlayer.new()
-	var mic = AudioStreamMicrophone.new()
-	playa.stream = mic
-	playa.bus = "MIC"
-	add_child(playa)
-	playa.play()
-	currentMicrophone = playa
 
-func deleteAllMics():
-	for child in get_children():
-		child.queue_free()
-	currentMicrophone = null
+func detach_main(main_node: Node) -> void:
+	if main != main_node:
+		return
+	main = null
+	fail = null
+	heldSprite = null
+	spriteEdit = null
+	spriteList = null
+	mouse = null
+	chain = null
+	reparentMode = false
+	originMode = false
+	wigglePathMode = false
+	eyeTrackPickMode = false
+	eyeTrackPickSource = null
+	eyeTrackPickBroadcast = false
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_microphone_monitor):
+		_microphone_monitor.shutdown()
+
+
+func selectMicrophone(device_name: String, restart_delay_seconds: float = 1.0) -> bool:
+	if not is_instance_valid(_microphone_monitor):
+		return false
+	return _microphone_monitor.select_device(device_name, restart_delay_seconds)
+
+func _on_microphone_speaking_started() -> void:
+	speaking = true
+	startSpeaking.emit()
+
+
+func _on_microphone_speaking_stopped() -> void:
+	speaking = false
+	stopSpeaking.emit()
 
 
 func _process(delta):
 	_text_field_active = _is_any_field_focused()
 	animationTick += 1
 
-	if main != null:
+	if is_instance_valid(main):
 		cursorWorldPos = Vector2(DisplayServer.mouse_get_position()) + _cursorScreenToWorldOffset
 
-	volume = spectrum.get_magnitude_for_frequency_range(20, 20000).length()
-	if currentMicrophone != null:
-		volumeSensitivity = lerp(volumeSensitivity,0.0,delta*2)
-	
-	if volume>volumeLimit:
-		volumeSensitivity = 1.0
-	
-	var prev = speaking
-	speaking = volumeSensitivity > senseLimit
-
-	if micMuted:
-		speaking = false
-
-	if Input.is_action_pressed("simMic"):
-		speaking = true
-
-	if prev != speaking:
-		if speaking:
-			emit_signal("startSpeaking")
-		else:
-			emit_signal("stopSpeaking")
+	_update_microphone(delta)
+	blinking()
+	if not is_instance_valid(main):
+		return
 	
 	if main != null and heldSprite != null and !_text_field_active:
 		if Input.is_action_just_pressed("zDown"):
@@ -198,7 +205,8 @@ func _process(delta):
 				reparentMode = !reparentMode
 				originMode = false
 				wigglePathMode = false
-				Global.chain.enable(reparentMode)
+				if is_instance_valid(chain):
+					chain.enable(reparentMode)
 			if Input.is_action_just_pressed("origin"):
 				_origin_press_time = Time.get_ticks_msec()
 			if Input.is_action_pressed("origin") and !originMode:
@@ -206,7 +214,8 @@ func _process(delta):
 					originMode = true
 					reparentMode = false
 					wigglePathMode = false
-					chain.enable(false)
+					if is_instance_valid(chain):
+						chain.enable(false)
 					pushUpdate("Origin adjustment mode.")
 			if Input.is_action_just_released("origin"):
 				if Time.get_ticks_msec() - _origin_press_time < 300:
@@ -223,7 +232,8 @@ func _process(delta):
 		reparentMode = false
 		originMode = false
 		wigglePathMode = false
-		Global.chain.enable(reparentMode)
+		if is_instance_valid(chain):
+			chain.enable(reparentMode)
 
 	if main.editMode:
 		if reparentMode:
@@ -236,7 +246,6 @@ func _process(delta):
 			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))
 
 	
-	blinking()
 	scrollSprites()
 
 	# Screenshot/record key release (outside control block so release is caught
@@ -264,6 +273,22 @@ func _process(delta):
 				_screenshot_key_held = true
 				_screenshot_press_time = Time.get_ticks_msec()
 				main.onScreenshotPressed()
+
+
+func _update_microphone(delta: float) -> void:
+	if not is_instance_valid(_microphone_monitor):
+		volume = 0.0
+		volumeSensitivity = 0.0
+		speaking = false
+		return
+	_microphone_monitor.volume_limit = volumeLimit
+	_microphone_monitor.sense_limit = senseLimit
+	_microphone_monitor.muted = micMuted
+	_microphone_monitor.sample(delta, Input.is_action_pressed("simMic"))
+	volume = _microphone_monitor.volume
+	volumeSensitivity = _microphone_monitor.sensitivity
+	speaking = _microphone_monitor.speaking
+	spectrum = _microphone_monitor.spectrum
 	
 	
 func _is_any_field_focused() -> bool:
@@ -424,7 +449,8 @@ func _input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if reparentMode:
 			reparentMode = false
-			chain.enable(false)
+			if is_instance_valid(chain):
+				chain.enable(false)
 			pushUpdate("Linking cancelled.")
 			get_viewport().set_input_as_handled()
 			return
@@ -544,7 +570,8 @@ func select(areas):
 		
 		UndoManager.save_state()
 		linkSprite(prevSpr,heldSprite)
-		Global.chain.enable(reparentMode)
+		if is_instance_valid(chain):
+			chain.enable(reparentMode)
 	
 	lastArray = areas.duplicate()
 	
@@ -702,18 +729,12 @@ func scrollSprites():
 		_z_input.select_all()
 
 func blinking():
-	# Floor scales with blinkChance so the slider actually moves the gap between blinks
-	var floor_frames = 2 * blinkChance * blinkSpeed
-	blinkTick += 1
-	if blinkTick == 0:
-		blink = false
-		if rand.randf_range(-1.0,1.0) > 0.5:
-			blinkTick = floor_frames + 1
-	if blinkTick > floor_frames:
-		if rand.randi() % int(blinkChance) == 0:
-			blink = true
-
-			blinkTick = -12
+	_blink_scheduler.speed = maxf(blinkSpeed, 0.0)
+	_blink_scheduler.chance = maxi(int(blinkChance), 1)
+	_blink_scheduler.active = blink
+	_blink_scheduler.tick = blinkTick
+	blink = _blink_scheduler.advance()
+	blinkTick = _blink_scheduler.tick
 	
 func epicFail(err):
 	print(fail)
@@ -808,6 +829,5 @@ func saveImagesFromData():
 	
 	pushUpdate("Saved all avatar images to computer.")
 	
-func pushUpdate(text):
-	if is_instance_valid(updatePusherNode):
-		updatePusherNode.pushUpdate(text)
+func pushUpdate(text: String):
+	notification_requested.emit(text)

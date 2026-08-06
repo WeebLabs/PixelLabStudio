@@ -25,12 +25,10 @@ func _on_button_pressed():
 	if !get_parent().get_parent().get_parent().visible:
 		return
 	
-	AudioServer.input_device = micName
-	Saving.settings["audioDevice"] = micName
-	Global.deleteAllMics()
-	Global.currentMicrophone = null
-
-	Global.get_tree().create_timer(1.0).timeout.connect(Global.createMicrophone)
+	if Global.selectMicrophone(micName, 1.0):
+		Saving.settings["audioDevice"] = micName
+	else:
+		Global.pushUpdate("Microphone is no longer available.")
 
 	get_parent().get_parent().get_parent().showMicMenu()
 	

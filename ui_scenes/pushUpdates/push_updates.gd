@@ -5,7 +5,7 @@ extends Node2D
 var tick = 0
 
 func _ready():
-	Global.updatePusherNode = self
+	Global.notification_requested.connect(pushUpdate)
 	set_process(false)
 
 func pushUpdate(text):

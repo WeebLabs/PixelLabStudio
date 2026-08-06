@@ -119,8 +119,12 @@ var costumeKeys = ["1","2","3","4","5","6","7","8","9","0"]
 signal spriteVisToggles(keysPressed:Array)
 signal fatfuckingballs
 
+
+func _exit_tree() -> void:
+	Global.detach_main(self)
+
 func _ready():
-	Global.main = self
+	Global.attach_main(self)
 	Global.fail = $Failed
 
 	_create_save_load_dialogs()

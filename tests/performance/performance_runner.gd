@@ -2,6 +2,8 @@ extends SceneTree
 
 const Animator = preload("res://effects/animation/layer_animator.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
+const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
+const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 
 # These are deliberately generous, hardware-independent smoke ceilings. They
 # catch accidental algorithmic regressions while the JSON artifact retains the
@@ -10,6 +12,7 @@ const MAX_ANIMATION_US_PER_LAYER_FRAME := 15.0
 const MAX_SERIALIZATION_MS := 500.0
 const MAX_IMAGE_GEOMETRY_MS := 200.0
 const MAX_AVATAR_VALIDATION_MS := 3000.0
+const MAX_RUNTIME_SERVICES_MS := 1000.0
 
 var results: Dictionary = {}
 var budget_failures: Array[String] = []
@@ -22,6 +25,7 @@ func _initialize() -> void:
 	results["animation"] = _benchmark_animation()
 	results["serialization"] = _benchmark_serialization()
 	results["avatar_validation"] = _benchmark_avatar_validation()
+	results["runtime_services"] = _benchmark_runtime_services()
 	results["image_geometry"] = _benchmark_image_geometry()
 	_check_budgets()
 	results["smoke_budgets"] = {
@@ -29,6 +33,7 @@ func _initialize() -> void:
 		"serialization_ms": MAX_SERIALIZATION_MS,
 		"image_geometry_ms": MAX_IMAGE_GEOMETRY_MS,
 		"avatar_validation_ms": MAX_AVATAR_VALIDATION_MS,
+		"runtime_services_ms": MAX_RUNTIME_SERVICES_MS,
 		"passed": budget_failures.is_empty(),
 	}
 
@@ -101,6 +106,19 @@ func _avatar_payload() -> Dictionary:
 		}
 	return avatar
 
+func _benchmark_runtime_services() -> Dictionary:
+	var scheduler := BlinkScheduler.new()
+	scheduler.speed = 1.0
+	scheduler.chance = 200
+	var sensitivity := 0.0
+	const ITERATIONS := 100000
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		scheduler.advance_with_roll(0.0, index)
+		sensitivity = MicrophoneMonitor.next_sensitivity(sensitivity, 0.1, 0.5, 1.0 / 60.0)
+	var elapsed := Time.get_ticks_usec() - started
+	return {"iterations": ITERATIONS, "total_ms": float(elapsed) / 1000.0, "final_sensitivity": sensitivity}
+
 func _benchmark_image_geometry() -> Dictionary:
 	var image := Image.load_from_file("res://test/testBody.png")
 	if image == null or image.is_empty():
@@ -136,6 +154,11 @@ func _check_budgets() -> void:
 		"avatar validation %.3f ms > %.3f" % [results["avatar_validation"]["total_ms"], MAX_AVATAR_VALIDATION_MS],
 		float(results["avatar_validation"]["total_ms"]),
 		MAX_AVATAR_VALIDATION_MS
+	)
+	_check_budget(
+		"runtime services %.3f ms > %.3f" % [results["runtime_services"]["total_ms"], MAX_RUNTIME_SERVICES_MS],
+		float(results["runtime_services"]["total_ms"]),
+		MAX_RUNTIME_SERVICES_MS
 	)
 	if not results["image_geometry"].has("skipped"):
 		_check_budget(

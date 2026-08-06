@@ -5,6 +5,7 @@ const SUITES := [
 	preload("res://tests/unit/test_pure_behavior.gd"),
 	preload("res://tests/unit/test_import_detection.gd"),
 	preload("res://tests/unit/test_persistence.gd"),
+	preload("res://tests/unit/test_runtime_services.gd"),
 ]
 
 var assertions := 0
