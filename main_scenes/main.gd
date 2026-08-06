@@ -2,6 +2,7 @@ extends Node2D
 
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
+const SpriteState = preload("res://autoload/domain/sprite_state.gd")
 const CaptureControllerScene = preload("res://main_scenes/controllers/capture_controller.gd")
 const ViewportControllerScene = preload("res://main_scenes/controllers/viewport_controller.gd")
 const SaveControllerScene = preload("res://main_scenes/controllers/save_controller.gd")
@@ -63,6 +64,7 @@ var screen_scale = 1.0
 
 #IMPORTANT
 var fileSystemOpen = false
+var _sprite_id_random := RandomNumberGenerator.new()
 
 #background input capture
 signal emptiedCapture
@@ -76,6 +78,7 @@ func _exit_tree() -> void:
 	Global.detach_main(self)
 
 func _ready():
+	_sprite_id_random.randomize()
 	Global.attach_main(self)
 	Global.fail = $Failed
 	capture_controller = CaptureControllerScene.new()
@@ -452,12 +455,21 @@ func _next_z_index() -> int:
 			max_z = s.z
 	return max_z + 1
 
+
+func _next_sprite_id() -> int:
+	var existing_ids := {}
+	for existing_sprite in get_tree().get_nodes_in_group("saved"):
+		existing_ids[existing_sprite.id] = true
+	var candidate := _sprite_id_random.randi()
+	while existing_ids.has(candidate):
+		candidate = _sprite_id_random.randi()
+	return candidate
+
 #Adds sprite object to scene
 func add_image(path):
 	UndoManager.save_state()
 
-	var rand = RandomNumberGenerator.new()
-	var id = rand.randi()
+	var id := _next_sprite_id()
 
 	var sprite = spriteObject.instantiate()
 	sprite.path = path
@@ -472,8 +484,7 @@ func add_image(path):
 	Global.pushUpdate("Added new sprite.")
 	
 func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector2):
-	var rand = RandomNumberGenerator.new()
-	var id = rand.randi()
+	var id := _next_sprite_id()
 
 	var sprite = spriteObject.instantiate()
 	sprite.loadedImage = img
@@ -719,8 +730,7 @@ func _finalize_psd_import():
 		var layer = _import_layers[i]
 		var result = _import_results[i]
 
-		var rand = RandomNumberGenerator.new()
-		var id = rand.randi()
+		var id := _next_sprite_id()
 
 		var sprite = spriteObject.instantiate()
 		sprite.loadedImage = layer.image
@@ -901,8 +911,7 @@ func _finish_animated_import(result):
 func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
 	UndoManager.save_state()
 
-	var rand = RandomNumberGenerator.new()
-	var id = rand.randi()
+	var id := _next_sprite_id()
 
 	var sprite = spriteObject.instantiate()
 	sprite.loadedImage = sheet
@@ -1001,8 +1010,7 @@ func _import_png_files(paths: Array):
 		if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
 			_start_animated_import(path, false)
 		else:
-			var rand = RandomNumberGenerator.new()
-			var id = rand.randi()
+			var id := _next_sprite_id()
 			var sprite = spriteObject.instantiate()
 			sprite.path = path
 			sprite.id = id
@@ -1117,89 +1125,7 @@ func _on_load_dialog_file_selected(path):
 	for i in range(_load_total):
 		var item = _load_keys[i]
 		var sprite = spriteObject.instantiate()
-		sprite.path = data[item]["path"]
-		sprite.id = data[item]["identification"]
-		sprite.parentId = data[item]["parentId"]
-
-		sprite.offset = ValueCodec.vector2_value(data[item]["offset"])
-		sprite.z = data[item]["zindex"]
-		sprite.dragSpeed = data[item]["drag"]
-
-		sprite.xFrq = data[item]["xFrq"]
-		sprite.xAmp = data[item]["xAmp"]
-		sprite.yFrq = data[item]["yFrq"]
-		sprite.yAmp = data[item]["yAmp"]
-
-		sprite.rdragStr = data[item]["rotDrag"]
-		sprite.showOnTalk = data[item]["showTalk"]
-		sprite.showOnBlink = data[item]["showBlink"]
-
-		if data[item].has("rLimitMin"):
-			sprite.rLimitMin = data[item]["rLimitMin"]
-		if data[item].has("rLimitMax"):
-			sprite.rLimitMax = data[item]["rLimitMax"]
-		if data[item].has("costumeLayers"):
-			sprite.costumeLayers = ValueCodec.array_value(data[item]["costumeLayers"], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
-			if sprite.costumeLayers.size() < 8:
-				for _j in range(5):
-					sprite.costumeLayers.append(1)
-		if data[item].has("stretchAmount"):
-			sprite.stretchAmount = data[item]["stretchAmount"]
-		if data[item].has("ignoreBounce"):
-			sprite.ignoreBounce = data[item]["ignoreBounce"]
-		if data[item].has("staticElement"):
-			sprite.staticElement = data[item]["staticElement"]
-		if data[item].has("frames"):
-			sprite.frames = data[item]["frames"]
-		if data[item].has("animSpeed"):
-			sprite.animSpeed = data[item]["animSpeed"]
-		if data[item].has("clipped"):
-			sprite.clipped = data[item]["clipped"]
-		if data[item].has("toggle"):
-			sprite.toggle = data[item]["toggle"]
-		if data[item].has("eyeTrack"):
-			sprite.eyeTrack = data[item]["eyeTrack"]
-		if data[item].has("eyeTrackDistance"):
-			sprite.eyeTrackDistance = data[item]["eyeTrackDistance"]
-		if data[item].has("eyeTrackSpeed"):
-			sprite.eyeTrackSpeed = data[item]["eyeTrackSpeed"]
-		if data[item].has("eyeTrackInvert"):
-			sprite.eyeTrackInvert = data[item]["eyeTrackInvert"]
-		if data[item].has("eyeTrackMode"):
-			sprite.eyeTrackMode = data[item]["eyeTrackMode"]
-		if data[item].has("eyeTrackTargetId"):
-			sprite.eyeTrackTargetId = data[item]["eyeTrackTargetId"]
-		if data[item].has("eyeTrackType"):
-			sprite.eyeTrackType = data[item]["eyeTrackType"]
-		if data[item].has("eyeTrackForward"):
-			sprite.eyeTrackForward = data[item]["eyeTrackForward"]
-		if data[item].has("ndiRefLayer"):
-			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
-		if data[item].has("wiggleEnabled"): sprite.wiggleEnabled = data[item]["wiggleEnabled"]
-		if data[item].has("wigglePath"): sprite.wigglePath = ValueCodec.packed_vector2_array_value(data[item]["wigglePath"])
-		if data[item].has("wigglePathWidths"): sprite.wigglePathWidths = ValueCodec.packed_float32_array_value(data[item]["wigglePathWidths"])
-		if data[item].has("wiggleThickness"): sprite.wiggleThickness = data[item]["wiggleThickness"]
-		if data[item].has("wiggleSegments"): sprite.wiggleSegments = data[item]["wiggleSegments"]
-		if data[item].has("wiggleStiffness"): sprite.wiggleStiffness = data[item]["wiggleStiffness"]
-		if data[item].has("wiggleDamping"): sprite.wiggleDamping = data[item]["wiggleDamping"]
-		if data[item].has("wiggleWeight"): sprite.wiggleWeight = data[item]["wiggleWeight"]
-		if data[item].has("wiggleMaxBend"): sprite.wiggleMaxBend = data[item]["wiggleMaxBend"]
-		if data[item].has("wiggleBendFocus"): sprite.wiggleBendFocus = data[item]["wiggleBendFocus"]
-		if data[item].has("wiggleShapeReturn"): sprite.wiggleShapeReturn = data[item]["wiggleShapeReturn"]
-		if data[item].has("wiggleWagEnabled"): sprite.wiggleWagEnabled = data[item]["wiggleWagEnabled"]
-		if data[item].has("wiggleWagAmount"): sprite.wiggleWagAmount = data[item]["wiggleWagAmount"]
-		if data[item].has("wiggleWagSpeed"): sprite.wiggleWagSpeed = data[item]["wiggleWagSpeed"]
-		if data[item].has("wiggleReactivity"): sprite.wiggleReactivity = data[item]["wiggleReactivity"]
-		if data[item].has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = data[item]["wiggleMotionIntensity"]
-		if data[item].has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = data[item]["wiggleChildrenFollow"]
-		if data[item].has("blendMode"): sprite.blendMode = data[item]["blendMode"]
-		if data[item].has("opacity"): sprite.opacity = data[item]["opacity"]
-		if data[item].has("animClips"):
-			sprite.animClips = ValueCodec.array_value(data[item]["animClips"])
-		else:
-			sprite.migrateLegacyWobble()  # old save: fold wobble into a clip
-		if data[item].has("normalPath"):
-			sprite.normalPath = data[item]["normalPath"]
+		SpriteState.apply_before_ready(sprite, data[item])
 
 		# Hand off the thread-decoded results, or fall back to the JSON-base64 path
 		# if decode failed for some reason (sprite._ready will retry from base64)
@@ -1387,66 +1313,7 @@ func _build_avatar_save_data() -> Dictionary:
 	var id = 0
 	for child in nodes:
 		if child.type == "sprite":
-			data[id] = {
-				"type": "sprite",
-				"path": child.path,
-				"_image_ref": child.imageData,
-				"identification": child.id,
-				"parentId": child.parentId,
-				"pos": var_to_str(child.position),
-				"offset": var_to_str(child.offset),
-				"zindex": child.z,
-				"drag": child.dragSpeed,
-				"xFrq": child.xFrq,
-				"xAmp": child.xAmp,
-				"yFrq": child.yFrq,
-				"yAmp": child.yAmp,
-				"rotDrag": child.rdragStr,
-				"showTalk": child.showOnTalk,
-				"showBlink": child.showOnBlink,
-				"rLimitMin": child.rLimitMin,
-				"rLimitMax": child.rLimitMax,
-				"costumeLayers": var_to_str(child.costumeLayers),
-				"stretchAmount": child.stretchAmount,
-				"ignoreBounce": child.ignoreBounce,
-				"staticElement": child.staticElement,
-				"frames": child.frames,
-				"animSpeed": child.animSpeed,
-				"clipped": child.clipped,
-				"toggle": child.toggle,
-				"eyeTrack": child.eyeTrack,
-				"eyeTrackDistance": child.eyeTrackDistance,
-				"eyeTrackSpeed": child.eyeTrackSpeed,
-				"eyeTrackInvert": child.eyeTrackInvert,
-				"eyeTrackMode": child.eyeTrackMode,
-				"eyeTrackTargetId": child.eyeTrackTargetId,
-				"eyeTrackType": child.eyeTrackType,
-				"eyeTrackForward": child.eyeTrackForward,
-				"wiggleEnabled": child.wiggleEnabled,
-				"wigglePath": var_to_str(child.wigglePath),
-				"wigglePathWidths": var_to_str(child.wigglePathWidths),
-				"wiggleThickness": child.wiggleThickness,
-				"wiggleSegments": child.wiggleSegments,
-				"wiggleStiffness": child.wiggleStiffness,
-				"wiggleDamping": child.wiggleDamping,
-				"wiggleWeight": child.wiggleWeight,
-				"wiggleMaxBend": child.wiggleMaxBend,
-				"wiggleBendFocus": child.wiggleBendFocus,
-				"wiggleShapeReturn": child.wiggleShapeReturn,
-				"wiggleWagEnabled": child.wiggleWagEnabled,
-				"wiggleWagAmount": child.wiggleWagAmount,
-				"wiggleWagSpeed": child.wiggleWagSpeed,
-				"wiggleReactivity": child.wiggleReactivity,
-				"wiggleMotionIntensity": child.wiggleMotionIntensity,
-				"wiggleChildrenFollow": child.wiggleChildrenFollow,
-				"blendMode": child.blendMode,
-				"opacity": child.opacity,
-				"ndiRefLayer": child.ndiRefLayer,
-				"normalPath": child.normalPath,
-				"animClips": var_to_str(child.animClips),
-			}
-			if child.normalImageData != null:
-				data[id]["_normal_image_ref"] = child.normalImageData
+			data[id] = SpriteState.capture_save(child)
 		id += 1
 
 	if _light_gizmo != null:
@@ -1790,66 +1657,11 @@ func _on_duplicate_button_pressed():
 	if Global.heldSprite == null:
 		return
 	UndoManager.save_state()
-	var rand = RandomNumberGenerator.new()
-	var id = rand.randi()
+	var id := _next_sprite_id()
 	
 	var sprite = spriteObject.instantiate()
-	sprite.path = Global.heldSprite.path
-	sprite.loadedImage = Global.heldSprite.imageData.duplicate()
+	SpriteState.copy_for_duplicate(Global.heldSprite, sprite)
 	sprite.id = id
-	sprite.dragSpeed = Global.heldSprite.dragSpeed
-	sprite.showOnTalk = Global.heldSprite.showOnTalk
-	sprite.showOnBlink = Global.heldSprite.showOnBlink
-	sprite.z = Global.heldSprite.z
-	
-	sprite.xFrq = Global.heldSprite.xFrq
-	sprite.xAmp = Global.heldSprite.xAmp
-	sprite.yFrq = Global.heldSprite.yFrq
-	sprite.yAmp = Global.heldSprite.yAmp
-	
-	sprite.rdragStr = Global.heldSprite.rdragStr
-	
-	sprite.offset = Global.heldSprite.offset
-	
-	sprite.rLimitMin = Global.heldSprite.rLimitMin
-	sprite.rLimitMax = Global.heldSprite.rLimitMax
-	
-	sprite.frames = Global.heldSprite.frames
-	sprite.animSpeed = Global.heldSprite.animSpeed
-	
-	sprite.costumeLayers = Global.heldSprite.costumeLayers.duplicate()
-
-	sprite.eyeTrack = Global.heldSprite.eyeTrack
-	sprite.eyeTrackDistance = Global.heldSprite.eyeTrackDistance
-	sprite.eyeTrackSpeed = Global.heldSprite.eyeTrackSpeed
-	sprite.eyeTrackInvert = Global.heldSprite.eyeTrackInvert
-	sprite.eyeTrackMode = Global.heldSprite.eyeTrackMode
-	sprite.eyeTrackTargetId = Global.heldSprite.eyeTrackTargetId
-	sprite.eyeTrackType = Global.heldSprite.eyeTrackType
-	sprite.eyeTrackForward = Global.heldSprite.eyeTrackForward
-
-	sprite.wiggleEnabled = Global.heldSprite.wiggleEnabled
-	sprite.wigglePath = Global.heldSprite.wigglePath.duplicate()
-	sprite.wigglePathWidths = Global.heldSprite.wigglePathWidths.duplicate()
-	sprite.wiggleThickness = Global.heldSprite.wiggleThickness
-	sprite.wiggleSegments = Global.heldSprite.wiggleSegments
-	sprite.wiggleStiffness = Global.heldSprite.wiggleStiffness
-	sprite.wiggleDamping = Global.heldSprite.wiggleDamping
-	sprite.wiggleWeight = Global.heldSprite.wiggleWeight
-	sprite.wiggleMaxBend = Global.heldSprite.wiggleMaxBend
-	sprite.wiggleBendFocus = Global.heldSprite.wiggleBendFocus
-	sprite.wiggleShapeReturn = Global.heldSprite.wiggleShapeReturn
-	sprite.wiggleWagEnabled = Global.heldSprite.wiggleWagEnabled
-	sprite.wiggleWagAmount = Global.heldSprite.wiggleWagAmount
-	sprite.wiggleWagSpeed = Global.heldSprite.wiggleWagSpeed
-	sprite.wiggleReactivity = Global.heldSprite.wiggleReactivity
-	sprite.wiggleMotionIntensity = Global.heldSprite.wiggleMotionIntensity
-	sprite.wiggleChildrenFollow = Global.heldSprite.wiggleChildrenFollow
-
-	sprite.blendMode = Global.heldSprite.blendMode
-	sprite.opacity = Global.heldSprite.opacity
-
-	sprite.animClips = Global.heldSprite.animClips.duplicate(true)
 
 	origin.add_child(sprite)
 

@@ -38,6 +38,8 @@ cp -R "$PROJECT_ROOT/effects" "$TEST_WORKSPACE/effects"
 cp -R "$PROJECT_ROOT/autoload" "$TEST_WORKSPACE/autoload"
 mkdir -p "$TEST_WORKSPACE/main_scenes"
 cp -R "$PROJECT_ROOT/main_scenes/controllers" "$TEST_WORKSPACE/main_scenes/controllers"
+mkdir -p "$TEST_WORKSPACE/ui_scenes/selectedSprite"
+cp "$PROJECT_ROOT/ui_scenes/selectedSprite/sprite_collision_builder.gd" "$TEST_WORKSPACE/ui_scenes/selectedSprite/"
 mkdir -p "$TEST_WORKSPACE/test"
 cp "$PROJECT_ROOT/test/testBody.png" "$TEST_WORKSPACE/test/testBody.png"
 

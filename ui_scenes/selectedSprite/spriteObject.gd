@@ -11,6 +11,7 @@ const VISIBLE_TALKBLINK_STATES := {
 	20: true, 21: true, 26: true, 27: true,
 	30: true, 32: true, 36: true, 38: true,
 }
+const CollisionBuilder = preload("res://ui_scenes/selectedSprite/sprite_collision_builder.gd")
 
 var type = "sprite"
 
@@ -307,22 +308,9 @@ func _ready():
 		polygons = _prebuilt_polygons
 		_prebuilt_polygons = []
 	else:
-		var bitmap = BitMap.new()
-		bitmap.create_from_image_alpha(imageData)
-		polygons = bitmap.opaque_to_polygons(Rect2(Vector2(0, 0), bitmap.get_size()), 4.0)
+		polygons = CollisionBuilder.alpha_polygons(imageData)
 
-	var b = false
-	for polygon in polygons:
-		b = true
-		var collider = CollisionPolygon2D.new()
-		collider.polygon = polygon
-		grabArea.add_child(collider)
-
-		var outline = outlineScene.instantiate()
-		outline.points = polygon
-		outline.add_point(outline.points[0])
-		outline.visibility_layer = 2
-		grabArea.add_child(outline)
+	var has_collision := CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons)
 
 	size = imageData.get_size()
 	grabArea.position = size*-0.5
@@ -343,7 +331,7 @@ func _ready():
 	
 	if frames > 1:
 		remakePolygon()
-	if !b:
+	if not has_collision:
 		remakePolygon()
 	
 	
@@ -397,33 +385,17 @@ func replaceSprite(pathNew):
 	else:
 		_rebuild_sprite_texture()
 	
-	var bitmap = BitMap.new()
-	bitmap.create_from_image_alpha(imageData)
-	
-	var polygons = bitmap.opaque_to_polygons(Rect2(Vector2(0, 0), bitmap.get_size()))
-	
-	for i in grabArea.get_children():
-		i.queue_free()
-	
-	var b = false
-	for polygon in polygons:
-		b = true
-		var collider = CollisionPolygon2D.new()
-		collider.polygon = polygon
-		grabArea.add_child(collider)
-
-		var outline = outlineScene.instantiate()
-		outline.points = polygon
-		outline.add_point(outline.points[0])
-		outline.visibility_layer = 2
-		grabArea.add_child(outline)
+	CollisionBuilder.clear(grabArea)
+	var polygons := CollisionBuilder.alpha_polygons(imageData)
+	var has_collision := CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons)
 	size = imageData.get_size()
 
 	sprite.offset = offset
 	
 	grabArea.position = (size*-0.5) + offset
 	
-	if !b:
+	remadePolygon = false
+	if not has_collision:
 		remakePolygon()
 
 func replaceSpriteFromData(img: Image, layer_name: String):
@@ -439,30 +411,16 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 	else:
 		_rebuild_sprite_texture()
 
-	var bitmap = BitMap.new()
-	bitmap.create_from_image_alpha(imageData)
-	var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()))
-
-	for i in grabArea.get_children():
-		i.queue_free()
-
-	var b = false
-	for polygon in polygons:
-		b = true
-		var collider = CollisionPolygon2D.new()
-		collider.polygon = polygon
-		grabArea.add_child(collider)
-		var outline = outlineScene.instantiate()
-		outline.points = polygon
-		outline.add_point(outline.points[0])
-		outline.visibility_layer = 2
-		grabArea.add_child(outline)
+	CollisionBuilder.clear(grabArea)
+	var polygons := CollisionBuilder.alpha_polygons(imageData)
+	var has_collision := CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons)
 
 	size = imageData.get_size()
 	sprite.offset = offset
 	grabArea.position = (size * -0.5) + offset
 
-	if !b:
+	remadePolygon = false
+	if not has_collision:
 		remakePolygon()
 
 func _process(delta):
@@ -1494,7 +1452,6 @@ func _release_wiggle_children():
 
 func changeCollision(enable):
 	grabArea.monitorable = enable
-	grabArea.monitorable = enable
 
 func changeFrames():
 	sprite.hframes = frames
@@ -1503,26 +1460,7 @@ func changeFrames():
 func remakePolygon():
 	if remadePolygon:
 		return
-	for c in grabArea.get_children():
-		c.queue_free()
-	var collider = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(imageSize.y,imageSize.y)
-	collider.shape = shape
-	collider.position = Vector2(imageSize.x,imageSize.y) * Vector2(0.5,0.5)
-	grabArea.add_child(collider)
-	
-	var p = imageSize.y * 0.5
-	var outline = outlineScene.instantiate()
-	outline.visibility_layer = 2
-	outline.add_point(Vector2(-p,-p))
-	outline.add_point(Vector2(p,-p))
-	outline.add_point(Vector2(p,p))
-	outline.add_point(Vector2(-p,p))
-	outline.add_point(Vector2(-p,-p))
-	outline.position = collider.position
-	grabArea.add_child(outline)
-	
+	CollisionBuilder.replace_with_fallback(grabArea, outlineScene, imageSize, frames)
 	remadePolygon = true
 	
 func setClip(toggle):

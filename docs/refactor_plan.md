@@ -1,13 +1,13 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 3 main-scene decomposition completion
+> Updated: 2026-08-06 — Phase 4 sprite-domain completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–3 are complete. Phase 4 (sprite domain behavior) is next.
+Progress: Phases 0–4 are complete. Phase 5 (UI and input components) is next.
 Completed phases remain covered by the cumulative test and performance gates.
 
 ## Phase 0 — Baseline and safety rails
@@ -53,6 +53,13 @@ Completed phases remain covered by the cumulative test and performance gates.
   interaction responsibilities currently concentrated in `spriteObject.gd`.
 - Consolidate duplicate create/duplicate/restore property maps.
 - Correct frame-rate, hierarchy, collision, and ownership fragility under tests.
+
+> Completed: 2026-08-06 — A canonical `SpriteState` compatibility map now
+> serves save, load, undo/redo, and duplicate flows, removing roughly 400 lines
+> of parallel property copying. Structured values are deep-cloned and legacy
+> costume arrays normalize to ten slots. Collision construction moved out of
+> `spriteObject.gd`; transparent-image fallback and rectangular animated-frame
+> sizing are tested. `main.gd` is now 1,842 lines and `undo_manager.gd` 267.
 
 ## Phase 5 — UI and input components
 

@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Phase 3 main-scene controller boundaries
+> Last updated: 2026-08-06 — Phase 4 sprite-domain boundaries
 
 ## Overview
 
@@ -35,7 +35,8 @@ PNGTuberPlus/
 │   ├── mouse/
 │   │   └── mouse_cursor.gd       Click detection & tooltip in edit mode
 │   ├── selectedSprite/
-│   │   └── spriteObject.gd       Core sprite: rendering, physics, collision, outline
+│   │   ├── spriteObject.gd       Core sprite runtime and scene integration
+│   │   └── sprite_collision_builder.gd Alpha/fallback hitbox construction
 │   ├── spriteEditMenu/
 │   │   ├── sprite_viewer.gd      Left sidebar — sprite property editor (265px)
 │   │   └── chain.gd              Visual line during reparenting
@@ -59,6 +60,7 @@ PNGTuberPlus/
 │   ├── global.gd                  Central state: mic, selection, input, modes
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
+│   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
 │   ├── psd_parser.gd              PSD file parser (background thread)
 │   ├── apng_parser.gd             APNG/GIF detection and sprite sheet assembly
 │   └── defaultAvatarData.gd       Built-in default avatar data
@@ -255,6 +257,20 @@ Each sprite layer is an instance with:
 
 Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"` group for enumeration.
 
+> Updated: 2026-08-06 — Persistent sprite state is centralized in
+> `autoload/domain/sprite_state.gd`. Its compatibility map is shared by manual
+> saves, avatar loads, undo capture/restore, and duplication, including deep
+> ownership rules for animation clips and wiggle arrays. New persistent
+> properties must be added to this map and the save schema together. Duplicate
+> and undo now retain NDI-reference, normal-map, clipping,
+> static/ignore-bounce, stretch, toggle, blend, and physics state consistently.
+> `sprite_collision_builder.gd` owns alpha polygon creation and fallback
+> geometry. Animated fallback hitboxes use a single frame width (`sheet width /
+> frame count`) and preserve rectangular frame dimensions. Tests live in
+> `tests/unit/test_sprite_state.gd`. All sprite creation paths use one randomized,
+> collision-checked ID allocator on `main.gd`; creating a fresh default-seeded
+> generator per layer is no longer allowed.
+
 > Updated: 2026-03-07 — Parenting & hierarchy hardening (14 bugs fixed)
 > - `getAllDescendants()` added for recursive descendant collection (used by `setClip()`)
 > - `unlinkChildren(parentSpr)` on `Global` unlinks direct children before parent delete, preserving grandchild chains
@@ -275,6 +291,11 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 - Snapshots store `Image` object references (not base64 PNG) — no encoding cost. PNG encoding only happens at file-save time. (Updated: 2026-02-16)
 - Handles missing parent sprites by falling back to origin; detects circular references during restore (Updated: 2026-03-07)
 - `save_state()` pushes snapshot; `save_state_continuous()` debounces within same frame
+
+> Updated: 2026-08-06 — `UndoManager` retains history, cache, hierarchy, and
+> scene-reconciliation ownership, but delegates sprite property capture and
+> application to `SpriteState`. Its former parallel save/restore maps were
+> removed. Image caches still hold `Image` references rather than encoding PNGs.
 
 ### Save/Load (`saving.gd`, `main.gd`)
 

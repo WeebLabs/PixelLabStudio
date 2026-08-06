@@ -1,5 +1,7 @@
 extends Node
 
+const SpriteState = preload("res://autoload/domain/sprite_state.gd")
+
 # Emitted when save_state() actually captures a snapshot (not when suppressed
 # during an undo/redo restore). Subscribers — currently main.gd's session
 # auto-save — use this to flag the rig as "dirty since last persisted save."
@@ -35,71 +37,14 @@ func _snapshot() -> Dictionary:
 	var idx = 0
 	for child in nodes:
 		if child.type == "sprite":
-			data[idx] = {}
-			data[idx]["type"] = "sprite"
-			data[idx]["path"] = child.path
-
-			if !_image_cache.has(child.id):
+			if not _image_cache.has(child.id):
 				_image_cache[child.id] = child.imageData
-			data[idx]["imageData"] = _image_cache[child.id]
-
-			data[idx]["identification"] = child.id
-			data[idx]["parentId"] = child.parentId
-			data[idx]["pos"] = var_to_str(child.position)
-			data[idx]["offset"] = var_to_str(child.offset)
-			data[idx]["zindex"] = child.z
-			data[idx]["drag"] = child.dragSpeed
-			data[idx]["xFrq"] = child.xFrq
-			data[idx]["xAmp"] = child.xAmp
-			data[idx]["yFrq"] = child.yFrq
-			data[idx]["yAmp"] = child.yAmp
-			data[idx]["rotDrag"] = child.rdragStr
-			data[idx]["showTalk"] = child.showOnTalk
-			data[idx]["showBlink"] = child.showOnBlink
-			data[idx]["rLimitMin"] = child.rLimitMin
-			data[idx]["rLimitMax"] = child.rLimitMax
-			data[idx]["costumeLayers"] = var_to_str(child.costumeLayers)
-			data[idx]["stretchAmount"] = child.stretchAmount
-			data[idx]["ignoreBounce"] = child.ignoreBounce
-			data[idx]["staticElement"] = child.staticElement
-			data[idx]["frames"] = child.frames
-			data[idx]["animSpeed"] = child.animSpeed
-			data[idx]["clipped"] = child.clipped
-			data[idx]["toggle"] = child.toggle
-			data[idx]["eyeTrack"] = child.eyeTrack
-			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
-			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
-			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
-			data[idx]["eyeTrackMode"] = child.eyeTrackMode
-			data[idx]["eyeTrackTargetId"] = child.eyeTrackTargetId
-			data[idx]["eyeTrackType"] = child.eyeTrackType
-			data[idx]["eyeTrackForward"] = child.eyeTrackForward
-			data[idx]["wiggleEnabled"] = child.wiggleEnabled
-			data[idx]["wigglePath"] = child.wigglePath.duplicate()
-			data[idx]["wigglePathWidths"] = child.wigglePathWidths.duplicate()
-			data[idx]["wiggleThickness"] = child.wiggleThickness
-			data[idx]["wiggleSegments"] = child.wiggleSegments
-			data[idx]["wiggleStiffness"] = child.wiggleStiffness
-			data[idx]["wiggleDamping"] = child.wiggleDamping
-			data[idx]["wiggleWeight"] = child.wiggleWeight
-			data[idx]["wiggleMaxBend"] = child.wiggleMaxBend
-			data[idx]["wiggleBendFocus"] = child.wiggleBendFocus
-			data[idx]["wiggleShapeReturn"] = child.wiggleShapeReturn
-			data[idx]["wiggleWagEnabled"] = child.wiggleWagEnabled
-			data[idx]["wiggleWagAmount"] = child.wiggleWagAmount
-			data[idx]["wiggleWagSpeed"] = child.wiggleWagSpeed
-			data[idx]["wiggleReactivity"] = child.wiggleReactivity
-			data[idx]["wiggleMotionIntensity"] = child.wiggleMotionIntensity
-			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
-			data[idx]["blendMode"] = child.blendMode
-			data[idx]["opacity"] = child.opacity
-			data[idx]["animClips"] = child.animClips.duplicate(true)
-
+			var normal_image: Image = null
 			if child.normalImageData != null:
-				if !_normal_cache.has(child.id):
+				if not _normal_cache.has(child.id):
 					_normal_cache[child.id] = child.normalImageData
-				data[idx]["normalImageData"] = _normal_cache[child.id]
-				data[idx]["normalPath"] = child.normalPath
+				normal_image = _normal_cache[child.id]
+			data[idx] = SpriteState.capture_snapshot(child, _image_cache[child.id], normal_image)
 		idx += 1
 
 	# Snapshot light gizmo
@@ -198,92 +143,7 @@ func _restore(data: Dictionary):
 					sprite.parentId = null
 					sprite.parentSprite = null
 
-		sprite.position = str_to_var(d["pos"])
-		sprite.offset = str_to_var(d["offset"])
-		sprite.sprite.offset = sprite.offset
-		sprite.grabArea.position = (sprite.size * -0.5) + sprite.offset
-
-		sprite.z = d["zindex"]
-		sprite.setZIndex()
-		sprite.dragSpeed = d["drag"]
-
-		sprite.xFrq = d["xFrq"]
-		sprite.xAmp = d["xAmp"]
-		sprite.yFrq = d["yFrq"]
-		sprite.yAmp = d["yAmp"]
-
-		sprite.rdragStr = d["rotDrag"]
-		sprite.showOnTalk = d["showTalk"]
-		sprite.showOnBlink = d["showBlink"]
-
-		sprite.rLimitMin = d.get("rLimitMin", sprite.rLimitMin)
-		sprite.rLimitMax = d.get("rLimitMax", sprite.rLimitMax)
-
-		if d.has("costumeLayers"):
-			sprite.costumeLayers = str_to_var(d["costumeLayers"]).duplicate()
-		if d.has("stretchAmount"):
-			sprite.stretchAmount = d["stretchAmount"]
-		if d.has("ignoreBounce"):
-			sprite.ignoreBounce = d["ignoreBounce"]
-		if d.has("staticElement"):
-			sprite.staticElement = d["staticElement"]
-		if d.has("frames"):
-			var old_frames = sprite.frames
-			sprite.frames = d["frames"]
-			if sprite.frames != old_frames:
-				sprite.changeFrames()
-		if d.has("animSpeed"):
-			sprite.animSpeed = d["animSpeed"]
-		if d.has("clipped"):
-			sprite.setClip(d["clipped"])
-		if d.has("toggle"):
-			sprite.toggle = d["toggle"]
-		if d.has("eyeTrack"):
-			sprite.eyeTrack = d["eyeTrack"]
-		if d.has("eyeTrackDistance"):
-			sprite.eyeTrackDistance = d["eyeTrackDistance"]
-		if d.has("eyeTrackSpeed"):
-			sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
-		if d.has("eyeTrackInvert"):
-			sprite.eyeTrackInvert = d["eyeTrackInvert"]
-		if d.has("eyeTrackMode"):
-			sprite.eyeTrackMode = d["eyeTrackMode"]
-		if d.has("eyeTrackTargetId"):
-			sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
-		if d.has("eyeTrackType"):
-			sprite.eyeTrackType = d["eyeTrackType"]
-		if d.has("eyeTrackForward"):
-			sprite.eyeTrackForward = d["eyeTrackForward"]
-		if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
-		if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
-		if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()
-		if d.has("wiggleThickness"): sprite.wiggleThickness = d["wiggleThickness"]
-		if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
-		if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
-		if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
-		if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
-		if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
-		if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
-		if d.has("wiggleShapeReturn"): sprite.wiggleShapeReturn = d["wiggleShapeReturn"]
-		if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
-		if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
-		if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
-		if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
-		if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
-		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
-		if d.has("blendMode"): sprite.blendMode = d["blendMode"]
-		if d.has("opacity"): sprite.opacity = d["opacity"]
-		if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
-		# Resync the bend material/chain to the restored enabled state, then the blend
-		# material/backbuffer (after setWiggle so the recreated ribbon gets the right material).
-		sprite.setWiggle(sprite.wiggleEnabled)
-		sprite.applyBlendMode()
-
-		if d.has("normalImageData") and d["normalImageData"] != null:
-			if sprite.normalImageData != d["normalImageData"]:
-				sprite.setNormalMap(d["normalImageData"], d.get("normalPath", ""))
-		elif sprite.hasNormalMap():
-			sprite.clearNormalMap()
+		SpriteState.apply_existing(sprite, d)
 
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
@@ -315,65 +175,8 @@ func _restore(data: Dictionary):
 # Instantiate a single sprite from snapshot data and add to origin.
 func _add_sprite_from_data(d: Dictionary):
 	var sprite = _sprite_scene.instantiate()
-	sprite.path = d["path"]
-	sprite.id = d["identification"]
-	sprite.parentId = d["parentId"]
-	sprite.offset = str_to_var(d["offset"])
-	sprite.z = d["zindex"]
-	sprite.dragSpeed = d["drag"]
-	sprite.xFrq = d["xFrq"]
-	sprite.xAmp = d["xAmp"]
-	sprite.yFrq = d["yFrq"]
-	sprite.yAmp = d["yAmp"]
-	sprite.rdragStr = d["rotDrag"]
-	sprite.showOnTalk = d["showTalk"]
-	sprite.showOnBlink = d["showBlink"]
-	if d.has("rLimitMin"): sprite.rLimitMin = d["rLimitMin"]
-	if d.has("rLimitMax"): sprite.rLimitMax = d["rLimitMax"]
-	if d.has("costumeLayers"):
-		sprite.costumeLayers = str_to_var(d["costumeLayers"]).duplicate()
-		if sprite.costumeLayers.size() < 8:
-			for i in range(5):
-				sprite.costumeLayers.append(1)
-	if d.has("stretchAmount"): sprite.stretchAmount = d["stretchAmount"]
-	if d.has("ignoreBounce"): sprite.ignoreBounce = d["ignoreBounce"]
-	if d.has("staticElement"): sprite.staticElement = d["staticElement"]
-	if d.has("frames"): sprite.frames = d["frames"]
-	if d.has("animSpeed"): sprite.animSpeed = d["animSpeed"]
-	if d.has("imageData"): sprite.loadedImage = d["imageData"]
-	if d.has("clipped"): sprite.clipped = d["clipped"]
-	if d.has("toggle"): sprite.toggle = d["toggle"]
-	if d.has("eyeTrack"): sprite.eyeTrack = d["eyeTrack"]
-	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
-	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
-	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
-	if d.has("eyeTrackMode"): sprite.eyeTrackMode = d["eyeTrackMode"]
-	if d.has("eyeTrackTargetId"): sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
-	if d.has("eyeTrackType"): sprite.eyeTrackType = d["eyeTrackType"]
-	if d.has("eyeTrackForward"): sprite.eyeTrackForward = d["eyeTrackForward"]
-	if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
-	if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
-	if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()
-	if d.has("wiggleThickness"): sprite.wiggleThickness = d["wiggleThickness"]
-	if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
-	if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
-	if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
-	if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
-	if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
-	if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
-	if d.has("wiggleShapeReturn"): sprite.wiggleShapeReturn = d["wiggleShapeReturn"]
-	if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
-	if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
-	if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
-	if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
-	if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
-	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
-	if d.has("blendMode"): sprite.blendMode = d["blendMode"]
-	if d.has("opacity"): sprite.opacity = d["opacity"]
-	if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
-	if d.has("normalImageData") and d["normalImageData"] != null:
-		sprite.loadedNormalImage = d["normalImageData"]
-		sprite.normalPath = d.get("normalPath", "")
+	SpriteState.apply_before_ready(sprite, d)
+	SpriteState.prepare_snapshot_images(sprite, d)
 	Global.main.origin.add_child(sprite)
 	sprite.position = str_to_var(d["pos"])
 

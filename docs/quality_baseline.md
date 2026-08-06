@@ -90,6 +90,15 @@ layers, 547.71 ms for 100 validations of a 100-layer avatar, 40.05 ms for
 contracts add coverage for FFmpeg arguments, capture cleanup, zoom limits,
 session recovery selection, and PNG worker encoding.
 
+## Phase 4 measurement
+
+The cumulative gate measured 3.26 µs/layer-frame at 100 layers, 548.41 ms for
+100 validations of a 100-layer avatar, 40.86 ms for 100,000 runtime-service
+updates, 53.63 ms for 100 serialization passes, and 19.20 ms for 25
+image-geometry builds. All smoke budgets passed. Sprite-domain tests cover the
+canonical persistent-key inventory, structured value round trips and
+ownership, costume migration, alpha geometry, and animated fallback bounds.
+
 ## Known third-party limitation
 
 godot-ndi v1.2.6 has an upstream macOS shutdown crash that reproduces merely by
