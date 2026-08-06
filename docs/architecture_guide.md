@@ -1,10 +1,12 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-03-12 — Draggable point light gizmo for normal maps
+> Last updated: 2026-08-06 — Godot 4.6 baseline, automated quality gates, and dependency cleanup
 
 ## Overview
 
-PNGTuberPlus is a Godot 4.4 desktop application for creating and performing with PNGTuber avatars. Users import sprite images (PNG, APNG, PSD), arrange them in a hierarchical layer tree, and the app responds to microphone input with bounce, wobble, blink, and eye-tracking animations.
+PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with PNGTuber avatars. The supported and CI-pinned patch release is Godot 4.6.3. Users import sprite images (PNG, APNG, PSD), arrange them into a layered rig, and the app responds to microphone input with bounce, wobble, blink, and eye-tracking animations.
+
+> Updated: 2026-08-06 — Godot 4.6 is the single engine baseline. `scripts/run_tests.sh` imports the project and runs the headless GDScript suite; `scripts/run_performance.sh` records repeatable CPU microbenchmarks under `.artifacts/`. CI runs the tests on macOS, Windows, and Linux using the official Godot 4.6.3 binaries. Native code must use the repository's pinned Godot 4.6 `godot-cpp` submodule revision. The duplicate top-level `godot-ndi/` package was removed; `addons/godot-ndi/` is the sole NDI integration. The obsolete bundled Git editor extension was also removed; source-control operations use the installed Git tooling and no longer add a native library to application/editor startup.
 
 The app has two primary modes:
 
@@ -72,11 +74,16 @@ PNGTuberPlus/
 ├── addons/
 │   ├── godot-ndi/                 NDI GDExtension plugin (optional)
 │   ├── godot-streamdeck-addon/    Elgato Stream Deck integration
-│   └── godot-git-plugin/          Git version control plugin
+│   └── psd-native/                Native PSD decode accelerator
 │
 ├── font/                          Custom fonts
 ├── bin/                           GDExtension binaries
-├── docs/                          Documentation
+├── docs/
+│   ├── architecture_guide.md      System map and data flows
+│   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
+│   └── refactor_plan.md           Phased execution and acceptance gates
+├── tests/                         Headless unit, contract, smoke, and performance tests
+├── scripts/                       Local quality-gate entry points
 └── project.godot                  Godot project configuration
 ```
 

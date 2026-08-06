@@ -1,6 +1,6 @@
 [configuration]
 entry_symbol = "psd_native_init"
-compatibility_minimum = "4.4"
+compatibility_minimum = "4.6"
 reloadable = false
 
 [libraries]

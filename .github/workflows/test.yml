@@ -1,0 +1,66 @@
+name: Godot tests
+
+on:
+  push:
+    branches: [main, refactor]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            asset: Godot_v4.6.3-stable_linux.x86_64.zip
+            sha256: d0bc2113065e481c9c2c2b2c37daa4e8be3fe9e27f0ab9ab0b6096e9a37907f3
+            binary: Godot_v4.6.3-stable_linux.x86_64
+          - runner: macos-latest
+            asset: Godot_v4.6.3-stable_macos.universal.zip
+            sha256: 30630f3e9b11e10b35c1f90ba8814185dcec43fae1a48345159be7552c64bfe8
+            binary: Godot.app/Contents/MacOS/Godot
+          - runner: windows-latest
+            asset: Godot_v4.6.3-stable_win64.exe.zip
+            sha256: e39986a178d585ce7ac198fb8de6ea436366dc0cc00e594810c2e3e104c04b90
+            binary: Godot_v4.6.3-stable_win64.exe
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download pinned Godot
+        shell: bash
+        env:
+          ASSET: ${{ matrix.asset }}
+          EXPECTED_SHA: ${{ matrix.sha256 }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          mkdir -p .tools/godot
+          curl -L --fail --retry 3 \
+            -o .tools/godot/godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/$ASSET"
+          ACTUAL_SHA="$(python -c 'import hashlib; print(hashlib.sha256(open(".tools/godot/godot.zip", "rb").read()).hexdigest())')"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          unzip -q .tools/godot/godot.zip -d .tools/godot
+          chmod +x ".tools/godot/$BINARY"
+          echo "GODOT_BIN=$PWD/.tools/godot/$BINARY" >> "$GITHUB_ENV"
+
+      - name: Import project and run tests
+        shell: bash
+        run: scripts/run_tests.sh
+
+      - name: Record performance smoke baseline
+        if: runner.os == 'Linux'
+        shell: bash
+        run: scripts/run_performance.sh
+
+      - name: Upload performance result
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-${{ github.sha }}
+          path: .artifacts/performance.json

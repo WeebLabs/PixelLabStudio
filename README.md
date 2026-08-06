@@ -566,9 +566,11 @@ Planned but not shipped yet:
 
 ## Tech notes
 
-- Built with **Godot 4.6** (GL Compatibility renderer).
-- Native GDExtensions: `godot-ndi` (NDI output), `psd-native` (PSD
+- Built and tested with **Godot 4.6.3** (GL Compatibility renderer).
+- Native GDExtensions: `godot-ndi` v1.2.6 (NDI output), `psd-native` (PSD
   parsing), `godot-streamdeck-addon` (Stream Deck input).
+- The PSD extension is built against the exact Godot 4.6 `godot-cpp`
+  revision pinned by the repository submodule.
 - All UI on a single CanvasLayer (`UILayer`) for camera-independent
   rendering.
 
@@ -594,6 +596,8 @@ was inspired by their `_auto_save_session` implementation.
 Issues and pull requests are welcome. If you're working on UI,
 `docs/architecture_guide.md` describes the spacing model, the layout
 pass, and the persistence patterns used elsewhere in the codebase.
+The refactor acceptance gates and current toolchain/performance reference are
+in `docs/refactor_plan.md` and `docs/quality_baseline.md`.
 
 ## License
 

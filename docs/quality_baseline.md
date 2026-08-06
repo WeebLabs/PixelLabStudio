@@ -1,0 +1,71 @@
+# Quality Baseline
+
+> Updated: 2026-08-06 — Phase 0 Godot 4.6 baseline
+
+This document records the reproducible safety rails used throughout the
+refactor. Exact timing artifacts are written to `.artifacts/` and retained by
+CI; they are intentionally not committed.
+
+## Supported toolchain
+
+| Component | Baseline |
+| --- | --- |
+| Godot | 4.6.3 stable (`7d41c59c4`) |
+| Renderer | GL Compatibility |
+| `godot-cpp` | `58d1de720b8ffe9f8ffcdfe3a85148582cfd2e74` (4.6-stable API sync) |
+| godot-ndi | v1.2.6 release archive, SHA-256 `0ffaf8255a268e9408c344187143b612d37ee5147c1c752b426d6a6b95a4ffe7` |
+
+CI downloads official Godot builds for Linux, macOS, and Windows and verifies
+their SHA-256 digests before executing any project code. The PSD extension's
+macOS binary is rebuilt against the pinned `godot-cpp` revision. Build
+intermediates are ignored and are no longer versioned.
+
+## Quality gates
+
+Run the same checks locally with:
+
+```bash
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_tests.sh
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_performance.sh
+```
+
+`run_tests.sh` performs a Godot 4.6 recovery-mode import to compile production
+scripts, then runs isolated unit and contract tests in a minimal project. This
+separation prevents user settings, microphones, Stream Deck devices, and native
+output integrations from affecting deterministic tests. Recovery mode is also
+required because Godot 4.6.3's normal headless editor shutdown can crash while
+generating extension documentation whenever a GDExtension is loaded; that
+engine/editor defect is separate from application runtime behavior.
+
+`run_performance.sh` benchmarks three repeatable CPU paths: animation
+evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization, and
+alpha-to-polygon image geometry. It stores exact results and enforces broad
+smoke ceilings of 15 microseconds per 100-layer animation layer-frame, 500 ms
+for serialization, and 200 ms for image geometry. Phase work should compare
+the same CI-runner artifact before and after changes; a ceiling is not a
+performance target.
+
+## Phase 0 measurement
+
+Measured on macOS with Godot 4.6.3:
+
+| Workload | Result |
+| --- | ---: |
+| Animation, 1 layer × 600 frames | 3.60 µs/layer-frame |
+| Animation, 10 layers × 600 frames | 3.32 µs/layer-frame |
+| Animation, 50 layers × 600 frames | 3.40 µs/layer-frame |
+| Animation, 100 layers × 600 frames | 3.42 µs/layer-frame |
+| Serialize 100 layers × 100 iterations | 50.31 ms |
+| Build image alpha geometry × 25 iterations | 19.69 ms |
+
+These numbers are a local reference, not a cross-machine pass/fail threshold.
+
+## Known third-party limitation
+
+godot-ndi v1.2.6 has an upstream macOS shutdown crash that reproduces merely by
+loading the extension, even without creating an NDI node. It is tracked as
+upstream issue 44. Production NDI behavior remains available, while automated
+imports use Godot recovery mode so the unrelated extension teardown defect
+cannot make script tests nondeterministic. The integration phase must re-audit
+the upstream issue or replace/isolate the dependency before the final release
+gate.

@@ -1,2 +1,16 @@
 # Normalize EOL for all files that Git considers text files.
 * text=auto eol=lf
+
+# Never run text normalization or textual diffs over native/media assets.
+*.dll binary
+*.dylib binary
+*.exp binary
+*.framework/** binary
+*.gif binary
+*.lib binary
+*.ogg binary
+*.png binary
+*.psd binary
+*.so binary
+*.ttf binary
+*.wav binary

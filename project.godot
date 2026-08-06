@@ -33,10 +33,10 @@ buses/channel_disable_time=0.0
 
 [autoload]
 
+DefaultAvatarData="*res://autoload/defaultAvatarData.gd"
 Saving="*res://autoload/saving.gd"
 Global="*res://autoload/global.gd"
 ElgatoStreamDeck="*uid://b6nrub7s3o8e7"
-DefaultAvatarData="*res://autoload/defaultAvatarData.gd"
 UndoManager="*res://autoload/undo_manager.gd"
 
 [debug]
@@ -56,11 +56,6 @@ window/per_pixel_transparency/allowed=true
 [dotnet]
 
 project/assembly_name="PNGTuberPlus"
-
-[editor]
-
-version_control/plugin_name="GitPlugin"
-version_control/autoload_on_startup=true
 
 [editor_plugins]
 
