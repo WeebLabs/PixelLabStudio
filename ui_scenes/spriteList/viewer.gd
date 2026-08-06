@@ -1,5 +1,7 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 @onready var container = $ScrollContainer/VBoxContainer
 var SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
 
@@ -74,6 +76,7 @@ var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
+var _slider_theme: Dictionary
 var _slider_enabled_state: bool = true
 # Tracks the previous _eye_scope() result so we only reset values to neutral
 # on transitions into a scope, not on every per-frame refresh.
@@ -108,10 +111,7 @@ func _ready():
 	container.add_theme_constant_override("separation", 2)
 	$Area2D2/CollisionShape2D.disabled = false
 	$NinePatchRect.visible = false
-	_bg = ColorRect.new()
-	_bg.color = Color(0.15, 0.15, 0.15)
-	_bg.z_index = -1
-	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bg = SidebarUIFactory.create_panel_background()
 	add_child(_bg)
 	move_child(_bg, 0)
 
@@ -155,8 +155,9 @@ func _ready():
 	# Floor the max at MIN_WIDTH: at startup the stretched viewport is narrow, so
 	# viewport.x * ratio can fall below MIN_WIDTH, inverting the clamp (min > max) and
 	# collapsing the panel under its minimum until a drag re-clamps it.
-	var max_w = maxf(MIN_WIDTH, get_viewport().get_visible_rect().size.x * MAX_WIDTH_RATIO)
-	panel_width = clamp(saved_w, MIN_WIDTH, max_w)
+	panel_width = SidebarUIFactory.clamp_panel_width(
+		saved_w, get_viewport().get_visible_rect().size.x, MIN_WIDTH, MAX_WIDTH_RATIO,
+	)
 
 	# Restore the active tab before the first layout pass.
 	var saved_tab = clamp(int(Saving.settings.get("rightSidebarTab", 0)), 0, 2)
@@ -168,39 +169,20 @@ func _ready():
 # Build the shared slider fill/grabber resources once, before any section
 # attaches them (eye tracking, physics). Mirrors the left sidebar's slider look.
 func _build_slider_styles():
-	_slider_fill_enabled = StyleBoxFlat.new()
-	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
-	_slider_fill_disabled = StyleBoxFlat.new()
-	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
-
-	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_on.fill(Color(0, 0, 0, 0))
-	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_off.fill(Color(0, 0, 0, 0))
-	for px in range(16):
-		for py in range(16):
-			var dx = px - 8
-			var dy = py - 8
-			if dx * dx + dy * dy <= 36:  # Circle radius ~6
-				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
-				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
-	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
-	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
+	_slider_theme = SidebarUIFactory.create_slider_theme()
+	_slider_fill_enabled = _slider_theme["fill_enabled"]
+	_slider_fill_disabled = _slider_theme["fill_disabled"]
+	_slider_grabber_enabled = _slider_theme["grab_enabled"]
+	_slider_grabber_disabled = _slider_theme["grab_disabled"]
 
 func _create_controls():
-	_divider1 = ColorRect.new()
-	_divider1.color = Color(0.3, 0.3, 0.35)
-	_divider1.size = Vector2(panel_width - 16, 1)
+	_divider1 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider1)
 
-	_divider2 = ColorRect.new()
-	_divider2.color = Color(0.3, 0.3, 0.35)
-	_divider2.size = Vector2(panel_width - 16, 1)
+	_divider2 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider2)
 
-	_divider3 = ColorRect.new()
-	_divider3.color = Color(0.3, 0.3, 0.35)
-	_divider3.size = Vector2(panel_width - 16, 1)
+	_divider3 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider3)
 
 	# Top controls row: speaking/blinking/link/unlink/trash. HBox distributes them
@@ -493,11 +475,7 @@ func _create_eye_tracking():
 	_eye_dist_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_eye_dist_slider.custom_minimum_size = Vector2(0, 16)
 	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
-	_eye_dist_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
-	_eye_dist_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
-	_eye_dist_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
-	_eye_dist_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
-	_eye_dist_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+	SidebarUIFactory.apply_slider_theme(_eye_dist_slider, _slider_theme)
 	_eye_section.add_child(_eye_dist_slider)
 	Global.make_slider_resettable(_eye_dist_slider, 20.0)
 
@@ -517,21 +495,14 @@ func _create_eye_tracking():
 	_eye_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_eye_speed_slider.custom_minimum_size = Vector2(0, 16)
 	_eye_speed_slider.value_changed.connect(_on_eye_track_speed_changed)
-	_eye_speed_slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
-	_eye_speed_slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
-	_eye_speed_slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
-	_eye_speed_slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
-	_eye_speed_slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+	SidebarUIFactory.apply_slider_theme(_eye_speed_slider, _slider_theme)
 	_eye_section.add_child(_eye_speed_slider)
 	Global.make_slider_resettable(_eye_speed_slider, 0.15)
 
 func _create_vis_toggle():
 	# Divider above the vis-toggle section — kept as a ColorRect for now since
 	# it's positioned independently from both sections.
-	_divider4 = ColorRect.new()
-	_divider4.color = Color(0.3, 0.3, 0.35)
-	_divider4.size = Vector2(panel_width - 16, 1)
-	_divider4.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_divider4 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider4)
 
 	# Section is a VBoxContainer with a header row and a control row inside.
@@ -708,13 +679,8 @@ func _process(_delta):
 	var slider_should_enable = _prev_eye_scope != "dead"
 	if slider_should_enable != _slider_enabled_state:
 		_slider_enabled_state = slider_should_enable
-		var fill = _slider_fill_enabled if slider_should_enable else _slider_fill_disabled
-		var grab = _slider_grabber_enabled if slider_should_enable else _slider_grabber_disabled
 		for s in [_eye_dist_slider, _eye_speed_slider]:
-			s.add_theme_stylebox_override("grabber_area", fill)
-			s.add_theme_stylebox_override("grabber_area_highlight", fill)
-			s.add_theme_icon_override("grabber", grab)
-			s.add_theme_icon_override("grabber_highlight", grab)
+			SidebarUIFactory.apply_slider_theme(s, _slider_theme, slider_should_enable)
 
 	if !no_sprite:
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
@@ -1253,12 +1219,7 @@ func _on_vis_toggle_delete_pressed():
 # --- Resize and drag ---
 
 func _is_on_left_edge(local: Vector2) -> bool:
-	var left = -4.0
-	if local.x < left - GRAB_MARGIN or local.x > left + GRAB_MARGIN:
-		return false
-	if local.y < -4 - GRAB_MARGIN or local.y > panel_height + GRAB_MARGIN:
-		return false
-	return true
+	return SidebarUIFactory.is_near_vertical_edge(local, -4.0, GRAB_MARGIN, -4.0, panel_height)
 
 func _is_on_divider(local: Vector2) -> bool:
 	# Divider2 lives Global.UI_DIVIDER_PAD below the scroll bottom (= panel_height * _divider_ratio).
@@ -1304,8 +1265,9 @@ func _input(event):
 		if _dragging:
 			var delta = get_global_mouse_position() - _drag_start
 			var viewport_width = get_viewport().get_visible_rect().size.x
-			var max_width = maxf(MIN_WIDTH, viewport_width * MAX_WIDTH_RATIO)
-			panel_width = clamp(_drag_start_width - delta.x, MIN_WIDTH, max_width)
+			panel_width = SidebarUIFactory.clamp_panel_width(
+				_drag_start_width - delta.x, viewport_width, MIN_WIDTH, MAX_WIDTH_RATIO,
+			)
 			_apply_size()
 			get_viewport().set_input_as_handled()
 		elif _divider_dragging:

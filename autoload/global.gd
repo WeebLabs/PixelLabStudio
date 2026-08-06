@@ -1,5 +1,7 @@
 extends Node
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
 const BlinkSchedulerService = preload("res://autoload/runtime/blink_scheduler.gd")
 
@@ -499,14 +501,15 @@ func isMouseOverSidebar() -> bool:
 	var vp = get_viewport()
 	if vp == null:
 		return false
-	var sp = vp.get_mouse_position()
-	if sp.y < 28:
-		return true
-	if spriteEdit != null and sp.x < spriteEdit.panel_width + 19:
-		return true
-	if spriteList != null and sp.x > vp.get_visible_rect().size.x - spriteList.panel_width - 7:
-		return true
-	return false
+	var left_width := -1.0 if spriteEdit == null else float(spriteEdit.panel_width)
+	var right_width := -1.0 if spriteList == null else float(spriteList.panel_width)
+	return SidebarUIFactory.is_over_editor_chrome(
+		vp.get_mouse_position(),
+		vp.get_visible_rect().size,
+		main.editMode,
+		left_width,
+		right_width,
+	)
 
 # Walk up from the control under the cursor to the nearest Range (HSlider /
 # VSlider / SpinBox). Null when the cursor is not over an adjustable range.

@@ -99,6 +99,15 @@ image-geometry builds. All smoke budgets passed. Sprite-domain tests cover the
 canonical persistent-key inventory, structured value round trips and
 ownership, costume migration, alpha geometry, and animated fallback bounds.
 
+## Phase 5 measurement
+
+The cumulative gate measured 3.21 µs/layer-frame at 100 layers, 543.93 ms for
+100 validations of a 100-layer avatar, 39.80 ms for 100,000 runtime-service
+updates, 53.36 ms for 100 serialization passes, and 19.67 ms for 25
+image-geometry builds. All smoke budgets passed. UI component tests add the
+shared style, click-through, width clamp, resize edge, and editor-chrome routing
+contracts without instantiating the full application scene.
+
 ## Known third-party limitation
 
 godot-ndi v1.2.6 has an upstream macOS shutdown crash that reproduces merely by

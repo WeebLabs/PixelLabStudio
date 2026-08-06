@@ -1,13 +1,13 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 4 sprite-domain completion
+> Updated: 2026-08-06 — Phase 5 UI/input component completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–4 are complete. Phase 5 (UI and input components) is next.
+Progress: Phases 0–5 are complete. Phase 6 (importers and native integrations) is next.
 Completed phases remain covered by the cumulative test and performance gates.
 
 ## Phase 0 — Baseline and safety rails
@@ -67,6 +67,13 @@ Completed phases remain covered by the cumulative test and performance gates.
 - Centralize selection guards, modal behavior, input routing, and reusable UI
   primitives without silently changing established interaction conventions.
 - Add scene/component tests for callbacks and state synchronization.
+
+> Completed: 2026-08-06 — Both oversized sidebars now share one `SidebarUI`
+> primitive for slider resources, click-through decoration, resize bounds, and
+> safe width clamping. The global wheel router and sprite-selection cursor use
+> the same editor-chrome hit test, eliminating duplicated panel geometry.
+> Component contracts verify mouse filters, style transitions, narrow-window
+> sizing, resize margins, and input-routing regions.
 
 ## Phase 6 — Importers and native integrations
 

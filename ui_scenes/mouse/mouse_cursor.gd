@@ -100,21 +100,7 @@ func _is_pixel_opaque(hit_area: Area2D, world_pos: Vector2) -> bool:
 	return img.get_pixel(img_x, img_y).a > 0.1
 
 func _is_over_panel() -> bool:
-	var screen_pos = get_viewport().get_mouse_position()
-	var viewport_size = get_viewport().get_visible_rect().size
-	# Menu bar
-	if screen_pos.y < 28:
-		return true
-	# Left panel (SpriteViewer). Always present in edit mode (dimmed, not
-	# hidden, when nothing is selected), so its strip always blocks.
-	if Global.spriteEdit != null:
-		if screen_pos.x < Global.spriteEdit.panel_width + 19:
-			return true
-	# Right panel (SpriteList). Visible whenever edit mode is on.
-	if Global.spriteList != null:
-		if screen_pos.x > viewport_size.x - Global.spriteList.panel_width - 7:
-			return true
-	return false
+	return Global.isMouseOverSidebar()
 
 func _query_areas_at_mouse() -> Array:
 	var space = get_world_2d().direct_space_state

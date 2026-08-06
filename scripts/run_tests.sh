@@ -40,6 +40,8 @@ mkdir -p "$TEST_WORKSPACE/main_scenes"
 cp -R "$PROJECT_ROOT/main_scenes/controllers" "$TEST_WORKSPACE/main_scenes/controllers"
 mkdir -p "$TEST_WORKSPACE/ui_scenes/selectedSprite"
 cp "$PROJECT_ROOT/ui_scenes/selectedSprite/sprite_collision_builder.gd" "$TEST_WORKSPACE/ui_scenes/selectedSprite/"
+mkdir -p "$TEST_WORKSPACE/ui_scenes/common"
+cp "$PROJECT_ROOT/ui_scenes/common/sidebar_ui.gd" "$TEST_WORKSPACE/ui_scenes/common/"
 mkdir -p "$TEST_WORKSPACE/test"
 cp "$PROJECT_ROOT/test/testBody.png" "$TEST_WORKSPACE/test/testBody.png"
 

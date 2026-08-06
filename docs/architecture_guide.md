@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Phase 4 sprite-domain boundaries
+> Last updated: 2026-08-06 — Phase 5 shared sidebar UI and input routing
 
 ## Overview
 
@@ -32,6 +32,8 @@ PNGTuberPlus/
 │   └── originLineDrawing.gd       Origin crosshair lines
 │
 ├── ui_scenes/
+│   ├── common/
+│   │   └── sidebar_ui.gd         Shared styles, bounds, and chrome hit tests
 │   ├── mouse/
 │   │   └── mouse_cursor.gd       Click detection & tooltip in edit mode
 │   ├── selectedSprite/
@@ -236,10 +238,18 @@ The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `
 
 Three behaviors share the wheel, routed by cursor location:
 
-- **Over the open viewport.** Plain scroll cycles sprite selection (`global.gd:scrollSprites()`, fed by a `_scroll_input` accumulator in `Global._input`); `Ctrl`+scroll zooms (`main.gd:zoomScene()`, polled).
+- **Over the open viewport.** Plain scroll cycles sprite selection (`global.gd:scrollSprites()`, fed by a `_scroll_input` accumulator in `Global._input`); `Ctrl`+scroll zooms (`viewport_controller.gd`, polled).
 - **Over a sidebar.** Neither of the above fires. `Global._input` intercepts the wheel first (it runs before GUI `_gui_input`): a `Range` (HSlider) under the cursor adjusts by one `step` and is consumed **only while `Ctrl` is held**. Without `Ctrl` the wheel is left alone so the enclosing scrollable section scrolls (the right sidebar's `ScrollContainer`, or the left sidebar's `position.y` scroll in `sprite_viewer._input`); sidebar sliders are created with `scrollable = false` so they do not self-adjust on that pass-through. Blank space and non-slider widgets behave the same. Either way it returns before the sprite-cycle accumulator.
 
-`zoomScene()` polls the `Input` singleton, so consuming the event cannot stop it; it is gated directly on `Global.isMouseOverSidebar()` instead. That helper is a shared screen-space bounds check (left/right sidebar or top menu bar, in edit mode), kept in screen space because the sidebar backgrounds are `MOUSE_FILTER_IGNORE`, so `gui_get_hovered_control()` reads null over their blank areas. Sliders outside the sidebars (Settings, the volume/sensitivity sliders) keep their default wheel behavior.
+Viewport zoom polls the `Input` singleton, so consuming the event cannot stop it; it is gated directly on `Global.isMouseOverSidebar()` instead. That helper delegates to `SidebarUI.is_over_editor_chrome()`, the canonical screen-space bounds check for the left/right sidebars and top menu bar. `mouse_cursor.gd` uses the same helper before sprite selection, so wheel routing and click-through blocking cannot drift apart. Screen-space bounds remain necessary because decorative backgrounds use `MOUSE_FILTER_IGNORE`, meaning `gui_get_hovered_control()` is null over blank panel areas. Sliders outside the sidebars (Settings, the volume/sensitivity sliders) keep their default wheel behavior.
+
+> Updated: 2026-08-06 — `ui_scenes/common/sidebar_ui.gd` owns the
+> click-through background/divider constructors, slider theme resources,
+> enabled/disabled slider application, resize-edge geometry, safe panel-width
+> clamp, and editor-chrome hit test shared by both sidebars. Every decorative
+> `ColorRect` it creates explicitly uses `MOUSE_FILTER_IGNORE`. Component tests
+> exercise style state, narrow-viewport clamps, resize margins, and open-canvas
+> versus chrome routing in `tests/unit/test_ui_components.gd`.
 
 ---
 

@@ -1,5 +1,7 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 #Node Reference
 @onready var spriteRotDisplay = $RotationalLimits/RotBack/SpriteDisplay
 
@@ -60,6 +62,7 @@ var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
+var _slider_theme: Dictionary
 
 # Normal map section
 var _normal_section: Control
@@ -245,36 +248,19 @@ func _ready():
 		$Rotation, $RotationalLimits, $Animation,
 	]
 
-	_set_controls_enabled(false)
-	setImage()
-
 	# Build slider style resources (matching right sidebar)
-	_slider_fill_enabled = StyleBoxFlat.new()
-	_slider_fill_enabled.bg_color = Color(1.0, 0.7, 0.8)
-	_slider_fill_disabled = StyleBoxFlat.new()
-	_slider_fill_disabled.bg_color = Color(0.55, 0.4, 0.45)
-
-	var grabber_img_on = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_on.fill(Color(0, 0, 0, 0))
-	var grabber_img_off = Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	grabber_img_off.fill(Color(0, 0, 0, 0))
-	for px in range(16):
-		for py in range(16):
-			var dx = px - 8
-			var dy = py - 8
-			if dx * dx + dy * dy <= 36:
-				grabber_img_on.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
-				grabber_img_off.set_pixel(px, py, Color(0.45, 0.45, 0.48, 1.0))
-	_slider_grabber_enabled = ImageTexture.create_from_image(grabber_img_on)
-	_slider_grabber_disabled = ImageTexture.create_from_image(grabber_img_off)
+	_slider_theme = SidebarUIFactory.create_slider_theme()
+	_slider_fill_enabled = _slider_theme["fill_enabled"]
+	_slider_fill_disabled = _slider_theme["fill_disabled"]
+	_slider_grabber_enabled = _slider_theme["grab_enabled"]
+	_slider_grabber_disabled = _slider_theme["grab_disabled"]
 
 	for slider in _sliders:
 		slider.theme = null
-		slider.add_theme_stylebox_override("grabber_area", _slider_fill_enabled)
-		slider.add_theme_stylebox_override("grabber_area_highlight", _slider_fill_enabled)
-		slider.add_theme_icon_override("grabber", _slider_grabber_enabled)
-		slider.add_theme_icon_override("grabber_highlight", _slider_grabber_enabled)
-		slider.add_theme_icon_override("grabber_disabled", _slider_grabber_disabled)
+		SidebarUIFactory.apply_slider_theme(slider, _slider_theme)
+
+	_set_controls_enabled(false)
+	setImage()
 
 	# Restyle labels to match right sidebar
 	var _labels = [
@@ -393,18 +379,16 @@ func _ready():
 	_replace_rot_display_textures()
 
 	# Create dark gray background panel
-	_bg = ColorRect.new()
-	_bg.color = Color(0.15, 0.15, 0.15)
-	_bg.z_index = -1
-	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bg = SidebarUIFactory.create_panel_background()
 	add_child(_bg)
 	move_child(_bg, 0)
 
 	# Restore saved sidebar width before the first _apply_size() so every
 	# resizable element gets sized to the user's preference on startup.
 	var saved_w = Saving.settings.get("leftSidebarWidth", panel_width)
-	var max_w = get_viewport().get_visible_rect().size.x * MAX_PANEL_WIDTH_RATIO
-	panel_width = clamp(saved_w, MIN_PANEL_WIDTH, max_w)
+	panel_width = SidebarUIFactory.clamp_panel_width(
+		saved_w, get_viewport().get_visible_rect().size.x, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH_RATIO,
+	)
 	_apply_size()
 
 func _set_controls_enabled(enabled: bool):
@@ -416,13 +400,8 @@ func _set_controls_enabled(enabled: bool):
 		slider.editable = enabled
 	for button in _buttons:
 		button.disabled = !enabled
-	var fill = _slider_fill_enabled if enabled else _slider_fill_disabled
-	var grab = _slider_grabber_enabled if enabled else _slider_grabber_disabled
 	for slider in _sliders:
-		slider.add_theme_stylebox_override("grabber_area", fill)
-		slider.add_theme_stylebox_override("grabber_area_highlight", fill)
-		slider.add_theme_icon_override("grabber", grab)
-		slider.add_theme_icon_override("grabber_highlight", grab)
+		SidebarUIFactory.apply_slider_theme(slider, _slider_theme, enabled)
 	
 func _replace_rot_display_textures():
 	# Textures-only: positions for RotBack / RotBorder / RotLimit* are handled
@@ -721,11 +700,8 @@ func _build_section_vbox(section: Node, pos: Vector2, vbox_width: float, widgets
 func _create_divider(y_pos: float) -> ColorRect:
 	# Match the section VBoxes' content frame so dividers line up with the
 	# sliders above/below them: x=11, width=panel_width-42 (= 223 at default).
-	var div = ColorRect.new()
-	div.color = Color(0.3, 0.3, 0.35)
-	div.size = Vector2(panel_width - 42, 1)
+	var div := SidebarUIFactory.create_divider(Vector2(panel_width - 42, 1))
 	div.position = Vector2(11, y_pos)
-	div.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(div)
 	_dividers.append(div)
 	return div
@@ -782,7 +758,7 @@ func _apply_size():
 # Local x = panel_width is the visible right edge; the panel extends the full
 # viewport height so no vertical constraint is needed.
 func _is_on_right_edge(local: Vector2) -> bool:
-	return abs(local.x - panel_width) <= GRAB_MARGIN
+	return SidebarUIFactory.is_near_vertical_edge(local, panel_width, GRAB_MARGIN)
 
 func _input(event):
 	if Global.main == null or !visible:
@@ -809,8 +785,12 @@ func _input(event):
 		if _resize_dragging:
 			var delta_x = get_global_mouse_position().x - _resize_drag_start_x
 			var viewport_w = get_viewport().get_visible_rect().size.x
-			var max_w = viewport_w * MAX_PANEL_WIDTH_RATIO
-			panel_width = clamp(_resize_drag_start_width + delta_x, MIN_PANEL_WIDTH, max_w)
+			panel_width = SidebarUIFactory.clamp_panel_width(
+				_resize_drag_start_width + delta_x,
+				viewport_w,
+				MIN_PANEL_WIDTH,
+				MAX_PANEL_WIDTH_RATIO,
+			)
 			_apply_size()
 			get_viewport().set_input_as_handled()
 			return
