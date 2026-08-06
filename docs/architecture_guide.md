@@ -344,6 +344,8 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 
 > Updated: 2026-08-06 — Persistence boundaries are versioned and validated before live scene state is changed. `autoload/persistence/avatar_save_schema.gd` migrates legacy unversioned avatars, supplies typed compatibility defaults, rejects unsupported future versions, duplicate IDs, invalid layers, and hierarchy cycles, and selects sprite entries by their validated shape rather than a fixed metadata allowlist. `settings_schema.gd` owns the complete canonical settings defaults and typed/ranged migration (including legacy NDI ruler-to-crop conversion). `value_codec.gd` is the only persistence-boundary parser for legacy Variant strings. `json_file_store.gd` bounds reads, reports JSON line errors, writes through a same-directory temporary file, and retains/reloads a previous complete `.bak` if replacement is interrupted. Manual saves only update `lastAvatar` after the avatar write succeeds; failed session saves re-arm the dirty flag. The `Saving` singleton remains the compatibility-facing API and exposes `last_error` plus `persistence_error` for actionable UI reporting.
 
+> Updated: 2026-08-06 — Sprite identifiers and their `parentId` / `eyeTrackTargetId` references preserve the complete unsigned 32-bit range produced by Godot's `RandomNumberGenerator.randi()`. Persistence must not narrow these values to signed 32-bit integers before uniqueness and hierarchy validation.
+
 Schema metadata uses `_schemaVersion`; underscore-prefixed root keys are reserved
 for avatar-level metadata. A root entry is treated as a layer only when it is a
 validated dictionary with `type == "sprite"`. Current schema migration and

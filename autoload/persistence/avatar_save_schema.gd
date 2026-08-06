@@ -6,6 +6,8 @@ const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 const CURRENT_VERSION := 1
 const MAX_SPRITES := 10000
 const MAX_EMBEDDED_IMAGE_CHARS := 384 * 1024 * 1024
+const MIN_SPRITE_IDENTIFIER := -2147483648
+const MAX_SPRITE_IDENTIFIER := 4294967295
 
 
 static func normalize(value: Variant) -> Dictionary:
@@ -82,13 +84,13 @@ static func _normalize_sprite(value: Dictionary, key: String) -> Dictionary:
 		return _failure("Avatar entry '%s' has no image path." % key)
 	if not value.has("identification") or not _is_integer_compatible(value["identification"]):
 		return _failure("Avatar entry '%s' has no valid identification value." % key)
-	var identifier := ValueCodec.int_value(value["identification"], 0)
+	var identifier := _sprite_identifier_value(value["identification"])
 
 	var entry: Dictionary = value.duplicate(true)
 	entry["type"] = "sprite"
 	entry["path"] = path
 	entry["identification"] = identifier
-	entry["parentId"] = null if value.get("parentId") == null else ValueCodec.int_value(value.get("parentId"), 0)
+	entry["parentId"] = null if value.get("parentId") == null else _sprite_identifier_value(value.get("parentId"))
 	entry["pos"] = var_to_str(ValueCodec.vector2_value(value.get("pos"), Vector2.ZERO))
 	entry["offset"] = var_to_str(ValueCodec.vector2_value(value.get("offset"), Vector2.ZERO))
 	entry["zindex"] = ValueCodec.int_value(value.get("zindex"), 0, -4096, 4096)
@@ -119,7 +121,7 @@ static func _normalize_sprite(value: Dictionary, key: String) -> Dictionary:
 	entry["eyeTrackSpeed"] = ValueCodec.float_value(value.get("eyeTrackSpeed"), 0.15, 0.0, 1000.0)
 	entry["eyeTrackInvert"] = ValueCodec.bool_value(value.get("eyeTrackInvert"), false)
 	entry["eyeTrackMode"] = ValueCodec.int_value(value.get("eyeTrackMode"), 0, 0, 1)
-	entry["eyeTrackTargetId"] = null if value.get("eyeTrackTargetId") == null else ValueCodec.int_value(value.get("eyeTrackTargetId"), 0)
+	entry["eyeTrackTargetId"] = null if value.get("eyeTrackTargetId") == null else _sprite_identifier_value(value.get("eyeTrackTargetId"))
 	entry["eyeTrackType"] = ValueCodec.int_value(value.get("eyeTrackType"), 0, 0, 1)
 	entry["eyeTrackForward"] = ValueCodec.int_value(value.get("eyeTrackForward"), 0, -1, 1)
 	entry["ndiRefLayer"] = ValueCodec.bool_value(value.get("ndiRefLayer"), false)
@@ -215,6 +217,10 @@ static func _is_integer_compatible(value: Variant) -> bool:
 	if value is float:
 		return is_finite(value) and value == floorf(value)
 	return value is String and String(value).is_valid_int()
+
+
+static func _sprite_identifier_value(value: Variant) -> int:
+	return ValueCodec.int_value(value, 0, MIN_SPRITE_IDENTIFIER, MAX_SPRITE_IDENTIFIER)
 
 
 static func _failure(message: String) -> Dictionary:

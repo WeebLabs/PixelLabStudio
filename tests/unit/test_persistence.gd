@@ -11,6 +11,7 @@ func run(t) -> void:
 	_test_value_codec(t)
 	_test_settings_migration(t)
 	_test_avatar_migration(t)
+	_test_unsigned_sprite_identifiers(t)
 	_test_bundled_avatar(t)
 	_test_schema_rejections(t)
 	_test_atomic_round_trip_and_recovery(t)
@@ -59,6 +60,31 @@ func _test_avatar_migration(t) -> void:
 	t.assert_true(second_pass["ok"], "normalized avatar JSON loads again")
 	t.assert_false(second_pass["migrated"], "current avatar data does not re-run migrations")
 	t.assert_equal(second_pass["value"], avatar, "avatar normalization is idempotent")
+
+
+func _test_unsigned_sprite_identifiers(t) -> void:
+	var parent_id := 4226717595
+	var child_id := 4000000001
+	var source := {
+		"0": {"type": "sprite", "path": "parent.png", "identification": parent_id},
+		"1": {
+			"type": "sprite",
+			"path": "child.png",
+			"identification": child_id,
+			"parentId": parent_id,
+			"eyeTrackTargetId": parent_id,
+		},
+	}
+	var parsed_again: Variant = JSON.parse_string(JSON.stringify(source))
+	var normalized := AvatarSave.normalize(parsed_again)
+	t.assert_true(normalized["ok"], "distinct unsigned 32-bit sprite identifiers remain loadable")
+	if not normalized["ok"]:
+		return
+	var avatar: Dictionary = normalized["value"]
+	t.assert_equal(avatar["0"]["identification"], parent_id, "large parent identifiers are preserved")
+	t.assert_equal(avatar["1"]["identification"], child_id, "large child identifiers are preserved")
+	t.assert_equal(avatar["1"]["parentId"], parent_id, "large parent references are preserved")
+	t.assert_equal(avatar["1"]["eyeTrackTargetId"], parent_id, "large eye-tracking references are preserved")
 
 
 func _test_bundled_avatar(t) -> void:
