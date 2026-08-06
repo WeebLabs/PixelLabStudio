@@ -2,6 +2,7 @@ extends RefCounted
 
 const Animator = preload("res://effects/animation/layer_animator.gd")
 const BlendModes = preload("res://effects/blend/blend_mode.gd")
+const Settings = preload("res://autoload/persistence/settings_schema.gd")
 
 func run(t) -> void:
 	_test_animation_curves(t)
@@ -38,7 +39,7 @@ func _test_blend_registry(t) -> void:
 	t.assert_true(BlendModes.needs_backbuffer(BlendModes.Mode.MULTIPLY), "Multiply retains its screen-read requirement")
 
 func _test_settings_source_contract(t) -> void:
-	var source := FileAccess.get_file_as_string("res://autoload/saving.gd")
+	var defaults := Settings.defaults()
 	for key in ["volume", "sense", "maxFPS", "costumeKeys", "ndiEnabled", "ndiCropRect", "recordingFormat", "recordingFPS"]:
-		t.assert_true(source.contains('"%s"' % key), "settings source declares %s" % key)
-	t.assert_true(source.contains('["1","2","3","4","5","6","7","8","9","0"]'), "ten costume binding slots remain available")
+		t.assert_true(defaults.has(key), "settings schema declares %s" % key)
+	t.assert_equal(defaults["costumeKeys"].size(), 10, "ten costume binding slots remain available")

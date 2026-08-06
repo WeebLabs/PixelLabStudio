@@ -1,5 +1,9 @@
 extends Node2D
 
+const JsonStore = preload("res://autoload/persistence/json_file_store.gd")
+const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
+const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
+
 var editMode = true
 
 #Node Reference
@@ -168,7 +172,7 @@ func _ready():
 	_style_control_sliders()
 
 	if Saving.settings.has("windowSize"):
-		get_window().size = str_to_var(Saving.settings["windowSize"])
+		get_window().size = ValueCodec.vector2i_value(Saving.settings["windowSize"], Vector2i(1280, 720))
 
 	if Saving.settings.has("bounce"):
 		bounceSlider = Saving.settings["bounce"]
@@ -181,7 +185,7 @@ func _ready():
 		Saving.settings["maxFPS"] = 60
 
 	if Saving.settings.has("backgroundColor"):
-		Global.backgroundColor = str_to_var(Saving.settings["backgroundColor"])
+		Global.backgroundColor = ValueCodec.color_value(Saving.settings["backgroundColor"], Color.TRANSPARENT)
 	else:
 		Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
 
@@ -369,11 +373,11 @@ func _apply_light_data(ld: Dictionary):
 	if _light_gizmo == null:
 		return
 	if ld.has("pos"):
-		_light_gizmo.position = str_to_var(ld["pos"])
+		_light_gizmo.position = ValueCodec.vector2_value(ld["pos"])
 	if ld.has("energy"):
 		_light_gizmo.light_energy = ld["energy"]
 	if ld.has("color"):
-		_light_gizmo.light_color = str_to_var(ld["color"])
+		_light_gizmo.light_color = ValueCodec.color_value(ld["color"], Color.WHITE)
 	if ld.has("range"):
 		_light_gizmo.light_range = ld["range"]
 	if ld.has("enabled"):
@@ -1250,6 +1254,7 @@ func _on_load_dialog_file_selected(path):
 	var data = Saving.read_save(path)
 
 	if data == null:
+		Global.pushUpdate(Saving.last_error)
 		return
 
 	Global.heldSprite = null
@@ -1268,13 +1273,13 @@ func _on_load_dialog_file_selected(path):
 	$OriginMotion.add_child(new)
 	origin = new
 
-	# Build ordered key list (skip non-sprite metadata)
+	# Build the ordered sprite list from validated entries. Metadata is selected
+	# by shape rather than a hard-coded name list so schema additions remain safe.
 	_load_keys = []
 	for _it in data:
-		var _it_s = str(_it)
-		if _it_s == "_light" or _it_s == "_eyeTrackingGloballyEnabled" or _it_s == "_ndiRulerY" or _it_s == "_ndiCropRect":
-			continue
-		_load_keys.append(_it)
+		var _entry: Variant = data[_it]
+		if _entry is Dictionary and _entry.get("type") == "sprite":
+			_load_keys.append(_it)
 	var _load_total = _load_keys.size()
 	_load_data_ref = data
 	_load_results = []
@@ -1314,7 +1319,7 @@ func _on_load_dialog_file_selected(path):
 		sprite.id = data[item]["identification"]
 		sprite.parentId = data[item]["parentId"]
 
-		sprite.offset = str_to_var(data[item]["offset"])
+		sprite.offset = ValueCodec.vector2_value(data[item]["offset"])
 		sprite.z = data[item]["zindex"]
 		sprite.dragSpeed = data[item]["drag"]
 
@@ -1332,7 +1337,7 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("rLimitMax"):
 			sprite.rLimitMax = data[item]["rLimitMax"]
 		if data[item].has("costumeLayers"):
-			sprite.costumeLayers = str_to_var(data[item]["costumeLayers"]).duplicate()
+			sprite.costumeLayers = ValueCodec.array_value(data[item]["costumeLayers"], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
 			if sprite.costumeLayers.size() < 8:
 				for _j in range(5):
 					sprite.costumeLayers.append(1)
@@ -1369,8 +1374,8 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("ndiRefLayer"):
 			sprite.ndiRefLayer = data[item]["ndiRefLayer"]
 		if data[item].has("wiggleEnabled"): sprite.wiggleEnabled = data[item]["wiggleEnabled"]
-		if data[item].has("wigglePath"): sprite.wigglePath = str_to_var(data[item]["wigglePath"])
-		if data[item].has("wigglePathWidths"): sprite.wigglePathWidths = str_to_var(data[item]["wigglePathWidths"])
+		if data[item].has("wigglePath"): sprite.wigglePath = ValueCodec.packed_vector2_array_value(data[item]["wigglePath"])
+		if data[item].has("wigglePathWidths"): sprite.wigglePathWidths = ValueCodec.packed_float32_array_value(data[item]["wigglePathWidths"])
 		if data[item].has("wiggleThickness"): sprite.wiggleThickness = data[item]["wiggleThickness"]
 		if data[item].has("wiggleSegments"): sprite.wiggleSegments = data[item]["wiggleSegments"]
 		if data[item].has("wiggleStiffness"): sprite.wiggleStiffness = data[item]["wiggleStiffness"]
@@ -1388,7 +1393,7 @@ func _on_load_dialog_file_selected(path):
 		if data[item].has("blendMode"): sprite.blendMode = data[item]["blendMode"]
 		if data[item].has("opacity"): sprite.opacity = data[item]["opacity"]
 		if data[item].has("animClips"):
-			sprite.animClips = str_to_var(data[item]["animClips"])
+			sprite.animClips = ValueCodec.array_value(data[item]["animClips"])
 		else:
 			sprite.migrateLegacyWobble()  # old save: fold wobble into a clip
 		if data[item].has("normalPath"):
@@ -1413,7 +1418,7 @@ func _on_load_dialog_file_selected(path):
 		sprite._skip_ready_reparent = true
 
 		origin.add_child(sprite)
-		sprite.position = str_to_var(data[item]["pos"])
+		sprite.position = ValueCodec.vector2_value(data[item]["pos"])
 		# No physics ticks until the avatar is revealed
 		sprite.set_process(false)
 
@@ -2069,6 +2074,7 @@ func _build_avatar_save_data() -> Dictionary:
 			"enabled": _light_gizmo.light_enabled,
 		}
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
+	data["_schemaVersion"] = AvatarSave.CURRENT_VERSION
 	# Per-avatar NDI crop box (origin-relative [left, top, right, bottom]). Travels
 	# with the avatar so a purchased/shared avatar arrives pre-framed and never needs
 	# manual re-cropping. The legacy "_ndiRulerY" (box bottom) is written too so the
@@ -2090,10 +2096,6 @@ func _on_save_dialog_file_selected(path):
 		_session_thread = null
 
 	var data = _build_avatar_save_data()
-
-	Saving.settings["lastAvatar"] = path
-	# Persist immediately — _exit_tree isn't reliable across all shutdown paths
-	Saving.write_settings(Saving.settingsPath)
 
 	_save_progress = 0.0
 	# _create_save_progress_dialog attaches the dialog to UILayer itself.
@@ -2120,19 +2122,29 @@ func _save_worker(data: Dictionary, path: String):
 				entry.erase("_normal_image_ref")
 		done += 1
 		_save_progress = float(done) / float(total)
-	var file = FileAccess.open(path, FileAccess.WRITE)
-	file.store_line(JSON.stringify(data))
-	file.close()
-	call_deferred("_on_save_finished", path, data)
+	var schema_result := AvatarSave.normalize(data)
+	if not schema_result["ok"]:
+		call_deferred("_on_save_finished", path, data, schema_result)
+		return
+	var normalized_data: Dictionary = schema_result["value"]
+	var write_result := JsonStore.write_document_atomic(path, normalized_data)
+	call_deferred("_on_save_finished", path, normalized_data, write_result)
 
-func _on_save_finished(path: String, data: Dictionary):
-	Saving.data = data
+func _on_save_finished(path: String, data: Dictionary, result: Dictionary):
 	if _save_thread != null:
 		_save_thread.wait_to_finish()
 		_save_thread = null
 	if _save_progress_dialog != null:
 		_save_progress_dialog.queue_free()
 		_save_progress_dialog = null
+	if not result["ok"]:
+		Global.pushUpdate("Save failed: " + result["error"])
+		_session_dirty = true
+		return
+	Saving.data = data
+	Saving.settings["lastAvatar"] = path
+	if not Saving.write_settings(Saving.settingsPath):
+		Global.pushUpdate(Saving.last_error)
 	Global.pushUpdate("Save complete: " + path.get_file())
 	_show_save_confirmation(path.get_file())
 	# The user's work is now persisted in their chosen save file; the
@@ -2185,12 +2197,17 @@ func _session_save_worker(data: Dictionary):
 				var nrml_img: Image = entry["_normal_image_ref"]
 				entry["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
 				entry.erase("_normal_image_ref")
-	var file = FileAccess.open(SESSION_SAVE_PATH, FileAccess.WRITE)
-	if file == null:
-		push_error("Session auto-save failed to open " + SESSION_SAVE_PATH)
+	var schema_result := AvatarSave.normalize(data)
+	if not schema_result["ok"]:
+		call_deferred("_on_session_save_failed", schema_result["error"])
 		return
-	file.store_line(JSON.stringify(data))
-	file.close()
+	var write_result := JsonStore.write_document_atomic(SESSION_SAVE_PATH, schema_result["value"])
+	if not write_result["ok"]:
+		call_deferred("_on_session_save_failed", write_result["error"])
+
+func _on_session_save_failed(message: String) -> void:
+	_session_dirty = true
+	push_warning("Session auto-save failed: " + message)
 
 func _discard_session_file():
 	if !FileAccess.file_exists(SESSION_SAVE_PATH):

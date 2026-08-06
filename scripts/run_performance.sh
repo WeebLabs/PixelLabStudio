@@ -29,6 +29,7 @@ esac
 cp "$PROJECT_ROOT/tests/test_project.godot" "$PERF_WORKSPACE/project.godot"
 cp -R "$PROJECT_ROOT/tests" "$PERF_WORKSPACE/tests"
 cp -R "$PROJECT_ROOT/effects" "$PERF_WORKSPACE/effects"
+cp -R "$PROJECT_ROOT/autoload" "$PERF_WORKSPACE/autoload"
 mkdir -p "$PERF_WORKSPACE/test"
 cp "$PROJECT_ROOT/test/testBody.png" "$PERF_WORKSPACE/test/testBody.png"
 

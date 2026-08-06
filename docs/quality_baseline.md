@@ -37,11 +37,12 @@ required because Godot 4.6.3's normal headless editor shutdown can crash while
 generating extension documentation whenever a GDExtension is loaded; that
 engine/editor defect is separate from application runtime behavior.
 
-`run_performance.sh` benchmarks three repeatable CPU paths: animation
-evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization, and
-alpha-to-polygon image geometry. It stores exact results and enforces broad
-smoke ceilings of 15 microseconds per 100-layer animation layer-frame, 500 ms
-for serialization, and 200 ms for image geometry. Phase work should compare
+`run_performance.sh` benchmarks four repeatable CPU paths: animation
+evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization,
+100-layer schema validation/migration, and alpha-to-polygon image geometry. It
+stores exact results and enforces broad smoke ceilings of 15 microseconds per
+100-layer animation layer-frame, 500 ms for serialization, 3,000 ms for schema
+validation, and 200 ms for image geometry. Phase work should compare
 the same CI-runner artifact before and after changes; a ceiling is not a
 performance target.
 
@@ -59,6 +60,15 @@ Measured on macOS with Godot 4.6.3:
 | Build image alpha geometry × 25 iterations | 19.69 ms |
 
 These numbers are a local reference, not a cross-machine pass/fail threshold.
+
+## Phase 1 measurement
+
+The new avatar boundary validates and migrates a 100-layer payload 100 times in
+585.73 ms on the baseline machine (about 5.86 ms per avatar). The same run
+measured JSON serialization at 57.12 ms for 100 iterations; animation and image
+geometry remained within baseline variance. The validation ceiling is kept
+deliberately broad for slower CI runners while exact artifacts provide the
+useful trend line.
 
 ## Known third-party limitation
 

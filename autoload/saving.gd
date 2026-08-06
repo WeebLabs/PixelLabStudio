@@ -1,146 +1,147 @@
 extends Node
 
-var key = "creature"
+signal persistence_error(message: String)
 
-var data = {}
+const JsonStore = preload("res://autoload/persistence/json_file_store.gd")
+const Settings = preload("res://autoload/persistence/settings_schema.gd")
+const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 
-var default = { 
-	"0": { 
-		"drag": 0, 
-		"identification": 930245150, 
-		"offset": "Vector2(0, 0)", 
-		"parentId": null, 
-		"path": "user://defaultAvatar/body.png", 
-		"pos": "Vector2(0, 0)", 
-		"rotDrag": 0, 
-		"showBlink": 0, 
-		"showTalk": 0, 
-		"type": "sprite", 
-		"xAmp": 9, 
-		"xFrq": 0.002, 
-		"yAmp": 11, 
-		"yFrq": 0.004, 
-		"zindex": -1 }, 
-	"1": { 
-		"drag": 1, 
-		"identification": 456157398, 
-		"offset": "Vector2(0, 0)", 
-		"parentId": 930245150, 
-		"path": "user://defaultAvatar/head.png", 
-		"pos": "Vector2(0, 0)", 
-		"rotDrag": 0, 
-		"showBlink": 0, 
-		"showTalk": 0, 
-		"type": "sprite", 
-		"xAmp": 0, 
-		"xFrq": 0, 
-		"yAmp": 0, 
-		"yFrq": 0, 
-		"zindex": 0 }, 
-	"2": { "drag": 4, "identification": 928082759, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/hair.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 0, "showTalk": 0, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": -2 }, "3": { "drag": 0, "identification": 346749260, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/mouth1.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 0, "showTalk": 1, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 0 }, "4": { "drag": 0, "identification": 348929106, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/mouth2.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 0, "showTalk": 2, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 0 }, "5": { "drag": 0, "identification": 66364456, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/eye1.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 1, "showTalk": 2, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 0 }, "6": { "drag": 0, "identification": 261040117, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/eye2.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 1, "showTalk": 1, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 0 }, "7": { "drag": 0, "identification": 291459997, "offset": "Vector2(0, 0)", "parentId": 456157398, "path": "user://defaultAvatar/eye3.png", "pos": "Vector2(0, 0)", "rotDrag": 0, "showBlink": 2, "showTalk": 0, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 0 }, "8": { "drag": 0, "identification": 148065686, "offset": "Vector2(-74, 92)", "parentId": 456157398, "path": "user://defaultAvatar/hat.png", "pos": "Vector2(72, -89)", "rotDrag": -2, "showBlink": 0, "showTalk": 0, "type": "sprite", "xAmp": 0, "xFrq": 0, "yAmp": 0, "yFrq": 0, "zindex": 2 } }
+const SETTINGS_MAX_BYTES := 4 * 1024 * 1024
+
+var key := "creature"
+var data: Dictionary = {}
+var settings: Dictionary = Settings.defaults()
+var settingsPath := "user://settings.pngtp"
+var last_error := ""
 
 
-var settings = {
-	"newUser":true,
-	"lastAvatar":"",
-	"volume":0.185,
-	"sense":0.25,
-	"windowSize":Vector2i(1280,720),
-	"useStreamDeck":false,
-	"bounce":250,
-	"gravity":1000,
-	"maxFPS":60,
-	"backgroundColor":var_to_str(Color(0.0,0.0,0.0,0.0)),
-	"filtering":true,
-	"costumeKeys":["1","2","3","4","5","6","7","8","9","0"],
-	"blinkSpeed":1.0,
-	"blinkChance":200,
-	"bounceOnCostumeChange":false,
-	"ndiEnabled":false,
-	"ndiWidth":512,
-	"ndiMode":"auto",
-	"ndiManualWidth":800,
-	"ndiManualHeight":1200,
-	"ndiCropRect":[-500.0, -800.0, 500.0, 200.0],
-	"recordingFormat":"webm",
-	"recordingFPS":30,
-	"leftSidebarWidth":265,
-	"rightSidebarWidth":310,
-	"wigglePresets":{},
-}
+func _ready() -> void:
+	load_settings(settingsPath)
 
-var settingsPath = "user://settings.pngtp"
 
-func _ready():
-	var datas = read_save(settingsPath)
-	if datas == null:
-		return
-	else:
-		settings = datas.duplicate()
-
-func _exit_tree():
+func _exit_tree() -> void:
 	write_settings(settingsPath)
 
 
-func read_save(path):
-	
+func load_settings(path: String = settingsPath) -> bool:
+	if not FileAccess.file_exists(path) and not FileAccess.file_exists(path + ".bak"):
+		settings = Settings.defaults()
+		last_error = ""
+		return true
+	var read_result := JsonStore.read_document(path, TYPE_DICTIONARY, SETTINGS_MAX_BYTES)
+	if not read_result["ok"]:
+		_record_error("Could not load settings: %s" % read_result["error"])
+		return false
+	var schema_result := Settings.normalize(read_result["value"])
+	if not schema_result["ok"]:
+		_record_error("Could not load settings: %s" % schema_result["error"])
+		return false
+	settings = schema_result["value"]
+	last_error = ""
+	if read_result.has("warning"):
+		push_warning(read_result["warning"])
+	return true
+
+
+func read_save(path: String) -> Variant:
+	var raw_value: Variant
 	if path == "default":
-		return DefaultAvatarData.data
-	
-	
-	if OS.has_feature('web'):
-		var JSONstr = JavaScriptBridge.eval("window.localStorage.getItem('" + key + "');")
-		if (JSONstr):
-			return JSON.parse_string(JSONstr)
-		else:
+		raw_value = DefaultAvatarData.data
+	elif OS.has_feature("web"):
+		var script := "window.localStorage.getItem(%s);" % JSON.stringify(key)
+		var json_text: Variant = JavaScriptBridge.eval(script)
+		if not json_text is String or String(json_text).is_empty():
+			_record_error("No browser avatar save was found.")
 			return null
-	else:
-		var file = FileAccess.open(path, FileAccess.READ)
-		if not file:
+		var parser := JSON.new()
+		var parse_error := parser.parse(json_text)
+		if parse_error != OK:
+			_record_error("Invalid avatar JSON at line %d: %s" % [parser.get_error_line(), parser.get_error_message()])
 			return null
-		var newData = JSON.parse_string(file.get_as_text())
-		file.close()
-		return newData
-
-func write_save(path):
-	if OS.has_feature('web'):
-		JavaScriptBridge.eval("window.localStorage.setItem('" + key + "', '" + JSON.stringify(data) + "');")
+		raw_value = parser.data
 	else:
-		var file = FileAccess.open(path, FileAccess.WRITE)
-		file.store_line(JSON.stringify(data))
-		file.close()
-
-func write_settings(path):
-	var file = FileAccess.open(path, FileAccess.WRITE)
-	file.store_line(JSON.stringify(settings))
-	file.close()
-
-
-func clearSave():
-	
-	if OS.has_feature('web'):
-		var JSONstr = JavaScriptBridge.eval("window.localStorage.getItem('" + key + "');")
-		if (JSONstr):
-			JavaScriptBridge.eval("window.localStorage.removeItem('" + key + "');")
-		else:
+		var read_result := JsonStore.read_document(path)
+		if not read_result["ok"]:
+			_record_error("Could not load avatar: %s" % read_result["error"])
 			return null
-	else:
-		var file = FileAccess.open("user://" + key + ".save", FileAccess.READ)
-		if not file:
-			return null
-		file.close()
-		var dir = DirAccess.open("user://")
-		dir.remove(key + ".save")
-		data = {}
-	
-func open_site(url):
-	if OS.has_feature('web'):
-		JavaScriptBridge.eval("window.open(\"" + url + "\");")
-	else:
-		print("Could not open site " + url + " without an HTML5 build")
+		raw_value = read_result["value"]
+		if read_result.has("warning"):
+			push_warning(read_result["warning"])
 
-func switchToSite(url):
-	if OS.has_feature('web'):
-		JavaScriptBridge.eval("window.open(\"" + url + "\", \"_parent\");")
+	var schema_result := AvatarSave.normalize(raw_value)
+	if not schema_result["ok"]:
+		_record_error("Could not load avatar: %s" % schema_result["error"])
+		return null
+	last_error = ""
+	return schema_result["value"]
+
+
+func write_save(path: String) -> bool:
+	var schema_result := AvatarSave.normalize(data)
+	if not schema_result["ok"]:
+		_record_error("Could not save avatar: %s" % schema_result["error"])
+		return false
+	var normalized_data: Dictionary = schema_result["value"]
+	if OS.has_feature("web"):
+		var script := "window.localStorage.setItem(%s, %s);" % [JSON.stringify(key), JSON.stringify(JSON.stringify(normalized_data))]
+		JavaScriptBridge.eval(script)
+		data = normalized_data
+		last_error = ""
+		return true
+	var write_result := JsonStore.write_document_atomic(path, normalized_data)
+	if not write_result["ok"]:
+		_record_error("Could not save avatar: %s" % write_result["error"])
+		return false
+	data = normalized_data
+	last_error = ""
+	return true
+
+
+func write_settings(path: String = settingsPath) -> bool:
+	var schema_result := Settings.normalize(settings)
+	if not schema_result["ok"]:
+		_record_error("Could not save settings: %s" % schema_result["error"])
+		return false
+	var normalized_settings: Dictionary = schema_result["value"]
+	var write_result := JsonStore.write_document_atomic(path, normalized_settings)
+	if not write_result["ok"]:
+		_record_error("Could not save settings: %s" % write_result["error"])
+		return false
+	settings = normalized_settings
+	last_error = ""
+	return true
+
+
+func clearSave() -> bool:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.localStorage.removeItem(%s);" % JSON.stringify(key))
 	else:
-		print("Could not switch to site " + url + " without an HTML5 build")
+		var save_path := "user://%s.save" % key
+		if FileAccess.file_exists(save_path):
+			var remove_error := DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+			if remove_error != OK:
+				_record_error("Could not remove the browser-compatible avatar save: %s" % error_string(remove_error))
+				return false
+	data = {}
+	last_error = ""
+	return true
+
+
+func open_site(url: String) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.open(%s);" % JSON.stringify(url))
+	else:
+		print("Could not open site %s without a web build" % url)
+
+
+func switchToSite(url: String) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.open(%s, \"_parent\");" % JSON.stringify(url))
+	else:
+		print("Could not switch to site %s without a web build" % url)
+
+
+func _record_error(message: String) -> void:
+	last_error = message
+	push_warning(message)
+	persistence_error.emit(message)

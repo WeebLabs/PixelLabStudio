@@ -1,0 +1,12 @@
+{
+	"newUser": false,
+	"lastAvatar": "user://avatar.save",
+	"volume": 4.5,
+	"sense": "0.4",
+	"windowSize": "Vector2(1440, 900)",
+	"costumeKeys": ["A", "B"],
+	"backgroundColor": "Color(0.2, 0.3, 0.4, 0.5)",
+	"ndiCropRect": [10, 20, 5, 15],
+	"recordingFormat": "unknown",
+	"futureIntegrationSetting": {"preserved": true}
+}

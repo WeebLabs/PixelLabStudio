@@ -95,9 +95,9 @@ Registered in `project.godot` under `[autoload]`:
 
 | Singleton          | File                           | Purpose                                              |
 |--------------------|--------------------------------|------------------------------------------------------|
+| `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                         |
 | `Saving`           | `autoload/saving.gd`          | Avatar persistence (JSON + base64 images), settings  |
 | `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input    |
-| `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                        |
 | `UndoManager`      | `autoload/undo_manager.gd`    | Snapshot-based undo/redo with image caching           |
 
 Additional parsers (not autoloaded, instantiated on demand):
@@ -252,6 +252,14 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 - PNG encoding for file saves runs on a background thread to avoid stalling the main loop (Updated: 2026-02-16)
 - Settings stored separately: volume, sensitivity, window size, background color, costume key bindings, etc.
 - Web build support via localStorage
+
+> Updated: 2026-08-06 — Persistence boundaries are versioned and validated before live scene state is changed. `autoload/persistence/avatar_save_schema.gd` migrates legacy unversioned avatars, supplies typed compatibility defaults, rejects unsupported future versions, duplicate IDs, invalid layers, and hierarchy cycles, and selects sprite entries by their validated shape rather than a fixed metadata allowlist. `settings_schema.gd` owns the complete canonical settings defaults and typed/ranged migration (including legacy NDI ruler-to-crop conversion). `value_codec.gd` is the only persistence-boundary parser for legacy Variant strings. `json_file_store.gd` bounds reads, reports JSON line errors, writes through a same-directory temporary file, and retains/reloads a previous complete `.bak` if replacement is interrupted. Manual saves only update `lastAvatar` after the avatar write succeeds; failed session saves re-arm the dirty flag. The `Saving` singleton remains the compatibility-facing API and exposes `last_error` plus `persistence_error` for actionable UI reporting.
+
+Schema metadata uses `_schemaVersion`; underscore-prefixed root keys are reserved
+for avatar-level metadata. A root entry is treated as a layer only when it is a
+validated dictionary with `type == "sprite"`. Current schema migration and
+atomic round-trip/recovery cases are fixture-tested in
+`tests/unit/test_persistence.gd`.
 
 ### PSD Import (`psd_parser.gd`)
 

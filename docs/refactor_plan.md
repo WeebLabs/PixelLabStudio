@@ -1,11 +1,15 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 0 execution baseline
+> Updated: 2026-08-06 — Phase 1 persistence and data-safety completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
+
+Progress: Phase 0 and Phase 1 are complete. Phase 2 (runtime state and autoload
+boundaries) is next. Completed phases remain covered by the cumulative test and
+performance gates.
 
 ## Phase 0 — Baseline and safety rails
 
