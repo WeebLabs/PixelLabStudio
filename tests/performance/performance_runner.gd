@@ -4,6 +4,7 @@ const Animator = preload("res://effects/animation/layer_animator.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
 const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
+const ImportBudget = preload("res://autoload/import/import_limits.gd")
 
 # These are deliberately generous, hardware-independent smoke ceilings. They
 # catch accidental algorithmic regressions while the JSON artifact retains the
@@ -13,6 +14,7 @@ const MAX_SERIALIZATION_MS := 500.0
 const MAX_IMAGE_GEOMETRY_MS := 200.0
 const MAX_AVATAR_VALIDATION_MS := 3000.0
 const MAX_RUNTIME_SERVICES_MS := 1000.0
+const MAX_IMPORT_VALIDATION_MS := 500.0
 
 var results: Dictionary = {}
 var budget_failures: Array[String] = []
@@ -27,6 +29,7 @@ func _initialize() -> void:
 	results["avatar_validation"] = _benchmark_avatar_validation()
 	results["runtime_services"] = _benchmark_runtime_services()
 	results["image_geometry"] = _benchmark_image_geometry()
+	results["import_validation"] = _benchmark_import_validation()
 	_check_budgets()
 	results["smoke_budgets"] = {
 		"animation_us_per_layer_frame": MAX_ANIMATION_US_PER_LAYER_FRAME,
@@ -34,6 +37,7 @@ func _initialize() -> void:
 		"image_geometry_ms": MAX_IMAGE_GEOMETRY_MS,
 		"avatar_validation_ms": MAX_AVATAR_VALIDATION_MS,
 		"runtime_services_ms": MAX_RUNTIME_SERVICES_MS,
+		"import_validation_ms": MAX_IMPORT_VALIDATION_MS,
 		"passed": budget_failures.is_empty(),
 	}
 
@@ -132,6 +136,17 @@ func _benchmark_image_geometry() -> Dictionary:
 	var elapsed := Time.get_ticks_usec() - started
 	return {"iterations": 25, "polygons": polygon_count, "total_ms": float(elapsed) / 1000.0}
 
+func _benchmark_import_validation() -> Dictionary:
+	const ITERATIONS := 1000000
+	var accepted := 0
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		if ImportBudget.section_fits(index % 1024, 4096, 8192) \
+			and ImportBudget.dimensions_valid(1920, 1080):
+			accepted += 1
+	var elapsed := Time.get_ticks_usec() - started
+	return {"iterations": ITERATIONS, "accepted": accepted, "total_ms": float(elapsed) / 1000.0}
+
 func _output_path() -> String:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--output="):
@@ -159,6 +174,11 @@ func _check_budgets() -> void:
 		"runtime services %.3f ms > %.3f" % [results["runtime_services"]["total_ms"], MAX_RUNTIME_SERVICES_MS],
 		float(results["runtime_services"]["total_ms"]),
 		MAX_RUNTIME_SERVICES_MS
+	)
+	_check_budget(
+		"import validation %.3f ms > %.3f" % [results["import_validation"]["total_ms"], MAX_IMPORT_VALIDATION_MS],
+		float(results["import_validation"]["total_ms"]),
+		MAX_IMPORT_VALIDATION_MS
 	)
 	if not results["image_geometry"].has("skipped"):
 		_check_budget(

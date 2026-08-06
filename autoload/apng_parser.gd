@@ -1,5 +1,7 @@
 class_name APNGParser
 
+const ImportBudget = preload("res://autoload/import/import_limits.gd")
+
 class APNGFrame:
 	var image: Image = null
 	var delay_ms: int = 100
@@ -7,371 +9,309 @@ class APNGFrame:
 class APNGResult:
 	var width: int = 0
 	var height: int = 0
-	var frames: Array = []  # Array of APNGFrame
+	var frames: Array = []
 	var error: String = ""
 
-# Thread-safe progress
 var progress: float = 0.0
 var status_text: String = "Starting..."
-
-# CRC32 lookup table — must be plain Array (not PackedInt32Array) because
-# CRC values exceed INT32_MAX and PackedInt32Array truncates to signed 32-bit
+var _cancelled := false
 var _crc_table: Array = []
 
-# PNG signature
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10]
+const PASSTHROUGH_CHUNKS = ["PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "iCCP", "sBIT"]
+
+func cancel() -> void:
+	_cancelled = true
+
+static func _u32(data: PackedByteArray, offset: int = 0) -> int:
+	return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]
+
+static func _signature_valid(data: PackedByteArray) -> bool:
+	if data.size() != PNG_SIGNATURE.size():
+		return false
+	for i in range(PNG_SIGNATURE.size()):
+		if data[i] != PNG_SIGNATURE[i]:
+			return false
+	return true
 
 static func is_apng(path: String) -> bool:
-	var file = FileAccess.open(path, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return false
-
-	# Check PNG signature
-	var sig = file.get_buffer(8)
-	if sig.size() < 8:
+	var file_size := file.get_length()
+	if file_size < 20 or file_size > ImportBudget.MAX_FILE_BYTES:
 		return false
-	for i in range(8):
-		if sig[i] != PNG_SIGNATURE[i]:
+	if not _signature_valid(file.get_buffer(8)):
+		return false
+
+	var scan_end := mini(file_size, 8192)
+	while file.get_position() < scan_end:
+		if not ImportBudget.section_fits(file.get_position(), 12, file_size):
 			return false
-
-	# Scan chunks for acTL (animation control) within first ~8KB
-	var bytes_read = 8
-	var max_scan = 8192
-	while bytes_read < max_scan and file.get_position() < file.get_length():
-		var length_bytes = file.get_buffer(4)
-		if length_bytes.size() < 4:
-			break
-		var chunk_length = (length_bytes[0] << 24) | (length_bytes[1] << 16) | (length_bytes[2] << 8) | length_bytes[3]
-
-		var type_bytes = file.get_buffer(4)
-		if type_bytes.size() < 4:
-			break
-		var chunk_type = type_bytes.get_string_from_ascii()
-
+		var length_bytes := file.get_buffer(4)
+		var chunk_length := _u32(length_bytes)
+		if chunk_length > ImportBudget.MAX_CHUNK_BYTES:
+			return false
+		var type_bytes := file.get_buffer(4)
+		if not ImportBudget.section_fits(file.get_position(), chunk_length + 4, file_size):
+			return false
+		var chunk_type := type_bytes.get_string_from_ascii()
 		if chunk_type == "acTL":
-			return true
-
-		# Skip data + CRC
+			return chunk_length == 8
 		file.seek(file.get_position() + chunk_length + 4)
-		bytes_read += 12 + chunk_length
-
-		if chunk_type == "IDAT":
-			break  # acTL must appear before IDAT
-
+		if chunk_type == "IDAT" or chunk_type == "IEND":
+			break
 	return false
 
-func _init_crc_table():
-	if _crc_table.size() > 0:
+func _init_crc_table() -> void:
+	if not _crc_table.is_empty():
 		return
 	_crc_table.resize(256)
 	for n in range(256):
 		var c: int = n
-		for _k in range(8):
-			if c & 1:
-				c = 0xEDB88320 ^ (c >> 1)
-			else:
-				c = c >> 1
+		for _bit in range(8):
+			c = 0xEDB88320 ^ (c >> 1) if c & 1 else c >> 1
 		_crc_table[n] = c
 
 func _compute_crc(data: PackedByteArray) -> int:
 	var crc: int = 0xFFFFFFFF
-	for i in range(data.size()):
-		var idx = (crc ^ data[i]) & 0xFF
-		crc = _crc_table[idx] ^ (crc >> 8)
+	for byte in data:
+		crc = _crc_table[(crc ^ byte) & 0xFF] ^ (crc >> 8)
 	return (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF
 
 func _make_chunk(chunk_type: String, data: PackedByteArray) -> PackedByteArray:
-	var result = PackedByteArray()
-
-	# Length (4 bytes, big-endian)
-	var length = data.size()
+	var result := PackedByteArray()
+	var length := data.size()
 	result.append((length >> 24) & 0xFF)
 	result.append((length >> 16) & 0xFF)
 	result.append((length >> 8) & 0xFF)
 	result.append(length & 0xFF)
-
-	# Type (4 bytes)
-	var type_bytes = chunk_type.to_ascii_buffer()
+	var type_bytes := chunk_type.to_ascii_buffer()
 	result.append_array(type_bytes)
-
-	# Data
 	result.append_array(data)
-
-	# CRC over type + data
-	var crc_input = PackedByteArray()
-	crc_input.append_array(type_bytes)
+	var crc_input := type_bytes.duplicate()
 	crc_input.append_array(data)
-	var crc = _compute_crc(crc_input)
+	var crc := _compute_crc(crc_input)
 	result.append((crc >> 24) & 0xFF)
 	result.append((crc >> 16) & 0xFF)
 	result.append((crc >> 8) & 0xFF)
 	result.append(crc & 0xFF)
-
 	return result
 
 func _build_png_buffer(width: int, height: int, bit_depth: int, color_type: int, idat_data: PackedByteArray, aux_chunks: Array) -> PackedByteArray:
-	var png = PackedByteArray()
-
-	# PNG Signature
-	for b in PNG_SIGNATURE:
-		png.append(b)
-
-	# IHDR chunk
-	var ihdr_data = PackedByteArray()
-	ihdr_data.append((width >> 24) & 0xFF)
-	ihdr_data.append((width >> 16) & 0xFF)
-	ihdr_data.append((width >> 8) & 0xFF)
-	ihdr_data.append(width & 0xFF)
-	ihdr_data.append((height >> 24) & 0xFF)
-	ihdr_data.append((height >> 16) & 0xFF)
-	ihdr_data.append((height >> 8) & 0xFF)
-	ihdr_data.append(height & 0xFF)
-	ihdr_data.append(bit_depth)
-	ihdr_data.append(color_type)
-	ihdr_data.append(0)  # compression method
-	ihdr_data.append(0)  # filter method
-	ihdr_data.append(0)  # interlace method
-	png.append_array(_make_chunk("IHDR", ihdr_data))
-
-	# Auxiliary chunks (PLTE, tRNS, etc.) needed for correct decoding
+	var png := PackedByteArray(PNG_SIGNATURE)
+	var ihdr := PackedByteArray()
+	for shift in [24, 16, 8, 0]:
+		ihdr.append((width >> shift) & 0xFF)
+	for shift in [24, 16, 8, 0]:
+		ihdr.append((height >> shift) & 0xFF)
+	ihdr.append_array(PackedByteArray([bit_depth, color_type, 0, 0, 0]))
+	png.append_array(_make_chunk("IHDR", ihdr))
 	for chunk in aux_chunks:
 		png.append_array(_make_chunk(chunk["type"], chunk["data"]))
-
-	# IDAT chunk(s)
 	png.append_array(_make_chunk("IDAT", idat_data))
-
-	# IEND chunk
 	png.append_array(_make_chunk("IEND", PackedByteArray()))
-
 	return png
 
-func parse(path: String) -> APNGResult:
-	var result = APNGResult.new()
+func _failure(result: APNGResult, message: String) -> APNGResult:
+	result.error = message
+	status_text = message
+	return result
 
+func parse(path: String) -> APNGResult:
+	var result := APNGResult.new()
+	_cancelled = false
+	progress = 0.0
+	status_text = "Opening APNG..."
 	_init_crc_table()
 
-	var file = FileAccess.open(path, FileAccess.READ)
+	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		result.error = "Failed to open file: " + path
-		return result
+		return _failure(result, "Failed to open file: " + path)
+	var file_size := file.get_length()
+	if file_size < 20 or file_size > ImportBudget.MAX_FILE_BYTES:
+		return _failure(result, "APNG file size is outside the supported range.")
+	if not _signature_valid(file.get_buffer(8)):
+		return _failure(result, "Not a valid PNG file.")
 
-	status_text = "Reading APNG header..."
-	progress = 0.0
-
-	var file_size = file.get_length()
-
-	# Verify PNG signature
-	var sig = file.get_buffer(8)
-	if sig.size() < 8:
-		result.error = "File too small"
-		return result
-	for i in range(8):
-		if sig[i] != PNG_SIGNATURE[i]:
-			result.error = "Not a valid PNG file"
-			return result
-
-	# Parse all chunks
-	var ihdr_data = PackedByteArray()
-	var bit_depth: int = 8
-	var color_type: int = 6  # RGBA
-
-	var num_frames: int = 0
-	var _num_plays: int = 0
-
-	# Auxiliary chunks to pass through to reconstructed PNGs (PLTE, tRNS, etc.)
+	var bit_depth := 8
+	var color_type := 6
+	var declared_frames := 0
+	var saw_ihdr := false
+	var saw_actl := false
+	var saw_iend := false
+	var seen_idat := false
+	var first_frame_is_default := false
+	var collecting_default_idat := false
 	var aux_chunks: Array = []
-
-	# Frame control info
-	var fctl_list: Array = []  # Array of dictionaries with fcTL data
-	var frame_data_list: Array = []  # Array of PackedByteArray (IDAT/fdAT data per frame)
-
-	# Track whether first frame uses default image
-	var first_frame_is_default: bool = false
-	var seen_idat: bool = false
+	var fctl_list: Array = []
+	var frame_data_list: Array = []
 	var current_fctl: Dictionary = {}
-	var current_idat_data: PackedByteArray = PackedByteArray()
-	var collecting_default_idat: bool = false
-
-	status_text = "Parsing chunks..."
+	var current_idat_data := PackedByteArray()
+	var accumulated_frame_bytes := 0
+	status_text = "Parsing APNG chunks..."
 
 	while file.get_position() < file_size:
-		var length_bytes = file.get_buffer(4)
-		if length_bytes.size() < 4:
-			break
-		var chunk_length = (length_bytes[0] << 24) | (length_bytes[1] << 16) | (length_bytes[2] << 8) | length_bytes[3]
-
-		var type_bytes = file.get_buffer(4)
-		if type_bytes.size() < 4:
-			break
-		var chunk_type = type_bytes.get_string_from_ascii()
-
-		var chunk_data = PackedByteArray()
-		if chunk_length > 0:
-			chunk_data = file.get_buffer(chunk_length)
-		var _crc = file.get_buffer(4)  # skip CRC
+		if _cancelled:
+			return _failure(result, "Import cancelled.")
+		if not ImportBudget.section_fits(file.get_position(), 12, file_size):
+			return _failure(result, "Truncated PNG chunk header.")
+		var chunk_length := _u32(file.get_buffer(4))
+		if chunk_length > ImportBudget.MAX_CHUNK_BYTES:
+			return _failure(result, "PNG chunk exceeds the import resource budget.")
+		var type_bytes := file.get_buffer(4)
+		var chunk_type := type_bytes.get_string_from_ascii()
+		if not ImportBudget.section_fits(file.get_position(), chunk_length + 4, file_size):
+			return _failure(result, "Truncated PNG chunk: " + chunk_type)
+		var chunk_data := file.get_buffer(chunk_length)
+		var stored_crc := _u32(file.get_buffer(4))
+		var crc_input := type_bytes.duplicate()
+		crc_input.append_array(chunk_data)
+		if _compute_crc(crc_input) != stored_crc:
+			return _failure(result, "PNG checksum failed for chunk " + chunk_type + ".")
 
 		match chunk_type:
 			"IHDR":
-				ihdr_data = chunk_data
-				result.width = (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3]
-				result.height = (chunk_data[4] << 24) | (chunk_data[5] << 16) | (chunk_data[6] << 8) | chunk_data[7]
+				if saw_ihdr or chunk_data.size() != 13:
+					return _failure(result, "Invalid PNG header.")
+				result.width = _u32(chunk_data, 0)
+				result.height = _u32(chunk_data, 4)
+				if not ImportBudget.dimensions_valid(result.width, result.height):
+					return _failure(result, "APNG dimensions exceed the import resource budget.")
 				bit_depth = chunk_data[8]
 				color_type = chunk_data[9]
-
+				if chunk_data[10] != 0 or chunk_data[11] != 0 or chunk_data[12] > 1:
+					return _failure(result, "Unsupported PNG encoding methods.")
+				saw_ihdr = true
 			"acTL":
-				num_frames = (chunk_data[0] << 24) | (chunk_data[1] << 16) | (chunk_data[2] << 8) | chunk_data[3]
-				_num_plays = (chunk_data[4] << 24) | (chunk_data[5] << 16) | (chunk_data[6] << 8) | chunk_data[7]
-
+				if not saw_ihdr or saw_actl or seen_idat or chunk_data.size() != 8:
+					return _failure(result, "Invalid APNG animation header.")
+				declared_frames = _u32(chunk_data)
+				if not ImportBudget.decoded_images_fit(result.width, result.height, declared_frames):
+					return _failure(result, "APNG frame count exceeds the import resource budget.")
+				saw_actl = true
 			"PLTE", "tRNS", "gAMA", "cHRM", "sRGB", "iCCP", "sBIT":
-				# Preserve chunks needed for correct color decoding
+				if accumulated_frame_bytes + chunk_data.size() > ImportBudget.MAX_CHUNK_BYTES:
+					return _failure(result, "PNG metadata exceeds the import resource budget.")
 				aux_chunks.append({"type": chunk_type, "data": chunk_data})
-
+				accumulated_frame_bytes += chunk_data.size()
 			"fcTL":
-				# If we were collecting data for a previous frame, save it
-				if current_fctl.size() > 0:
+				if not saw_actl or chunk_data.size() != 26:
+					return _failure(result, "Invalid APNG frame control chunk.")
+				if not current_fctl.is_empty():
 					fctl_list.append(current_fctl)
 					frame_data_list.append(current_idat_data)
 					current_idat_data = PackedByteArray()
-
 				current_fctl = _parse_fctl(chunk_data)
-
-				if !seen_idat:
+				if not _frame_control_valid(current_fctl, result.width, result.height):
+					return _failure(result, "APNG frame bounds or operations are invalid.")
+				if not seen_idat:
 					first_frame_is_default = true
 					collecting_default_idat = true
-
 			"IDAT":
 				seen_idat = true
-				if collecting_default_idat or (first_frame_is_default and current_fctl.size() > 0):
+				if collecting_default_idat or (first_frame_is_default and not current_fctl.is_empty()):
+					if not _append_frame_data(current_idat_data, chunk_data, accumulated_frame_bytes):
+						return _failure(result, "Compressed APNG data exceeds the import resource budget.")
 					current_idat_data.append_array(chunk_data)
-
+					accumulated_frame_bytes += chunk_data.size()
 			"fdAT":
-				# Strip 4-byte sequence number, keep the rest as IDAT data
-				if chunk_data.size() > 4:
-					current_idat_data.append_array(chunk_data.slice(4))
+				if current_fctl.is_empty() or chunk_data.size() <= 4:
+					return _failure(result, "Invalid APNG frame data chunk.")
+				var frame_bytes := chunk_data.slice(4)
+				if not _append_frame_data(current_idat_data, frame_bytes, accumulated_frame_bytes):
+					return _failure(result, "Compressed APNG data exceeds the import resource budget.")
+				current_idat_data.append_array(frame_bytes)
+				accumulated_frame_bytes += frame_bytes.size()
 				collecting_default_idat = false
-
 			"IEND":
-				# Save last frame
-				if current_fctl.size() > 0:
+				if chunk_length != 0:
+					return _failure(result, "Invalid PNG end chunk.")
+				if not current_fctl.is_empty():
 					fctl_list.append(current_fctl)
 					frame_data_list.append(current_idat_data)
+				saw_iend = true
 				break
+		progress = clampf(float(file.get_position()) / float(file_size) * 0.5, 0.0, 0.5)
 
-		progress = clampf(float(file.get_position()) / float(file_size), 0.0, 0.5)
+	if not saw_iend or not saw_actl or fctl_list.is_empty():
+		return _failure(result, "No complete animation was found in the APNG.")
+	if fctl_list.size() != declared_frames or frame_data_list.size() != declared_frames:
+		return _failure(result, "APNG frame count does not match its animation header.")
 
-	if fctl_list.is_empty():
-		result.error = "No animation frames found in APNG"
-		return result
-
-	# Decode frames
-	status_text = "Decoding frames..."
-	var canvas = Image.create(result.width, result.height, false, Image.FORMAT_RGBA8)
-	canvas.fill(Color(0, 0, 0, 0))
-
+	status_text = "Decoding APNG frames..."
+	var canvas := Image.create(result.width, result.height, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color.TRANSPARENT)
 	for i in range(fctl_list.size()):
-		var fctl = fctl_list[i]
-		var idat_data = frame_data_list[i]
-
-		var fw: int = fctl["width"]
-		var fh: int = fctl["height"]
-		var fx: int = fctl["x_offset"]
-		var fy: int = fctl["y_offset"]
-		var dispose_op: int = fctl["dispose_op"]
-		var blend_op: int = fctl["blend_op"]
-		var delay_num: int = fctl["delay_num"]
-		var delay_den: int = fctl["delay_den"]
-
-		# Snapshot for dispose_op=2 (previous)
+		if _cancelled:
+			return _failure(result, "Import cancelled.")
+		var fctl: Dictionary = fctl_list[i]
+		var idat_data: PackedByteArray = frame_data_list[i]
+		if idat_data.is_empty():
+			return _failure(result, "APNG frame %d contains no image data." % i)
+		var frame_width: int = fctl["width"]
+		var frame_height: int = fctl["height"]
+		var offset_x: int = fctl["x_offset"]
+		var offset_y: int = fctl["y_offset"]
 		var previous_canvas: Image = null
-		if dispose_op == 2:
-			previous_canvas = Image.new()
-			previous_canvas.copy_from(canvas)
+		if fctl["dispose_op"] == 2:
+			previous_canvas = canvas.duplicate()
 
-		# Build a valid PNG buffer and decode via Godot
-		var png_buf = _build_png_buffer(fw, fh, bit_depth, color_type, idat_data, aux_chunks)
-		var frame_img = Image.new()
-		var err = frame_img.load_png_from_buffer(png_buf)
-		if err != OK:
-			result.error = "Failed to decode frame " + str(i) + " (error " + str(err) + ")"
-			return result
+		var frame_image := Image.new()
+		var error := frame_image.load_png_from_buffer(_build_png_buffer(
+			frame_width, frame_height, bit_depth, color_type, idat_data, aux_chunks
+		))
+		if error != OK:
+			return _failure(result, "Failed to decode APNG frame %d (error %d)." % [i, error])
+		if frame_image.get_format() != Image.FORMAT_RGBA8:
+			frame_image.convert(Image.FORMAT_RGBA8)
 
-		# Ensure RGBA8 format
-		if frame_img.get_format() != Image.FORMAT_RGBA8:
-			frame_img.convert(Image.FORMAT_RGBA8)
+		if fctl["blend_op"] == 0:
+			canvas.blit_rect(frame_image, Rect2i(Vector2i.ZERO, frame_image.get_size()), Vector2i(offset_x, offset_y))
+		else:
+			canvas.blend_rect(frame_image, Rect2i(Vector2i.ZERO, frame_image.get_size()), Vector2i(offset_x, offset_y))
 
-		# Composite onto canvas
-		if blend_op == 0:  # SOURCE - overwrite
-			for cy in range(fh):
-				for cx in range(fw):
-					var dx = fx + cx
-					var dy = fy + cy
-					if dx < result.width and dy < result.height and cx < frame_img.get_width() and cy < frame_img.get_height():
-						canvas.set_pixel(dx, dy, frame_img.get_pixel(cx, cy))
-		else:  # OVER - alpha composite
-			for cy in range(fh):
-				for cx in range(fw):
-					var dx = fx + cx
-					var dy = fy + cy
-					if dx < result.width and dy < result.height and cx < frame_img.get_width() and cy < frame_img.get_height():
-						var src = frame_img.get_pixel(cx, cy)
-						if src.a > 0:
-							var dst = canvas.get_pixel(dx, dy)
-							var out_a = src.a + dst.a * (1.0 - src.a)
-							if out_a > 0:
-								var out_r = (src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / out_a
-								var out_g = (src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / out_a
-								var out_b = (src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / out_a
-								canvas.set_pixel(dx, dy, Color(out_r, out_g, out_b, out_a))
+		var frame := APNGFrame.new()
+		frame.image = canvas.duplicate()
+		var delay_denominator: int = fctl["delay_den"]
+		if delay_denominator == 0:
+			delay_denominator = 100
+		frame.delay_ms = maxi(1, roundi(float(fctl["delay_num"]) * 1000.0 / delay_denominator))
+		result.frames.append(frame)
 
-		# Store composited frame
-		var apng_frame = APNGFrame.new()
-		apng_frame.image = Image.new()
-		apng_frame.image.copy_from(canvas)
-
-		# Calculate delay
-		if delay_den == 0:
-			delay_den = 100
-		apng_frame.delay_ms = int(float(delay_num) * 1000.0 / float(delay_den))
-		if apng_frame.delay_ms <= 0:
-			apng_frame.delay_ms = 100
-
-		result.frames.append(apng_frame)
-
-		# Apply dispose
-		match dispose_op:
-			0:  # NONE - keep canvas
-				pass
-			1:  # BACKGROUND - clear region
-				for cy in range(fh):
-					for cx in range(fw):
-						var dx = fx + cx
-						var dy = fy + cy
-						if dx < result.width and dy < result.height:
-							canvas.set_pixel(dx, dy, Color(0, 0, 0, 0))
-			2:  # PREVIOUS - restore snapshot
-				if previous_canvas != null:
-					canvas.copy_from(previous_canvas)
-
-		progress = 0.5 + 0.5 * (float(i + 1) / float(fctl_list.size()))
-		status_text = "Decoded frame " + str(i + 1) + " of " + str(fctl_list.size()) + "..."
-
-	if result.frames.is_empty():
-		result.error = "No frames decoded from APNG"
-		return result
+		match fctl["dispose_op"]:
+			1:
+				canvas.fill_rect(Rect2i(offset_x, offset_y, frame_width, frame_height), Color.TRANSPARENT)
+			2:
+				canvas = previous_canvas
+		progress = 0.5 + 0.5 * float(i + 1) / fctl_list.size()
+		status_text = "Decoded frame %d of %d..." % [i + 1, fctl_list.size()]
 
 	progress = 1.0
 	status_text = "Done!"
 	return result
 
+func _append_frame_data(current: PackedByteArray, incoming: PackedByteArray, total: int) -> bool:
+	return incoming.size() <= ImportBudget.MAX_CHUNK_BYTES - current.size() \
+		and incoming.size() <= ImportBudget.MAX_FILE_BYTES - total
+
+func _frame_control_valid(frame: Dictionary, canvas_width: int, canvas_height: int) -> bool:
+	var width: int = frame["width"]
+	var height: int = frame["height"]
+	var x: int = frame["x_offset"]
+	var y: int = frame["y_offset"]
+	return ImportBudget.dimensions_valid(width, height) \
+		and x <= canvas_width - width and y <= canvas_height - height \
+		and frame["dispose_op"] in [0, 1, 2] and frame["blend_op"] in [0, 1]
+
 func _parse_fctl(data: PackedByteArray) -> Dictionary:
-	var fctl = {}
-	# sequence_number (4 bytes) - skip
-	fctl["width"] = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7]
-	fctl["height"] = (data[8] << 24) | (data[9] << 16) | (data[10] << 8) | data[11]
-	fctl["x_offset"] = (data[12] << 24) | (data[13] << 16) | (data[14] << 8) | data[15]
-	fctl["y_offset"] = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19]
-	fctl["delay_num"] = (data[20] << 8) | data[21]
-	fctl["delay_den"] = (data[22] << 8) | data[23]
-	fctl["dispose_op"] = data[24]
-	fctl["blend_op"] = data[25]
-	return fctl
+	return {
+		"width": _u32(data, 4),
+		"height": _u32(data, 8),
+		"x_offset": _u32(data, 12),
+		"y_offset": _u32(data, 16),
+		"delay_num": (data[20] << 8) | data[21],
+		"delay_den": (data[22] << 8) | data[23],
+		"dispose_op": data[24],
+		"blend_op": data[25],
+	}

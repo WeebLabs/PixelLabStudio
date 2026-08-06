@@ -75,7 +75,23 @@ signal fatfuckingballs
 
 
 func _exit_tree() -> void:
+	_shutdown_import_workers()
 	Global.detach_main(self)
+
+func _shutdown_import_workers() -> void:
+	if _psd_parser != null:
+		_psd_parser.cancel()
+	if _anim_parser != null and _anim_parser.has_method("cancel"):
+		_anim_parser.cancel()
+	for worker in [_psd_thread, _import_thread, _anim_thread]:
+		if worker != null and worker.is_started():
+			worker.wait_to_finish()
+	_psd_thread = null
+	_import_thread = null
+	_anim_thread = null
+	_psd_parser = null
+	_anim_parser = null
+	_anim_queue.clear()
 
 func _ready():
 	_sprite_id_random.randomize()
@@ -516,7 +532,7 @@ var _load_keys: Array = []
 var _load_data_ref = null
 var _load_results: Array = []
 
-var _anim_parser = null        # GIFParser or APNGParser
+var _anim_parser: APNGParser = null
 var _anim_thread: Thread = null
 var _anim_result = null
 var _anim_progress_dialog: Node2D = null
@@ -525,6 +541,13 @@ var _anim_import_name: String = ""
 var _anim_queue: Array = []
 
 func _on_psd_dialog_file_selected(path):
+	_begin_psd_parse(path, false)
+
+func _begin_psd_parse(path: String, replace_mode: bool) -> void:
+	if _psd_thread != null:
+		Global.pushUpdate("A PSD import is already running.")
+		return
+	_psd_replace_mode = replace_mode
 	_psd_parser = PSDParser.new()
 	_psd_result = null
 
@@ -534,7 +557,15 @@ func _on_psd_dialog_file_selected(path):
 
 	# Run parser in a thread
 	_psd_thread = Thread.new()
-	_psd_thread.start(func(): return _psd_parser.parse(path))
+	var start_error := _psd_thread.start(func(): return _psd_parser.parse(path))
+	if start_error != OK:
+		_psd_thread = null
+		_psd_parser = null
+		_psd_progress_dialog.queue_free()
+		_psd_progress_dialog = null
+		_psd_replace_mode = false
+		Global.pushUpdate("Could not start the PSD import worker.")
+		Global.epicFail(start_error)
 
 func _create_psd_progress_dialog() -> Node2D:
 	var dialog = Node2D.new()
@@ -602,8 +633,9 @@ func _process_psd_thread(_delta):
 
 		if result.error != "":
 			_psd_replace_mode = false
-			Global.pushUpdate("PSD Error: " + result.error)
-			Global.epicFail(ERR_INVALID_DATA)
+			if result.error != "Import cancelled.":
+				Global.pushUpdate("PSD Error: " + result.error)
+				Global.epicFail(ERR_INVALID_DATA)
 			return
 
 		if _psd_replace_mode:
@@ -629,7 +661,14 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, norm
 
 	# Start coordinator thread that spawns per-layer workers
 	_import_thread = Thread.new()
-	_import_thread.start(_precompute_all_layers)
+	var start_error := _import_thread.start(_precompute_all_layers)
+	if start_error != OK:
+		_import_thread = null
+		_import_mutex = null
+		_import_progress_dialog2.queue_free()
+		_import_progress_dialog2 = null
+		Global.pushUpdate("Could not start the PSD processing worker.")
+		Global.epicFail(start_error)
 
 func _precompute_all_layers():
 	var count = _import_layers.size()
@@ -767,6 +806,8 @@ func _finalize_psd_import():
 	_save_post_import_snapshot()
 
 func _on_psd_import_cancelled():
+	if _psd_parser != null:
+		_psd_parser.cancel()
 	Global.pushUpdate("PSD import cancelled.")
 
 func _save_post_import_snapshot():
@@ -791,7 +832,15 @@ func _start_animated_import(path: String, is_replace: bool):
 	add_child(_anim_progress_dialog)
 
 	_anim_thread = Thread.new()
-	_anim_thread.start(func(): return _anim_parser.parse(path))
+	var start_error := _anim_thread.start(func(): return _anim_parser.parse(path))
+	if start_error != OK:
+		_anim_thread = null
+		_anim_parser = null
+		_anim_progress_dialog.queue_free()
+		_anim_progress_dialog = null
+		Global.pushUpdate("Could not start the animated-image worker.")
+		Global.epicFail(start_error)
+		_process_anim_queue()
 
 func _create_anim_progress_dialog() -> Node2D:
 	var dialog = Node2D.new()
@@ -855,8 +904,9 @@ func _process_anim_thread(_delta):
 		_anim_parser = null
 
 		if result.error != "":
-			Global.pushUpdate("Import Error: " + result.error)
-			Global.epicFail(ERR_INVALID_DATA)
+			if result.error != "Import cancelled.":
+				Global.pushUpdate("Import Error: " + result.error)
+				Global.epicFail(ERR_INVALID_DATA)
 			_process_anim_queue()
 			return
 
@@ -1391,15 +1441,7 @@ static func _extract_sprite_name(sprite_path: String) -> String:
 	return filename
 
 func _handle_replace_from_psd(path: String):
-	_psd_replace_mode = true
-	_psd_parser = PSDParser.new()
-	_psd_result = null
-
-	_psd_progress_dialog = _create_psd_progress_dialog()
-	add_child(_psd_progress_dialog)
-
-	_psd_thread = Thread.new()
-	_psd_thread.start(func(): return _psd_parser.parse(path))
+	_begin_psd_parse(path, true)
 
 func _show_replace_review_from_psd(psd_result):
 	var sprites = get_tree().get_nodes_in_group("saved")

@@ -1,6 +1,6 @@
 # Quality Baseline
 
-> Updated: 2026-08-06 — Phase 0 Godot 4.6 baseline
+> Updated: 2026-08-06 — Phase 6 import and integration gates
 
 This document records the reproducible safety rails used throughout the
 refactor. Exact timing artifacts are written to `.artifacts/` and retained by
@@ -37,14 +37,14 @@ required because Godot 4.6.3's normal headless editor shutdown can crash while
 generating extension documentation whenever a GDExtension is loaded; that
 engine/editor defect is separate from application runtime behavior.
 
-`run_performance.sh` benchmarks five repeatable CPU paths: animation
+`run_performance.sh` benchmarks six repeatable CPU paths: animation
 evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization,
 100-layer schema validation/migration, runtime blink/microphone state updates,
-and alpha-to-polygon image geometry. It
+alpha-to-polygon image geometry, and one million binary import-boundary checks. It
 stores exact results and enforces broad smoke ceilings of 15 microseconds per
 100-layer animation layer-frame, 500 ms for serialization, 3,000 ms for schema
 validation, 1,000 ms per 100,000 runtime-service updates, and 200 ms for image
-geometry. Phase work should compare
+geometry, and 500 ms for import validation. Phase work should compare
 the same CI-runner artifact before and after changes; a ceiling is not a
 performance target.
 
@@ -108,12 +108,26 @@ image-geometry builds. All smoke budgets passed. UI component tests add the
 shared style, click-through, width clamp, resize edge, and editor-chrome routing
 contracts without instantiating the full application scene.
 
+## Phase 6 measurement
+
+The cumulative gate measured 3.37 µs/layer-frame at 100 layers, 581.67 ms for
+100 validations of a 100-layer avatar, 41.40 ms for 100,000 runtime-service
+updates, 55.25 ms for 100 serialization passes, 20.05 ms for 25 image-geometry
+builds, and 396.42 ms for one million import-boundary validation iterations.
+All smoke budgets passed. Integration coverage adds valid and malformed APNG,
+truncated PSD, exact PackBits row, Stream Deck packet/URL/path, NDI geometry,
+and shutdown-ownership contracts.
+
 ## Known third-party limitation
 
-godot-ndi v1.2.6 has an upstream macOS shutdown crash that reproduces merely by
+godot-ndi v1.2.6 has an open upstream macOS shutdown crash that reproduces merely by
 loading the extension, even without creating an NDI node. It is tracked as
-upstream issue 44. Production NDI behavior remains available, while automated
+[upstream issue 44](https://github.com/unvermuthet/godot-ndi/issues/44). Application-owned
+NDI nodes now tear down deterministically, but that cannot prevent a native
+library unload defect which also reproduces in an otherwise empty project.
+Production NDI behavior remains available, while automated
 imports use Godot recovery mode so the unrelated extension teardown defect
-cannot make script tests nondeterministic. The integration phase must re-audit
-the upstream issue or replace/isolate the dependency before the final release
-gate.
+cannot make script tests nondeterministic. Phase 6 re-audited the issue on
+2026-08-06; it remained open with no linked fix or pull request. Release
+qualification must therefore treat native macOS NDI teardown as a known
+third-party risk until the dependency is updated, patched, or excluded there.

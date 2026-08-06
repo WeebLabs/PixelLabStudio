@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Phase 5 shared sidebar UI and input routing
+> Last updated: 2026-08-06 — Phase 6 hardened import and integration boundaries
 
 ## Overview
 
@@ -63,8 +63,9 @@ PNGTuberPlus/
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
 │   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
+│   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
-│   ├── apng_parser.gd             APNG/GIF detection and sprite sheet assembly
+│   ├── apng_parser.gd             Bounded APNG parser and compositor
 │   └── defaultAvatarData.gd       Built-in default avatar data
 │
 ├── shader/
@@ -77,6 +78,7 @@ PNGTuberPlus/
 │
 ├── ndi/                           NDI video output system
 │   ├── ndi_output_manager.gd      SubViewport + Camera + NDIOutput orchestrator
+│   ├── ndi_output_geometry.gd     Pure crop/output sizing calculation
 │   └── ndi_crop_box.gd            Resizable crop box (8 gizmos) defining the output frame
 │
 ├── addons/
@@ -337,6 +339,16 @@ atomic round-trip/recovery cases are fixture-tested in
 - Extracts layer names, bounds, opacity, channel data
 - Import dialog lets user select which layers to add
 
+> Updated: 2026-08-06 — PSD parsing treats the file as untrusted binary input.
+> `autoload/import/import_limits.gd` caps file/section sizes, dimensions,
+> layers, channels, and total decoded working memory. Every length is checked
+> against its enclosing section before a seek/read; PackBits scanline tables
+> and exact decoded row widths are validated before native or GDScript decode.
+> Parser cancellation is checked between records, channels, rows, and layer
+> composition. `main.gd` cancels and joins PSD/APNG workers before it detaches
+> from `Global`, and reports worker-start failures without leaving modal UI or
+> stale thread references behind.
+
 ### Unified Replace (`replace_review_dialog.gd`)
 
 > Updated: 2026-02-28 — Added unified Replace flow
@@ -356,6 +368,24 @@ atomic round-trip/recovery cases are fixture-tested in
 - Composes frames into horizontal sprite sheet
 - Calculates animation speed from frame delays
 - Caps at max texture width (16384px)
+
+> Updated: 2026-08-06 — APNG detection and parsing validate signature, chunk
+> bounds, CRCs, IHDR/acTL/fcTL shapes, canvas/frame geometry, operation values,
+> declared frame count, compressed-byte accumulation, and total decoded frame
+> memory. Composition uses Godot's bounded image blit/blend operations and the
+> parser supports cooperative cancellation. Integration tests exercise both a
+> generated valid animation and malformed/truncated inputs.
+
+### Stream Deck Integration
+
+> Updated: 2026-08-06 — The Stream Deck autoload remains dormant unless its
+> setting is enabled and a valid platform config/port is available. The local
+> bridge URL is an explicit `ws://127.0.0.1` endpoint. `protocol.gd` validates
+> JSON packet/event/action/payload shapes and project-local scene paths before
+> the singleton emits input or changes scenes. Invalid packets do not interrupt
+> processing of later queued packets, and the websocket is closed explicitly
+> during shutdown. Linux, which has no configured plugin path, now degrades
+> without dereferencing a missing file.
 
 ---
 
@@ -432,6 +462,7 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 | File | Purpose |
 |------|---------|
 | `ndi/ndi_output_manager.gd` | Orchestrator: creates SubViewport + Camera + NDIOutput, crop-box framing, dirty flag |
+| `ndi/ndi_output_geometry.gd` | Pure validation, output-size clamp, aspect ratio, center, and zoom calculation |
 | `ndi/ndi_crop_box.gd` | Resizable dashed-orange crop box with 8 gizmos, drawn in edit mode |
 
 ### Framing (manual crop box)
@@ -460,6 +491,13 @@ A dashed orange rectangle (`ndi/ndi_crop_box.gd`, spawned by the manager onto `G
 ### Graceful Degradation
 
 Uses `ClassDB.class_exists("NDIOutput")` before instantiation. If the godot-ndi plugin is not installed, the NDI settings section shows "plugin not installed" and disables the toggle. The app never crashes from a missing plugin.
+
+> Updated: 2026-08-06 — Missing native support also clears a stale persisted
+> enable flag. Output dimensions, modes, and crop rectangles are normalized at
+> the manager boundary as well as by the settings schema. The manager guards
+> deferred dirty calls and unavailable main viewports, disconnects the root
+> resize signal, stops its timer, and synchronously releases `NDIOutput` before
+> its viewport during application teardown.
 
 ### Plugin Dependency
 

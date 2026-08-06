@@ -20,6 +20,7 @@ var _debounce_timer: Timer = null
 const DEBOUNCE_DELAY = 1.0
 
 const CROP_BOX_SCRIPT = preload("res://ndi/ndi_crop_box.gd")
+const OutputGeometry = preload("res://ndi/ndi_output_geometry.gd")
 
 func _ready():
 	_plugin_available = ClassDB.class_exists("NDIOutput")
@@ -31,6 +32,14 @@ func _ready():
 	if _enabled:
 		_create_ndi_pipeline()
 	get_tree().root.size_changed.connect(_on_window_resized)
+
+func _exit_tree() -> void:
+	var root := get_tree().root
+	if root != null and root.size_changed.is_connected(_on_window_resized):
+		root.size_changed.disconnect(_on_window_resized)
+	if _debounce_timer != null:
+		_debounce_timer.stop()
+	_destroy_ndi_pipeline(true)
 
 func _on_window_resized():
 	if _enabled:
@@ -54,7 +63,9 @@ func _load_settings():
 	if !Saving.settings.has("ndiSourceName"):
 		Saving.settings["ndiSourceName"] = "PixelLab Studio"
 
-	_enabled = Saving.settings["ndiEnabled"]
+	_enabled = bool(Saving.settings["ndiEnabled"]) and _plugin_available
+	if bool(Saving.settings["ndiEnabled"]) and not _plugin_available:
+		Saving.settings["ndiEnabled"] = false
 
 func is_plugin_available() -> bool:
 	return _plugin_available
@@ -64,6 +75,8 @@ func is_enabled() -> bool:
 
 func set_enabled(enabled: bool):
 	if !_plugin_available and enabled:
+		_enabled = false
+		Saving.settings["ndiEnabled"] = false
 		return
 	_enabled = enabled
 	Saving.settings["ndiEnabled"] = enabled
@@ -73,16 +86,16 @@ func set_enabled(enabled: bool):
 		_destroy_ndi_pipeline()
 
 func set_width(width: int):
-	Saving.settings["ndiWidth"] = width
+	Saving.settings["ndiWidth"] = clampi(width, OutputGeometry.MIN_OUTPUT_SIZE, OutputGeometry.MAX_OUTPUT_SIZE)
 	mark_dirty()
 
 func set_mode(mode: String):
-	Saving.settings["ndiMode"] = mode
+	Saving.settings["ndiMode"] = mode if mode in ["auto", "manual"] else "auto"
 	mark_dirty()
 
 func set_manual_size(w: int, h: int):
-	Saving.settings["ndiManualWidth"] = w
-	Saving.settings["ndiManualHeight"] = h
+	Saving.settings["ndiManualWidth"] = clampi(w, OutputGeometry.MIN_OUTPUT_SIZE, OutputGeometry.MAX_OUTPUT_SIZE)
+	Saving.settings["ndiManualHeight"] = clampi(h, OutputGeometry.MIN_OUTPUT_SIZE, OutputGeometry.MAX_OUTPUT_SIZE)
 	mark_dirty()
 
 func set_source_name(name: String):
@@ -99,15 +112,17 @@ func set_source_name(name: String):
 
 # Crop box edges, origin-relative: [left, top, right, bottom]
 func get_crop_edges() -> Array:
-	var a = Saving.settings.get("ndiCropRect", [-500.0, -800.0, 500.0, 200.0])
-	return [float(a[0]), float(a[1]), float(a[2]), float(a[3])]
+	return OutputGeometry.normalize_edges(Saving.settings.get("ndiCropRect", OutputGeometry.DEFAULT_EDGES))
 
 func set_crop_edges(e: Array):
-	Saving.settings["ndiCropRect"] = [float(e[0]), float(e[1]), float(e[2]), float(e[3])]
+	Saving.settings["ndiCropRect"] = OutputGeometry.normalize_edges(e)
 	mark_dirty()
 
 func mark_dirty():
-	_debounce_timer.start(DEBOUNCE_DELAY)
+	if _debounce_timer != null:
+		_debounce_timer.start(DEBOUNCE_DELAY)
+	else:
+		_dirty = true
 
 func _on_debounce_timeout():
 	_dirty = true
@@ -116,13 +131,16 @@ func _on_debounce_timeout():
 # Used by the avatar load path so the work happens behind the progress bar
 # instead of as a hitch ~1 second after the avatar appears.
 func recalculate_now():
-	_debounce_timer.stop()
+	if _debounce_timer != null:
+		_debounce_timer.stop()
 	_dirty = false
 	if _enabled and ndi_viewport != null:
 		_recalculate_framing()
 
 func _create_ndi_pipeline():
-	if ndi_viewport != null:
+	if ndi_viewport != null or not _plugin_available:
+		return
+	if Global.main == null or not is_instance_valid(Global.main) or Global.main.get_viewport() == null:
 		return
 
 	# Create SubViewport
@@ -149,10 +167,13 @@ func _create_ndi_pipeline():
 	ndi_camera.make_current()
 
 	# Create NDIOutput node (plugin)
-	if _plugin_available:
-		ndi_output = ClassDB.instantiate("NDIOutput")
-		ndi_output.set("name", Saving.settings.get("ndiSourceName", "PixelLab Studio"))
-		ndi_viewport.add_child(ndi_output)
+	ndi_output = ClassDB.instantiate("NDIOutput")
+	if ndi_output == null:
+		push_warning("NDIOutput was registered but could not be instantiated.")
+		_destroy_ndi_pipeline()
+		return
+	ndi_output.set("name", Saving.settings.get("ndiSourceName", "PixelLab Studio"))
+	ndi_viewport.add_child(ndi_output)
 
 	print("[NDI] Pipeline created. Viewport size: ", ndi_viewport.size, " Plugin: ", _plugin_available)
 
@@ -163,13 +184,21 @@ func _create_ndi_pipeline():
 
 	_dirty = true
 
-func _destroy_ndi_pipeline():
-	if ndi_viewport != null:
-		ndi_viewport.queue_free()
-		ndi_viewport = null
-		ndi_camera = null
-		ndi_output = null
-	_destroy_crop_box()
+func _destroy_ndi_pipeline(immediate: bool = false):
+	if ndi_output != null and is_instance_valid(ndi_output):
+		if immediate:
+			ndi_output.free()
+		else:
+			ndi_output.queue_free()
+	ndi_output = null
+	ndi_camera = null
+	if ndi_viewport != null and is_instance_valid(ndi_viewport):
+		if immediate:
+			ndi_viewport.free()
+		else:
+			ndi_viewport.queue_free()
+	ndi_viewport = null
+	_destroy_crop_box(immediate)
 
 func _create_crop_box():
 	if crop_box != null:
@@ -180,9 +209,13 @@ func _create_crop_box():
 	crop_box.visibility_layer = 2
 	Global.main.add_child(crop_box)
 
-func _destroy_crop_box():
+func _destroy_crop_box(immediate: bool = false):
 	if crop_box != null:
-		crop_box.queue_free()
+		if is_instance_valid(crop_box):
+			if immediate:
+				crop_box.free()
+			else:
+				crop_box.queue_free()
 		crop_box = null
 
 func set_crop_visible(vis: bool):
@@ -212,39 +245,20 @@ func _recalculate_framing():
 	# headroom is subtracted from the bottom now. The crop ships pre-configured per
 	# avatar, so it's WYSIWYG: whoever sets it up bakes any desired margin into the box
 	# itself, just like the top and sides.
-	var e = get_crop_edges()
+	var geometry := OutputGeometry.calculate(
+		get_crop_edges(),
+		str(Saving.settings.get("ndiMode", "auto")),
+		int(Saving.settings.get("ndiWidth", 512)),
+		int(Saving.settings.get("ndiManualWidth", 800)),
+		int(Saving.settings.get("ndiManualHeight", 1200))
+	)
+	var e: Array = geometry["edges"]
 	var content_min = rest_origin_pos + Vector2(e[0], e[1])
 	var content_max = rest_origin_pos + Vector2(e[2], e[3])
 
-	# Content area
-	var content_width = content_max.x - content_min.x
-	var content_height = content_max.y - content_min.y
-	if content_width <= 0: content_width = 100
-	if content_height <= 0: content_height = 100
-
-	# Viewport sizing
-	var mode = Saving.settings["ndiMode"]
-	if mode == "manual":
-		var vp_w = int(Saving.settings["ndiManualWidth"])
-		var vp_h = int(Saving.settings["ndiManualHeight"])
-		ndi_viewport.size = Vector2i(vp_w, vp_h)
-
-		# Compute zoom to fit content into manual viewport
-		var zoom_x = float(vp_w) / content_width
-		var zoom_y = float(vp_h) / content_height
-		var z = min(zoom_x, zoom_y)
-		ndi_camera.zoom = Vector2(z, z)
-	else:
-		# Auto mode: user picks width, height computed from aspect ratio
-		var target_width = int(Saving.settings["ndiWidth"])
-		var aspect = content_height / content_width
-		var target_height = int(target_width * aspect)
-		target_height = max(target_height, 1)
-		ndi_viewport.size = Vector2i(target_width, target_height)
-
-		# Camera zoom: fit content into viewport
-		var z = float(target_width) / content_width
-		ndi_camera.zoom = Vector2(z, z)
+	ndi_viewport.size = geometry["viewport_size"]
+	var zoom: float = geometry["zoom"]
+	ndi_camera.zoom = Vector2(zoom, zoom)
 
 	# Camera center
 	ndi_camera.position = Vector2(

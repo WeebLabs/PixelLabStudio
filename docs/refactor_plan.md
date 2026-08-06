@@ -1,13 +1,13 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 5 UI/input component completion
+> Updated: 2026-08-06 — Phase 6 integration hardening completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–5 are complete. Phase 6 (importers and native integrations) is next.
+Progress: Phases 0–6 are complete. Phase 7 (performance and memory) is next.
 Completed phases remain covered by the cumulative test and performance gates.
 
 ## Phase 0 — Baseline and safety rails
@@ -81,6 +81,17 @@ Completed phases remain covered by the cumulative test and performance gates.
   size/section validation.
 - Audit Stream Deck and NDI lifecycle/error handling on every supported OS.
 - Resolve or isolate the known godot-ndi macOS teardown defect before release.
+
+> Completed: 2026-08-06 — APNG and PSD parsing now share explicit file,
+> section, dimension, count, and decoded-memory budgets; validate every binary
+> boundary before access; and support cooperative shutdown cancellation. Main
+> owns and joins all three import thread lifecycles. Stream Deck packets/config
+> and NDI crop/output geometry have pure validated boundaries, while their
+> sockets, signals, timers, and native nodes tear down explicitly. The open
+> upstream godot-ndi macOS defect remains isolated from deterministic tests by
+> recovery-mode production import and the native-free isolated test project;
+> production behavior remains documented as a release risk rather than being
+> concealed by the application code.
 
 ## Phase 7 — Performance and memory
 
