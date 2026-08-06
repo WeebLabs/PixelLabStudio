@@ -33,7 +33,7 @@ func _process(delta):
 				var world_mouse = _world_mouse_position()
 				var opaque = []
 				for a in areas:
-					if !a.is_in_group("penis") and _is_pixel_opaque(a, world_mouse):
+					if !a.is_in_group("canvas_input_blocker") and _is_pixel_opaque(a, world_mouse):
 						opaque.append(a)
 				opaque.sort_custom(_compare_z_descending)
 				# A click over a sidebar/menu panel must never select avatar

@@ -15,6 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="PixelLab Studio"
+config/version="1.6.1"
 run/main_scene="res://main_scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 run/max_fps=60

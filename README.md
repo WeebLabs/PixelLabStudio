@@ -74,8 +74,8 @@ What's added on top:
 - **Normal maps.** Pair a `_NRML`-suffixed image with any diffuse sprite
   for lighting response (UI for placing lights is on the roadmap, see
   below).
-- **PSD import.** Drop a `.psd` and each Photoshop layer becomes a sprite,
-  preserving group hierarchy and layer order.
+- **PSD import.** Drop a supported RGB 8-bit `.psd` and each visible Photoshop
+  layer becomes a positioned sprite in layer order.
 - **Undo/redo.** Most edit operations are reversible.
 - **Rotational limits.** Clamp how far each sprite can rotate (min and
   max angle).
@@ -116,28 +116,16 @@ There are three persistent regions:
 
 1. **Top menu bar.** Exit, Import, Duplicate, Replace, Save, Load, Clear,
    Reset.
-2. **Left sidebar (edit mode only).** Per-sprite controls for the
-   currently selected sprite, in order from top to bottom:
-   - Preview thumbnail
-   - Normal-map import/clear
-   - Position, offset, parent, layer info (read-only)
-   - Animation frames + speed
-   - Drag
-   - Squash + rotational drag
-   - Toggles: ignore bounce, clip linked sprites, static element, NDI
-     reference layer
-   - X frequency/amplitude, Y frequency/amplitude (wobble)
-   - Rotational limits min/max + a live rotation gauge
-3. **Right sidebar (always visible).** Avatar-wide controls:
-   - Top row: speaking/blinking preview, link, unlink, trash
-   - Layer search/filter
-   - Sprite list
-   - A draggable divider sets where the sprite list ends and the
-     controls below begin
-   - Costume buttons (10 quick-switch icons)
-   - Eye tracking: enable, invert, mode (Cursor/Layer), pick target,
-     distance, speed
-   - Visibility toggle: bind a key to show/hide the selected sprite
+2. **Left sidebar (edit mode only).** The selected layer's preview, normal-map
+   controls, position/hierarchy information, and sprite-sheet frames stay at
+   the top. Tabs separate keyframe **Animation** clips from **Reactive** motion
+   such as drag, rotational limits, and squash/stretch.
+3. **Right sidebar (edit mode).** Speaking/blinking preview, link/unlink/delete,
+   search, the layer tree, and costume buttons sit above three tabs:
+   **Details** (layer flags and blend/opacity), **Tracking** (position/rotation
+   targeting), and **Physics** (wiggle path and presets). A bottom visibility
+   binding stays pinned below the tab content. Both sidebars are resizable and
+   remember their widths.
 
 The bottom-right corner holds the non-edit-mode controls: microphone,
 settings, edit-mode toggle, volume/sensitivity meters, zoom indicator,
@@ -347,11 +335,10 @@ bit of patience for fiddling with settings.
 
 Two ways to bring artwork in, both from **Import** in the top menu bar:
 
-- **Import a PSD.** Pick a `.psd` and each Photoshop layer becomes its
-  own sprite, Photoshop groups become parent/child relationships, and the
-  whole rig is positioned around the world origin. Layers whose names end
-  in `_NRML` (case-insensitive) automatically pair up as normal maps for
-  their matching artwork layer (handy for lighting later).
+- **Import a PSD.** Pick a supported RGB 8-bit `.psd` and each visible
+  Photoshop layer becomes its own positioned sprite in layer order. Layers
+  whose names end in `_NRML` (case-insensitive) automatically pair up as normal
+  maps for their matching artwork layer (handy for lighting later).
 - **Import PNGs.** Import also accepts one or more `.png` files. Once
   they're on the stage you can set a frame count (for sprite-sheet
   animations like talking mouths), choose parents, and tune each sprite's
@@ -487,8 +474,8 @@ Other details:
 - Custom source name (what shows up in OBS's NDI Source dropdown).
 - Renders on its own SubViewport, so the editor UI doesn't appear in
   the broadcast.
-- Available on macOS (universal), Windows (x64), and Linux (x64 and
-  ARM64) via the `godot-ndi` plugin.
+- Available in the configured desktop exports for macOS (universal), Windows
+  (x64), and Linux (x64) via the `godot-ndi` plugin.
 
 ### Recording
 
@@ -556,9 +543,6 @@ Planned but not shipped yet:
 - **Light2D UI controls.** Currently the renderer reads paired normal
   maps; the next step is a UI for placing, coloring, and animating
   lights.
-- **Right-sidebar tabs.** Eye Tracking / Lighting / Details tabs to
-  consolidate the bottom-half controls (and move the normal-map row
-  and per-sprite toggles over from the left sidebar).
 - **Settings dialog cleanup.** Apply the same spacing model the
   sidebars use.
 - **Theme consolidation.** Move the inline slider/checkbox styling to
@@ -573,6 +557,8 @@ Planned but not shipped yet:
   revision pinned by the repository submodule.
 - All UI on a single CanvasLayer (`UILayer`) for camera-independent
   rendering.
+- Native/runtime versions, licenses, platform coverage, and known risks are in
+  [the dependency inventory](docs/dependencies.md).
 
 ## Credits
 
@@ -593,11 +579,11 @@ was inspired by their `_auto_save_session` implementation.
 
 ## Contributing
 
-Issues and pull requests are welcome. If you're working on UI,
-`docs/architecture_guide.md` describes the spacing model, the layout
-pass, and the persistence patterns used elsewhere in the codebase.
-The refactor acceptance gates and current toolchain/performance reference are
-in `docs/refactor_plan.md` and `docs/quality_baseline.md`.
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). The system map is in
+[docs/architecture_guide.md](docs/architecture_guide.md), the versioned avatar
+contract in [docs/save_format.md](docs/save_format.md), and the quality gates in
+[docs/quality_baseline.md](docs/quality_baseline.md).
 
 ## License
 

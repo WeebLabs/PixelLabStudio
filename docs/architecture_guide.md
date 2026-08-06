@@ -1,12 +1,18 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Phase 7 indexed runtime and bounded worker pools
+> Last updated: 2026-08-06 — Phase 8 release and maintenance contracts
 
 ## Overview
 
 PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with PNGTuber avatars. The supported and CI-pinned patch release is Godot 4.6.3. Users import sprite images (PNG, APNG, PSD), arrange them into a layered rig, and the app responds to microphone input with bounce, wobble, blink, and eye-tracking animations.
 
 > Updated: 2026-08-06 — Godot 4.6 is the single engine baseline. `scripts/run_tests.sh` imports the project and runs the headless GDScript suite; `scripts/run_performance.sh` records repeatable CPU microbenchmarks under `.artifacts/`. CI runs the tests on macOS, Windows, and Linux using the official Godot 4.6.3 binaries. Native code must use the repository's pinned Godot 4.6 `godot-cpp` submodule revision. The duplicate top-level `godot-ndi/` package was removed; `addons/godot-ndi/` is the sole NDI integration. The obsolete bundled Git editor extension was also removed; source-control operations use the installed Git tooling and no longer add a native library to application/editor startup.
+
+> Updated: 2026-08-06 — `scripts/run_release_checks.sh` composes unit/source
+> contracts, performance budgets, and a standalone production resource-pack
+> launch. Export presets select `main.tscn` and explicitly include indirect
+> script/scene resources, keeping developer saves and imported artwork out of
+> release packs. CI runs the export/launch smoke on all three desktop hosts.
 
 The app has two primary modes:
 
@@ -54,8 +60,6 @@ PNGTuberPlus/
 │   │   └── settings_menu.gd      Settings panel
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
-│   ├── light/
-│   │   └── light_gizmo.gd        Draggable PointLight2D + edit-mode gizmo
 │   └── volume/                    Audio level sliders & visualization
 │
 ├── autoload/                      Global singletons (autoloaded)
@@ -91,10 +95,13 @@ PNGTuberPlus/
 ├── bin/                           GDExtension binaries
 ├── docs/
 │   ├── architecture_guide.md      System map and data flows
+│   ├── dependencies.md            Native/runtime provenance and upgrade policy
 │   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
-│   └── refactor_plan.md           Phased execution and acceptance gates
+│   ├── refactor_plan.md           Phased execution and acceptance gates
+│   └── save_format.md             Versioned avatar/settings compatibility contract
 ├── tests/                         Headless unit, contract, smoke, and performance tests
 ├── scripts/                       Local quality-gate entry points
+├── CONTRIBUTING.md                Setup, acceptance gates, and change contracts
 └── project.godot                  Godot project configuration
 ```
 
@@ -113,7 +120,7 @@ Registered in `project.godot` under `[autoload]`:
 
 Additional parsers (not autoloaded, instantiated on demand):
 - `PSDParser` (`autoload/psd_parser.gd`) — threaded PSD file parsing
-- `APNGParser` (`autoload/apng_parser.gd`) — APNG/GIF detection and sprite sheet assembly
+- `APNGParser` (`autoload/apng_parser.gd`) — APNG detection and sprite sheet assembly
 
 > Updated: 2026-08-06 — `Global` remains the compatibility-facing application
 > state autoload, but runtime ownership is delegated under `autoload/runtime/`.
@@ -121,8 +128,10 @@ Additional parsers (not autoloaded, instantiated on demand):
 > spectrum analyzer by bus/type instead of numeric indexes, applies the level
 > envelope and speaking transitions, validates device selection, and owns a
 > generation-guarded delayed restart. It never frees unrelated autoload
-> children and shuts down explicitly. `BlinkScheduler` owns deterministic blink
-> timing and random-roll evaluation. `Global` mirrors their established public
+> children and shuts down explicitly. Player shutdown clears the native stream
+> before deletion; standalone release smoke sessions do not open the host
+> capture device. `BlinkScheduler` owns deterministic blink timing and
+> random-roll evaluation. `Global` mirrors their established public
 > fields/signals so existing sprite/UI polling remains compatible. Toasts flow
 > through `Global.notification_requested` rather than a retained UI-node
 > pointer. `main.gd` attaches/detaches itself explicitly so scene-bound Global
@@ -167,6 +176,12 @@ Key child nodes:
 > autoloads internally. Existing scene-signal method names remain as thin
 > wrappers on `main.gd`. Pure format, zoom-boundary, recovery-policy, and image
 > encoding contracts live in `tests/unit/test_main_controllers.gd`.
+
+> Updated: 2026-08-06 — Global background capture is a dynamically instantiated
+> optional boundary. `main.gd` checks for `BackgroundInputCapture` through
+> `ClassDB`, connects its two signals when available, and otherwise keeps
+> foreground input working with one warning. `main.tscn` no longer requires the
+> native custom class merely to instantiate the application.
 
 ---
 
@@ -322,7 +337,7 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 ### Save/Load (`saving.gd`, `main.gd`)
 
 - Format: JSON with base64-encoded PNG image data per sprite
-- File extension: `.pngtp`
+- User-facing file extension: `.save`
 - PNG encoding for file saves runs on a background thread to avoid stalling the main loop (Updated: 2026-02-16)
 - Settings stored separately: volume, sensitivity, window size, background color, costume key bindings, etc.
 - Web build support via localStorage
@@ -341,6 +356,9 @@ atomic round-trip/recovery cases are fixture-tested in
 > keeps manual-save and recovery-copy writes mutually exclusive. The controller
 > also owns the native file dialogs and the timestamp policy deciding whether a
 > newer `user://session.pngtp` should be offered for recovery.
+
+The versioned field inventory, validation limits, migration rules, and atomic
+write behavior are specified in `docs/save_format.md`.
 
 > Updated: 2026-08-06 — Undo snapshots continue sharing immutable `Image`
 > references rather than copying or encoding them. The live image/normal caches
@@ -384,7 +402,7 @@ atomic round-trip/recovery cases are fixture-tested in
 - `spriteObject.replaceSpriteFromData()` replaces image data in-place, preserving all properties (position, physics, costumes, parent-child, etc.)
 - All operations are fully undoable via `UndoManager.save_state()`
 
-### APNG/GIF Import (`apng_parser.gd`)
+### APNG Import (`apng_parser.gd`)
 
 - Detects animated PNGs by checking for `acTL` chunk
 - Composes frames into horizontal sprite sheet
@@ -445,7 +463,7 @@ Key signals defined in `global.gd`:
 
 - `startSpeaking` / `stopSpeaking` — mic threshold crossed
 - `pressedKey` — keyboard input forwarded for toggle bindings
-- `fatfuckingballs` — sprite visibility toggle await trigger (legacy naming)
+- `visibility_binding_armed` — sprite visibility toggle await trigger
 
 ---
 
@@ -506,7 +524,16 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 
 ### NDI Crop Box
 
-A dashed orange rectangle (`ndi/ndi_crop_box.gd`, spawned by the manager onto `Global.main`, visibility layer 2) visible in edit mode when NDI is enabled — same look as the old crop line. Resize via 8 constant-screen-size gizmos: 4 edge midpoints (move that edge, H/V resize cursors) and 4 corners (move both adjacent edges, diagonal cursors). Grabbing a **bare edge line** (away from any gizmo) returns `H_MOVE` and translates the whole box without resizing (move cursor), so you can reposition the frame by dragging any side. Minimum box size 64 px; sidebars block grabs (same screen-space guard as before). While dragging, bounce/wobble freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in `main._process` and `spriteObject.wobble`).
+A dashed orange rectangle (`ndi/ndi_crop_box.gd`, owned by the NDI manager,
+visibility layer 2) is visible in edit mode when NDI is enabled — same look as
+the old crop line. Resize via 8 constant-screen-size gizmos: 4 edge midpoints
+(move that edge, H/V resize cursors) and 4 corners (move both adjacent edges,
+diagonal cursors). Grabbing a **bare edge line** (away from any gizmo) returns
+`H_MOVE` and translates the whole box without resizing (move cursor), so you can
+reposition the frame by dragging any side. Minimum box size 64 px; sidebars
+block grabs (same screen-space guard as before). While dragging, bounce/wobble
+freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in
+`main._process` and `spriteObject.wobble`).
 
 > Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `_on_load_dialog_file_selected()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
 
@@ -528,6 +555,11 @@ Uses `ClassDB.class_exists("NDIOutput")` before instantiation. If the godot-ndi 
 > deferred dirty calls and unavailable main viewports, disconnects the root
 > resize signal, stops its timer, and synchronously releases `NDIOutput` before
 > its viewport during application teardown.
+
+> Updated: 2026-08-06 — `NDIOutputManager` owns the crop box as its child rather
+> than attaching it to `Global.main`. Immediate tree shutdown releases only the
+> native `NDIOutput` eagerly and leaves scene-owned viewport/crop containers to
+> Godot's recursive teardown, avoiding double-lifetime work.
 
 ### Plugin Dependency
 
@@ -587,36 +619,14 @@ Backward compatible: old saves without these fields load fine via `.has()` check
 - **Sprite Edit Panel** (`sprite_viewer.gd`): "normal map" section with status label, Import button (opens file dialog), Clear button
 - **Sprite List** (`sprite_list_object.gd`): Blue "N" badge shown next to layer name when normal map is assigned
 
-## Light Gizmo
+## Light Compatibility Data
 
-> Updated: 2026-03-12 — Draggable PointLight2D for normal map visualization
-
-### Overview
-
-A single `PointLight2D` is always present in the scene so that normal-mapped sprites have a light to react to. The light lives inside `ui_scenes/light/light_gizmo.gd` (extends `Node2D`), added as a child of `origin` so it bounces with the avatar.
-
-### Interaction
-
-- **Edit mode**: yellow dot gizmo visible at the light position; click-drag within 20px to reposition
-- **View mode**: gizmo hidden, light stays active
-- Drag uses `_unhandled_input()` with `global_position` offset pattern; calls `get_viewport().set_input_as_handled()` to block sprite selection underneath
-- `UndoManager.save_state()` called on drag start
-
-### Properties
-
-| Property | Type | Default | Maps to |
-|----------|------|---------|---------|
-| `light_energy` | float | 1.0 | `PointLight2D.energy` |
-| `light_color` | Color | white | `PointLight2D.color` |
-| `light_range` | float | 2.0 | `PointLight2D.texture_scale` |
-| `light_enabled` | bool | true | `PointLight2D.enabled` |
-
-### Integration
-
-- **`main.gd`**: `_create_light_gizmo()` instantiates the gizmo and adds it to `origin`. Called in `_ready()` and after origin rebuild (load, undo full restore). `_apply_light_data(dict)` helper sets properties from a dictionary.
-- **`swapMode()`**: calls `_light_gizmo.queue_redraw()` to show/hide gizmo dot
-- **Save/Load**: `"_light"` key in avatar JSON with `{pos, energy, color, range, enabled}`. Old saves without `"_light"` get default values.
-- **Undo**: snapshot includes `"_light"` sub-dictionary; `_restore()` and `_restore_full()` skip it in sprite loops and apply separately
+> Updated: 2026-08-06 — The light gizmo is dormant and is not part of the
+> production scene or release manifest. Normal-map rendering remains supported,
+> but there is no active light-placement UI. The guarded hooks and normalized
+> `_light` avatar metadata remain solely to avoid discarding older save data;
+> they must not be described as an active runtime system until a tracked,
+> tested scene component is restored.
 
 ## Blend Modes & Opacity
 
@@ -706,7 +716,7 @@ All `wiggle*` fields persist alongside the eye-tracking fields (same sites in `m
 
 ## Animation (clips)
 
-> Updated: 2026-06-10 — Per-layer keyframe/transform animations. A layer holds a list of **animation clips** (`spriteObject.animClips`, an Array of Dictionaries) evaluated each frame by `effects/animation/layer_animator.gd` (`LayerAnimator`, RefCounted). Two **shapes** — `twitch` (one-shot half-sine ease out-and-back) and `oscillate` (continuous sine) — on two **channels** — `rotation` (degrees) and `translation` (pixels). Four **triggers**: `always` (idle; oscillate runs continuously, twitch loops), `random` (blink-style per-frame probability `randi() % chance`), `key` (a bound key via `BackgroundInputCapture`), `manual` (the Test button). Designed extensible: new shapes/channels/triggers are added in one place each.
+> Updated: 2026-06-10 — Per-layer keyframe/transform animations. A layer holds a list of **animation clips** (`spriteObject.animClips`, an Array of Dictionaries) evaluated each frame by `effects/animation/layer_animator.gd` (`LayerAnimator`, RefCounted). Two **shapes** — `twitch` (one-shot half-sine ease out-and-back) and `oscillate` (continuous sine) — on two **channels** — `rotation` (degrees) and `translation` (pixels). Four **triggers**: `always` (idle; oscillate runs continuously, twitch loops), `random` (blink-style per-frame probability `randi() % chance`), `key` (a bound key via the optional `BackgroundInputCapture`, with foreground input retained when absent), `manual` (the Test button). Designed extensible: new shapes/channels/triggers are added in one place each.
 
 ### Composition — where it applies
 `LayerAnimator.evaluate(clips, tick, delta)` sums every clip into `rot` (radians) + `trans` (px), read each frame in `spriteObject._process` as `_animRot` / `_animTrans`. **Rotation rides `dragOrigin.rotation`** — the outermost transform on the layer — so it rotates the visible `Sprite2D` AND (for wiggle layers, where the Sprite2D is hidden) the deformable mesh + chain anchor, driving the verlet chain into secondary motion (a twitch whips a wiggly ear). It composes *outside* `sprite.rotation = _micRot + _eyeTrackRotation` (mic sway + eye-track stay inner). **Translation feeds `wob.position`** in `wobble()` (the base, before the eye-track offset is added) — exactly where the legacy wobble wrote. Suppressed while tracing a wiggle path (`_wigglePathEditor != null`).

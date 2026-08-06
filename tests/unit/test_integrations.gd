@@ -131,6 +131,8 @@ func _test_integration_lifecycles(t) -> void:
 	t.assert_true(main_source.contains("worker.wait_to_finish()"), "main joins import workers before scene teardown")
 	t.assert_true(ndi_source.contains("size_changed.disconnect"), "NDI manager disconnects its root viewport signal")
 	t.assert_true(ndi_source.contains("_destroy_ndi_pipeline(true)"), "NDI manager performs deterministic shutdown cleanup")
+	t.assert_true(ndi_source.contains("if immediate:\n\t\tndi_viewport = null"), "NDI shutdown leaves scene-owned containers to recursive teardown")
+	t.assert_true(ndi_source.contains("add_child(crop_box)"), "NDI manager owns the crop-box lifecycle")
 	t.assert_true(streamdeck_source.contains("_socket.close"), "Stream Deck websocket closes during shutdown")
 	t.assert_true(streamdeck_source.contains("set_process(false)"), "disabled or disconnected Stream Deck integration stops polling")
 

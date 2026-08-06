@@ -691,7 +691,10 @@ func _build_section_vbox(section: Node, pos: Vector2, vbox_width: float, widgets
 	vbox.size = Vector2(vbox_width, 0)  # height auto-fits to children
 	section.add_child(vbox)
 	for w in widgets:
-		w.reparent(vbox)
+		if w.get_parent() == null:
+			vbox.add_child(w)
+		else:
+			w.reparent(vbox)
 		if w is HSlider:
 			w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_resizables.append([vbox, panel_width - vbox_width])
@@ -1113,7 +1116,7 @@ func _on_set_toggle_pressed():
 	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
 	Global.awaitingToggleBind = true
-	await Global.main.fatfuckingballs
+	await Global.main.visibility_binding_armed
 
 	var keys = await Global.main.spriteVisToggles
 	Global.awaitingToggleBind = false

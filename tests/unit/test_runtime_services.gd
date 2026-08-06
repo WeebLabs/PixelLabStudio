@@ -65,3 +65,6 @@ func _test_global_source_boundaries(t) -> void:
 	t.assert_false(source.contains("get_bus_effect_instance(1, 1)"), "audio lookup no longer depends on hard-coded bus/effect indexes")
 	t.assert_false(source.contains("for child in get_children():\n\t\tchild.queue_free()"), "microphone reset no longer deletes unrelated Global children")
 	t.assert_false(source.contains("updatePusherNode"), "Global no longer retains a stale-prone notification UI reference")
+	var microphone_source := FileAccess.get_file_as_string("res://autoload/runtime/microphone_monitor.gd")
+	t.assert_true(microphone_source.count("_player.stream = null") >= 2, "microphone stop and restart release native playback before player deletion")
+	t.assert_true(microphone_source.contains("stop_microphone(true)"), "microphone shutdown frees native playback before the final deferred-delete pass")

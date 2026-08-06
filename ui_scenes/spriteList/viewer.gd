@@ -1200,7 +1200,7 @@ func _on_set_toggle_pressed():
 	_vis_toggle_label.text = "toggle: AWAITING INPUT"
 	_vis_toggle_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.8))
 	Global.awaitingToggleBind = true
-	await Global.main.fatfuckingballs
+	await Global.main.visibility_binding_armed
 	var keys = await Global.main.spriteVisToggles
 	Global.awaitingToggleBind = false
 	var key = keys[0]

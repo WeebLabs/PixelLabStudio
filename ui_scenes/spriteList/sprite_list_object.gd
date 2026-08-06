@@ -248,7 +248,7 @@ func _process(_delta):
 	if is_selected != _was_selected:
 		_was_selected = is_selected
 		_update_style()
-	var has_normal := sprite.hasNormalMap()
+	var has_normal: bool = bool(sprite.hasNormalMap())
 	if has_normal != _was_normal_map:
 		_was_normal_map = has_normal
 		_normal_badge.visible = has_normal

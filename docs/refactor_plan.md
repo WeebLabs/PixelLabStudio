@@ -1,14 +1,14 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 7 performance and memory completion
+> Updated: 2026-08-06 — all planned refactor phases complete
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–7 are complete. Phase 8 (final architecture and release hardening) is next.
-Completed phases remain covered by the cumulative test and performance gates.
+Progress: Phases 0–8 are complete. Completed phases remain covered by the
+cumulative test, performance, and standalone export gates.
 
 ## Phase 0 — Baseline and safety rails
 
@@ -117,3 +117,14 @@ Completed phases remain covered by the cumulative test and performance gates.
 - Complete the architecture map, dependency inventory, contributor workflows,
   and save-format documentation.
 - Run the full cross-platform test/export/smoke matrix and a final code audit.
+
+> Completed: 2026-08-06 — Generated font caches and obsolete NDI demo media,
+> linker intermediates, dead version labels, unsupported native mappings, and
+> stale terminology were removed. Optional native background capture no longer
+> prevents the main scene from loading, and NDI scene ownership is deterministic
+> during recursive teardown. Product/export metadata and an explicit indirect
+> resource manifest now produce a standalone production pack. The architecture
+> map, dependency inventory, save-format contract, and contributor workflow are
+> complete and enforced by release tests. The final local audit passed 504
+> assertions, all performance budgets, and a production pack export/launch;
+> CI owns the same resource-pack smoke across Linux, macOS, and Windows.

@@ -34,6 +34,7 @@ var ndi_manager: Node = null
 var _ndi_label: Label = null
 
 var _light_gizmo: Node2D = null
+var _background_input_capture: Node = null
 
 var capture_controller: CaptureController = null
 var viewport_controller: ViewportController = null
@@ -71,7 +72,7 @@ signal emptiedCapture
 signal pressedKey
 var costumeKeys = ["1","2","3","4","5","6","7","8","9","0"]
 signal spriteVisToggles(keysPressed:Array)
-signal fatfuckingballs
+signal visibility_binding_armed
 
 
 func _exit_tree() -> void:
@@ -101,6 +102,7 @@ func _shutdown_import_workers() -> void:
 func _ready():
 	_sprite_id_random.randomize()
 	Global.attach_main(self)
+	_initialize_background_input_capture()
 	Global.fail = $Failed
 	capture_controller = CaptureControllerScene.new()
 	capture_controller.name = "CaptureController"
@@ -134,7 +136,6 @@ func _ready():
 
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 	
-	$UILayer/ControlPanel/VersionLabels.visible = false
 	$UILayer/ControlPanel/Links.visible = false
 
 	save_controller.startup_restore()
@@ -227,6 +228,20 @@ func _ready():
 	# Pre-compile the blend-mode shader pipeline during startup so the first time a layer
 	# switches to a screen-reading blend mode there's no one-frame compile hitch.
 	_prewarm_blend_shader()
+
+func _initialize_background_input_capture() -> void:
+	if not ClassDB.class_exists("BackgroundInputCapture"):
+		push_warning("Global background hotkeys are unavailable because the native input extension is not installed.")
+		return
+	_background_input_capture = ClassDB.instantiate("BackgroundInputCapture") as Node
+	if _background_input_capture == null or not _background_input_capture.has_signal("bg_key_pressed"):
+		push_warning("The native background-input extension could not be initialized.")
+		_background_input_capture = null
+		return
+	_background_input_capture.name = "BackgroundInputCapture"
+	add_child(_background_input_capture)
+	_background_input_capture.connect("bg_key_pressed", bgInputSprite)
+	_background_input_capture.connect("bg_key_pressed", _on_background_input_capture_bg_key_pressed)
 
 # Render the blend shader once, invisibly, to force Metal to build its pipeline now — the
 # compile otherwise lands on the render thread the first time a backbuffer blend mode draws.
@@ -549,7 +564,7 @@ func _begin_psd_parse(path: String, replace_mode: bool) -> void:
 	_psd_result = null
 
 	# Show progress bar
-	_psd_progress_dialog = _create_psd_progress_dialog()
+	_psd_progress_dialog = _create_import_progress_dialog("Loading PSD...")
 	add_child(_psd_progress_dialog)
 
 	# Run parser in a thread
@@ -564,7 +579,7 @@ func _begin_psd_parse(path: String, replace_mode: bool) -> void:
 		Global.pushUpdate("Could not start the PSD import worker.")
 		Global.epicFail(start_error)
 
-func _create_psd_progress_dialog() -> Node2D:
+func _create_import_progress_dialog(status_text: String) -> Node2D:
 	var dialog = Node2D.new()
 	dialog.z_index = 4095
 	dialog.visibility_layer = 2
@@ -574,6 +589,7 @@ func _create_psd_progress_dialog() -> Node2D:
 	bg.position = Vector2(-160, -50)
 	bg.size = Vector2(320, 100)
 	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dialog.add_child(bg)
 
 	var label = Label.new()
@@ -581,7 +597,7 @@ func _create_psd_progress_dialog() -> Node2D:
 	label.position = Vector2(-150, -40)
 	label.size = Vector2(300, 24)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = "Loading PSD..."
+	label.text = status_text
 	dialog.add_child(label)
 
 	var bar = ProgressBar.new()
@@ -594,7 +610,7 @@ func _create_psd_progress_dialog() -> Node2D:
 	dialog.add_child(bar)
 
 	var blocker = Area2D.new()
-	blocker.add_to_group("penis")
+	blocker.add_to_group("canvas_input_blocker")
 	var col = CollisionShape2D.new()
 	var shape = RectangleShape2D.new()
 	shape.size = Vector2(3840, 2160)
@@ -655,8 +671,7 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, norm
 		return
 
 	# Show progress dialog for sprite creation phase
-	_import_progress_dialog2 = _create_psd_progress_dialog()
-	_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites..."
+	_import_progress_dialog2 = _create_import_progress_dialog("Processing sprites...")
 	add_child(_import_progress_dialog2)
 
 	# Use the bounded engine pool instead of creating one OS thread per layer.
@@ -806,7 +821,7 @@ func _start_animated_import(path: String, is_replace: bool):
 
 	_anim_parser = APNGParser.new()
 
-	_anim_progress_dialog = _create_anim_progress_dialog()
+	_anim_progress_dialog = _create_import_progress_dialog("Loading animated image...")
 	add_child(_anim_progress_dialog)
 
 	_anim_thread = Thread.new()
@@ -819,47 +834,6 @@ func _start_animated_import(path: String, is_replace: bool):
 		Global.pushUpdate("Could not start the animated-image worker.")
 		Global.epicFail(start_error)
 		_process_anim_queue()
-
-func _create_anim_progress_dialog() -> Node2D:
-	var dialog = Node2D.new()
-	dialog.z_index = 4095
-	dialog.visibility_layer = 2
-	dialog.position = camera.position
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-160, -50)
-	bg.size = Vector2(320, 100)
-	bg.color = Color(0.15, 0.15, 0.15, 1.0)
-	dialog.add_child(bg)
-
-	var label = Label.new()
-	label.name = "StatusLabel"
-	label.position = Vector2(-150, -40)
-	label.size = Vector2(300, 24)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = "Loading animated image..."
-	dialog.add_child(label)
-
-	var bar = ProgressBar.new()
-	bar.name = "ProgressBar"
-	bar.position = Vector2(-140, 0)
-	bar.size = Vector2(280, 24)
-	bar.min_value = 0.0
-	bar.max_value = 1.0
-	bar.value = 0.0
-	dialog.add_child(bar)
-
-	var blocker = Area2D.new()
-	blocker.add_to_group("penis")
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(3840, 2160)
-	col.shape = shape
-	blocker.add_child(col)
-	dialog.add_child(blocker)
-
-	dialog.set_process(true)
-	return dialog
 
 func _process_anim_thread(_delta):
 	if _anim_thread == null or _anim_parser == null:
@@ -1570,7 +1544,7 @@ func _show_single_replace_confirm(path: String, sprite_name: String, file_name: 
 	_single_replace_dialog.position = camera.position
 
 	var blocker = Area2D.new()
-	blocker.add_to_group("penis")
+	blocker.add_to_group("canvas_input_blocker")
 	var col = CollisionShape2D.new()
 	var shape = RectangleShape2D.new()
 	shape.size = Vector2(3840, 2160)
@@ -1582,6 +1556,7 @@ func _show_single_replace_confirm(path: String, sprite_name: String, file_name: 
 	bg.position = Vector2(-180, -60)
 	bg.size = Vector2(360, 120)
 	bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_single_replace_dialog.add_child(bg)
 
 	var label = Label.new()
@@ -1846,7 +1821,7 @@ func bgInputSprite(node, keys_pressed):
 			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
 	
 	if keyStrings.size() <= 0:
-		emit_signal("fatfuckingballs")
+		visibility_binding_armed.emit()
 		return
 	
 	spriteVisToggles.emit(keyStrings)

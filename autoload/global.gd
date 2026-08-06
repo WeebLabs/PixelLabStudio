@@ -132,7 +132,10 @@ func _ready():
 	add_child(_microphone_monitor)
 	_microphone_monitor.speaking_started.connect(_on_microphone_speaking_started)
 	_microphone_monitor.speaking_stopped.connect(_on_microphone_speaking_stopped)
-	_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
+	# A standalone release smoke verifies resource completeness and scene
+	# lifecycles; it must not open the host's real capture device.
+	if not OS.get_cmdline_user_args().has("--release-smoke"):
+		_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
 	spectrum = _microphone_monitor.spectrum
 
 
@@ -558,7 +561,7 @@ func select(areas):
 		return
 
 	for area in areas:
-		if area.is_in_group("penis"):
+		if area.is_in_group("canvas_input_blocker"):
 			return
 
 	# Eye-track pick mode consumes the click; empty clicks are a no-op so the user

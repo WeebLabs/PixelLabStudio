@@ -18,14 +18,17 @@ jobs:
             asset: Godot_v4.6.3-stable_linux.x86_64.zip
             sha256: d0bc2113065e481c9c2c2b2c37daa4e8be3fe9e27f0ab9ab0b6096e9a37907f3
             binary: Godot_v4.6.3-stable_linux.x86_64
+            preset: Linux/X11
           - runner: macos-latest
             asset: Godot_v4.6.3-stable_macos.universal.zip
             sha256: 30630f3e9b11e10b35c1f90ba8814185dcec43fae1a48345159be7552c64bfe8
             binary: Godot.app/Contents/MacOS/Godot
+            preset: macOS
           - runner: windows-latest
             asset: Godot_v4.6.3-stable_win64.exe.zip
             sha256: e39986a178d585ce7ac198fb8de6ea436366dc0cc00e594810c2e3e104c04b90
             binary: Godot_v4.6.3-stable_win64.exe
+            preset: Windows Desktop
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +55,10 @@ jobs:
       - name: Import project and run tests
         shell: bash
         run: scripts/run_tests.sh
+
+      - name: Export and launch production resource pack
+        shell: bash
+        run: scripts/run_export_smoke.sh "${{ matrix.preset }}"
 
       - name: Record performance smoke baseline
         if: runner.os == 'Linux'

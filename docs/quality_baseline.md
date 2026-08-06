@@ -1,6 +1,6 @@
 # Quality Baseline
 
-> Updated: 2026-08-06 — Phase 7 performance and memory gates
+> Updated: 2026-08-06 — Phase 8 release qualification gates
 
 This document records the reproducible safety rails used throughout the
 refactor. Exact timing artifacts are written to `.artifacts/` and retained by
@@ -27,6 +27,8 @@ Run the same checks locally with:
 ```bash
 GODOT_BIN=/absolute/path/to/godot ./scripts/run_tests.sh
 GODOT_BIN=/absolute/path/to/godot ./scripts/run_performance.sh
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_export_smoke.sh
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_release_checks.sh
 ```
 
 `run_tests.sh` performs a Godot 4.6 recovery-mode import to compile production
@@ -36,6 +38,15 @@ output integrations from affecting deterministic tests. Recovery mode is also
 required because Godot 4.6.3's normal headless editor shutdown can crash while
 generating extension documentation whenever a GDExtension is loaded; that
 engine/editor defect is separate from application runtime behavior.
+
+`run_export_smoke.sh` exports the host production preset as a resource pack,
+changes to the artifact directory, and launches that pack without access to
+source-tree fallbacks or persisted developer settings. It catches missing
+indirect scripts/scenes, parse or shader compilation errors, and startup
+lifecycle faults. `run_release_checks.sh` composes all local gates. CI runs the
+tests and export smoke on Linux, macOS, and Windows and records performance on
+Linux; native integrations still require a full exported-build check on each
+affected platform.
 
 `run_performance.sh` benchmarks eight repeatable CPU paths: animation
 evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization,
@@ -132,6 +143,25 @@ services, 54.82 ms for serialization, 19.41 ms for image geometry, and 389.64
 ms for import validation; every smoke budget passed. Exact JSON remains in the
 ignored `.artifacts/performance.json` and CI artifacts.
 
+## Phase 8 measurement
+
+The cumulative suite contains 504 assertions and passes without failures. A
+standalone macOS production pack exported and launched from `.artifacts/`
+without source fallbacks or runtime errors. The only warning was the expected
+unavailable optional background-hotkey extension in a pack-only smoke.
+Release contracts cover every preset's indirect-resource manifest, native
+library mappings, product metadata, save extension, documentation, optional
+native startup, and obsolete/generated asset removal.
+
+Five text scenes formerly embedded generated font glyph caches: 30,947,981
+bytes in total became 80,363 bytes, removing 30,867,618 bytes and over 70,000
+generated lines while preserving external font resources. The final local
+performance run measured 3.29 µs/layer-frame active and 0.23 idle at 100
+layers, 552.88 ms validation, 39.76 ms runtime services, 53.90 ms
+serialization, 18.89 ms image geometry, 383.33 ms import validation, 609.40 ms
+for one million registry queries, and 3.67 ms for the indexed 250-layer eye
+target workload (84.5× versus the former scan model). Every smoke budget passed.
+
 ## Known third-party limitation
 
 godot-ndi v1.2.6 has an open upstream macOS shutdown crash that reproduces merely by
@@ -145,3 +175,5 @@ cannot make script tests nondeterministic. Phase 6 re-audited the issue on
 2026-08-06; it remained open with no linked fix or pull request. Release
 qualification must therefore treat native macOS NDI teardown as a known
 third-party risk until the dependency is updated, patched, or excluded there.
+The complete dependency/provenance matrix and upgrade checklist are maintained
+in `docs/dependencies.md`.

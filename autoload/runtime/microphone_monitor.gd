@@ -60,11 +60,18 @@ func start_microphone() -> void:
 	_player = player
 
 
-func stop_microphone() -> void:
+func stop_microphone(immediate: bool = false) -> void:
 	_restart_generation += 1
 	if is_instance_valid(_player):
 		_player.stop()
-		_player.queue_free()
+		# Release the native microphone playback before deleting the player. A
+		# SceneTree shutdown has no later deferred-delete pass, so it must free the
+		# player synchronously after its stream reference has been cleared.
+		_player.stream = null
+		if immediate:
+			_player.free()
+		else:
+			_player.queue_free()
 	_player = null
 
 
@@ -73,6 +80,7 @@ func restart_microphone(delay_seconds: float = 0.0) -> void:
 	var generation := _restart_generation
 	if is_instance_valid(_player):
 		_player.stop()
+		_player.stream = null
 		_player.queue_free()
 	_player = null
 	if delay_seconds > 0.0:
@@ -91,7 +99,7 @@ func select_device(device_name: String, restart_delay_seconds: float = 1.0) -> b
 
 
 func shutdown() -> void:
-	stop_microphone()
+	stop_microphone(true)
 	speaking = false
 	volume = 0.0
 	sensitivity = 0.0

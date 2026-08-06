@@ -13,14 +13,28 @@ var data: Dictionary = {}
 var settings: Dictionary = Settings.defaults()
 var settingsPath := "user://settings.pngtp"
 var last_error := ""
+var _persist_settings_on_exit := true
 
 
 func _ready() -> void:
-	load_settings(settingsPath)
+	if OS.get_cmdline_user_args().has("--release-smoke"):
+		begin_isolated_session()
+	else:
+		load_settings(settingsPath)
 
 
 func _exit_tree() -> void:
-	write_settings(settingsPath)
+	if _persist_settings_on_exit:
+		write_settings(settingsPath)
+
+
+func begin_isolated_session() -> void:
+	## Release-smoke launches must not read from or write to the developer's real
+	## settings. Saving is the first stateful autoload, so this runs before Global
+	## or any scene controller can consume persisted feature configuration.
+	settings = Settings.defaults()
+	last_error = ""
+	_persist_settings_on_exit = false
 
 
 func load_settings(path: String = settingsPath) -> bool:

@@ -26,7 +26,7 @@ func _on_visibility_changed():
 func _build_ui():
 	# Blocker Area2D to prevent sprite interaction
 	blocker = Area2D.new()
-	blocker.add_to_group("penis")
+	blocker.add_to_group("canvas_input_blocker")
 	var col = CollisionShape2D.new()
 	var shape = RectangleShape2D.new()
 	shape.size = Vector2(3840, 2160)
@@ -39,6 +39,7 @@ func _build_ui():
 	panel_bg.position = Vector2(-250, -230)
 	panel_bg.size = Vector2(500, 460)
 	panel_bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_bg)
 
 	# Title

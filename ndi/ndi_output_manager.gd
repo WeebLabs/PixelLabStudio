@@ -192,13 +192,18 @@ func _destroy_ndi_pipeline(immediate: bool = false):
 			ndi_output.queue_free()
 	ndi_output = null
 	ndi_camera = null
+	# During _exit_tree, the scene tree already owns destruction of the viewport
+	# and crop-box containers. Freeing them here mutates parents that are in the
+	# middle of recursive teardown. Only the native output needs to be released
+	# eagerly; the remaining nodes are released by their owning parents.
+	if immediate:
+		ndi_viewport = null
+		crop_box = null
+		return
 	if ndi_viewport != null and is_instance_valid(ndi_viewport):
-		if immediate:
-			ndi_viewport.free()
-		else:
-			ndi_viewport.queue_free()
+		ndi_viewport.queue_free()
 	ndi_viewport = null
-	_destroy_crop_box(immediate)
+	_destroy_crop_box()
 
 func _create_crop_box():
 	if crop_box != null:
@@ -207,15 +212,12 @@ func _create_crop_box():
 	crop_box.set_script(CROP_BOX_SCRIPT)
 	crop_box.name = "NDICropBox"
 	crop_box.visibility_layer = 2
-	Global.main.add_child(crop_box)
+	add_child(crop_box)
 
-func _destroy_crop_box(immediate: bool = false):
+func _destroy_crop_box():
 	if crop_box != null:
 		if is_instance_valid(crop_box):
-			if immediate:
-				crop_box.free()
-			else:
-				crop_box.queue_free()
+			crop_box.queue_free()
 		crop_box = null
 
 func set_crop_visible(vis: bool):
