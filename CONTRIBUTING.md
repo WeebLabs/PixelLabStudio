@@ -27,9 +27,10 @@ GODOT_BIN=/absolute/path/to/godot ./scripts/run_export_smoke.sh
 GODOT_BIN=/absolute/path/to/godot ./scripts/run_release_checks.sh
 ```
 
-`run_tests.sh` compiles the production project in recovery mode and then runs
-the deterministic test project. `run_performance.sh` writes ignored JSON under
-`.artifacts/` and enforces broad regression budgets. `run_export_smoke.sh`
+`run_tests.sh` compiles the production project in recovery mode, runs the
+deterministic test project, and performs the native NDI teardown smoke on a
+macOS host where the NDI runtime is installed. `run_performance.sh` writes
+ignored JSON under `.artifacts/` and enforces broad regression budgets. `run_export_smoke.sh`
 creates a production resource pack and launches it from outside the source
 tree, catching omitted release dependencies. The combined release command runs
 all three gates.

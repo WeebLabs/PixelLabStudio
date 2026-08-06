@@ -565,6 +565,14 @@ Uses `ClassDB.class_exists("NDIOutput")` before instantiation. If the godot-ndi 
 
 Requires the godot-ndi GDExtension plugin (by unvermuthet, MPL-2.0) in `addons/godot-ndi/`. Also requires NDI Runtime installed on the user's OS.
 
+> Updated: 2026-08-06 — The macOS v1.2.6 binaries carry the documented MPL
+> patch in `addons/godot-ndi/patches/`. `ViewportTextureRouter` is quiesced at
+> scene deinitialization, so `frame_post_draw` disconnects while
+> `RenderingServer` is valid; the router remains alive through rendering cleanup
+> to absorb queued texture callbacks, then is deleted at core deinitialization.
+> `scripts/run_ndi_teardown_smoke.sh` covers idle extension and rendered active
+> output shutdown on macOS hosts with the NDI runtime installed.
+
 ---
 
 ## Normal Map System

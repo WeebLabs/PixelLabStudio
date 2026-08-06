@@ -13,7 +13,7 @@ CI; they are intentionally not committed.
 | Godot | 4.6.3 stable (`7d41c59c4`) |
 | Renderer | GL Compatibility |
 | `godot-cpp` | `58d1de720b8ffe9f8ffcdfe3a85148582cfd2e74` (4.6-stable API sync) |
-| godot-ndi | v1.2.6 release archive, SHA-256 `0ffaf8255a268e9408c344187143b612d37ee5147c1c752b426d6a6b95a4ffe7` |
+| godot-ndi | v1.2.6 (`d99e749`) plus the local macOS issue 44 patch; upstream archive SHA-256 `0ffaf8255a268e9408c344187143b612d37ee5147c1c752b426d6a6b95a4ffe7` |
 
 CI downloads official Godot builds for Linux, macOS, and Windows and verifies
 their SHA-256 digests before executing any project code. The PSD extension's
@@ -34,10 +34,10 @@ GODOT_BIN=/absolute/path/to/godot ./scripts/run_release_checks.sh
 `run_tests.sh` performs a Godot 4.6 recovery-mode import to compile production
 scripts, then runs isolated unit and contract tests in a minimal project. This
 separation prevents user settings, microphones, Stream Deck devices, and native
-output integrations from affecting deterministic tests. Recovery mode is also
-required because Godot 4.6.3's normal headless editor shutdown can crash while
-generating extension documentation whenever a GDExtension is loaded; that
-engine/editor defect is separate from application runtime behavior.
+output integrations from affecting deterministic tests or requiring optional
+native runtimes on CI. When a macOS NDI runtime is installed, the same gate also
+loads the bundled extension in a clean project and requires clean idle and
+rendered active-output shutdown, directly covering both native teardown paths.
 
 `run_export_smoke.sh` exports the host production preset as a resource pack,
 changes to the artifact directory, and launches that pack without access to
@@ -162,18 +162,28 @@ serialization, 18.89 ms image geometry, 383.33 ms import validation, 609.40 ms
 for one million registry queries, and 3.67 ms for the indexed 250-layer eye
 target workload (84.5× versus the former scan model). Every smoke budget passed.
 
-## Known third-party limitation
+## Patched third-party limitation
 
-godot-ndi v1.2.6 has an open upstream macOS shutdown crash that reproduces merely by
-loading the extension, even without creating an NDI node. It is tracked as
-[upstream issue 44](https://github.com/unvermuthet/godot-ndi/issues/44). Application-owned
-NDI nodes now tear down deterministically, but that cannot prevent a native
-library unload defect which also reproduces in an otherwise empty project.
-Production NDI behavior remains available, while automated
-imports use Godot recovery mode so the unrelated extension teardown defect
-cannot make script tests nondeterministic. Phase 6 re-audited the issue on
-2026-08-06; it remained open with no linked fix or pull request. Release
-qualification must therefore treat native macOS NDI teardown as a known
-third-party risk until the dependency is updated, patched, or excluded there.
-The complete dependency/provenance matrix and upgrade checklist are maintained
-in `docs/dependencies.md`.
+godot-ndi v1.2.6 has an open upstream macOS shutdown crash that reproduces
+merely by loading the extension, even without creating an NDI node. Isolation
+identified the `ViewportTextureRouter` core-level destructor querying an
+already-deinitialized `RenderingServer`; active output also left asynchronous
+texture callbacks targeting an object deleted too early. PNGTuberPlus now
+quiesces the router during scene deinitialization, retains it through rendering
+cleanup, and deletes it at core deinitialization without server access. The
+rebuilt, ad-hoc-signed universal debug and release libraries pass both
+extension-only game shutdown and active `NDIOutput` shutdown on Godot 4.6.3
+with NDI Runtime 6.3.1.
+
+The source patch, build inputs, and exact binary digests are maintained in
+`addons/godot-ndi/PATCHES.md`. `scripts/run_ndi_teardown_smoke.sh` reproduces
+the upstream extension-only scenario and a rendered active-output shutdown on
+macOS whenever the NDI runtime is available. Upstream issue 44 remains open, so
+upgrades must re-audit and either drop or rebase the local patch.
+
+Follow-up qualification passed 509 assertions, five consecutive idle/active
+native teardown runs, the macOS resource-pack export/launch, and all performance
+budgets. The cumulative run measured 3.58 µs/layer-frame active and 0.25 idle at
+100 layers, 595.96 ms validation, 41.96 ms runtime services, 58.19 ms
+serialization, 20.40 ms image geometry, 399.93 ms import validation, 649.67 ms
+for one million registry queries, and 3.81 ms for indexed eye-target lookup.

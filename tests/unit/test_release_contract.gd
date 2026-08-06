@@ -84,6 +84,13 @@ func _test_native_manifests(t, source_root: String) -> void:
 			t.assert_true(FileAccess.file_exists(absolute_path), "native library mapping exists: %s -> %s" % [key, library_path])
 
 	t.assert_true(FileAccess.file_exists(source_root.path_join("addons/godot-streamdeck-addon/LICENSE.md")), "Stream Deck addon ships its MIT license")
+	var ndi_patch_path := source_root.path_join("addons/godot-ndi/patches/0001-fix-render-router-teardown.patch")
+	t.assert_true(FileAccess.file_exists(ndi_patch_path), "the modified NDI binary ships its source patch")
+	var ndi_patch := FileAccess.get_file_as_string(ndi_patch_path)
+	t.assert_true(ndi_patch.contains("vptr->shutdown()") and ndi_patch.contains("std::atomic_bool shutting_down"), "the NDI patch records early quiescence and callback-safe lifetime")
+	t.assert_equal(FileAccess.get_sha256(source_root.path_join("addons/godot-ndi/bin/macos/libgodot-ndi.macos.template_debug.universal.dylib")), "7bed10a7eecc2c07b3815d4db2f7c27581d6a5481683961373179f2deff1538a", "the patched macOS NDI debug binary matches its audited build")
+	t.assert_equal(FileAccess.get_sha256(source_root.path_join("addons/godot-ndi/bin/macos/libgodot-ndi.macos.template_release.universal.dylib")), "4fc04977156eacdf7b048b5aaf87a1a0095f5ff04458f1a7313d80bf74663f42", "the patched macOS NDI release binary matches its audited build")
+	t.assert_true(FileAccess.file_exists(source_root.path_join("scripts/run_ndi_teardown_smoke.sh")), "the macOS NDI native teardown regression gate is available")
 
 
 func _test_cleanup_contract(t, source_root: String) -> void:

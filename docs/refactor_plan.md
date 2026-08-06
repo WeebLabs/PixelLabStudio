@@ -93,6 +93,13 @@ cumulative test, performance, and standalone export gates.
 > production behavior remains documented as a release risk rather than being
 > concealed by the application code.
 
+> Updated: 2026-08-06 — Follow-up isolation traced the macOS crash to the
+> extension's `ViewportTextureRouter` disconnecting after `RenderingServer`,
+> plus queued asynchronous texture callbacks during active output. PNGTuberPlus
+> now carries the MPL source patch, rebuilt Godot 4.6 universal macOS binaries,
+> audited digests, and a native extension teardown smoke. The former release
+> risk is resolved locally while upstream issue 44 remains open.
+
 ## Phase 7 — Performance and memory
 
 - Profile representative avatar workloads and optimize measured bottlenecks.

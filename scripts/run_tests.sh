@@ -32,6 +32,8 @@ if grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script
 	exit 1
 fi
 
+"$SCRIPT_DIR/run_ndi_teardown_smoke.sh"
+
 cp "$PROJECT_ROOT/tests/test_project.godot" "$TEST_WORKSPACE/project.godot"
 cp -R "$PROJECT_ROOT/tests" "$TEST_WORKSPACE/tests"
 cp -R "$PROJECT_ROOT/effects" "$TEST_WORKSPACE/effects"

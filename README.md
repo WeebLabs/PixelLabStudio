@@ -551,7 +551,8 @@ Planned but not shipped yet:
 ## Tech notes
 
 - Built and tested with **Godot 4.6.3** (GL Compatibility renderer).
-- Native GDExtensions: `godot-ndi` v1.2.6 (NDI output), `psd-native` (PSD
+- Native GDExtensions: `godot-ndi` v1.2.6 with the documented macOS teardown
+  patch (NDI output), `psd-native` (PSD
   parsing), `godot-streamdeck-addon` (Stream Deck input).
 - The PSD extension is built against the exact Godot 4.6 `godot-cpp`
   revision pinned by the repository submodule.

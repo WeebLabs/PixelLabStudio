@@ -1,5 +1,12 @@
 # Third-party software
 
+## PNGTuberPlus macOS teardown patch
+
+The macOS binaries include the MPL-2.0 source modification recorded in
+`patches/0001-fix-render-router-teardown.patch`. Build provenance and binary
+digests are documented in `PATCHES.md`. The change is based on upstream
+godot-ndi v1.2.6 and addresses upstream issue 44.
+
 ## NDI SDK
 
 - `ndi/*.h`
