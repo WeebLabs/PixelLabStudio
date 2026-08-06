@@ -4,6 +4,7 @@ const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 
 const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
 const BlinkSchedulerService = preload("res://autoload/runtime/blink_scheduler.gd")
+const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
 
 # Shared UI layout constants used by both sidebar panels. ROW_GAP is the
 # baseline vertical distance between adjacent widgets; DIVIDER_PAD is the
@@ -19,6 +20,7 @@ var fail = null
 var mouse = null
 var spriteList = null
 var chain = null
+var _sprite_registry := SpriteRegistryService.new()
 
 var animationTick = 0
 
@@ -154,6 +156,35 @@ func detach_main(main_node: Node) -> void:
 	eyeTrackPickMode = false
 	eyeTrackPickSource = null
 	eyeTrackPickBroadcast = false
+	_sprite_registry.clear()
+
+
+func register_sprite(sprite: Object) -> void:
+	_sprite_registry.register(sprite)
+
+
+func unregister_sprite(sprite: Object) -> void:
+	_sprite_registry.unregister(sprite)
+
+
+func sprite_by_id(sprite_id: Variant) -> Object:
+	return _sprite_registry.by_id(sprite_id)
+
+
+func sprite_nodes() -> Array:
+	return _sprite_registry.all()
+
+
+func sprite_count() -> int:
+	return _sprite_registry.size()
+
+
+func maximum_sprite_z() -> int:
+	return _sprite_registry.maximum_z()
+
+
+func is_eye_track_target(sprite_id: Variant) -> bool:
+	return _sprite_registry.is_eye_target(sprite_id)
 
 
 func _exit_tree() -> void:

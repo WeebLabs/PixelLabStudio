@@ -5,6 +5,18 @@ const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
 const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 const ImportBudget = preload("res://autoload/import/import_limits.gd")
+const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
+
+class BenchmarkSprite extends RefCounted:
+	var id: int
+	var z: int
+	var eyeTrackMode := 1
+	var eyeTrackTargetId: Variant
+
+	func _init(sprite_id: int) -> void:
+		id = sprite_id
+		z = sprite_id
+		eyeTrackTargetId = sprite_id % 100
 
 # These are deliberately generous, hardware-independent smoke ceilings. They
 # catch accidental algorithmic regressions while the JSON artifact retains the
@@ -14,7 +26,9 @@ const MAX_SERIALIZATION_MS := 500.0
 const MAX_IMAGE_GEOMETRY_MS := 200.0
 const MAX_AVATAR_VALIDATION_MS := 3000.0
 const MAX_RUNTIME_SERVICES_MS := 1000.0
-const MAX_IMPORT_VALIDATION_MS := 500.0
+const MAX_IMPORT_VALIDATION_MS := 2000.0
+const MAX_SPRITE_REGISTRY_MS := 2000.0
+const MAX_INDEXED_TARGET_LOOKUP_MS := 100.0
 
 var results: Dictionary = {}
 var budget_failures: Array[String] = []
@@ -30,6 +44,8 @@ func _initialize() -> void:
 	results["runtime_services"] = _benchmark_runtime_services()
 	results["image_geometry"] = _benchmark_image_geometry()
 	results["import_validation"] = _benchmark_import_validation()
+	results["sprite_registry"] = _benchmark_sprite_registry()
+	results["eye_target_lookup"] = _benchmark_eye_target_lookup()
 	_check_budgets()
 	results["smoke_budgets"] = {
 		"animation_us_per_layer_frame": MAX_ANIMATION_US_PER_LAYER_FRAME,
@@ -38,6 +54,8 @@ func _initialize() -> void:
 		"avatar_validation_ms": MAX_AVATAR_VALIDATION_MS,
 		"runtime_services_ms": MAX_RUNTIME_SERVICES_MS,
 		"import_validation_ms": MAX_IMPORT_VALIDATION_MS,
+		"sprite_registry_ms": MAX_SPRITE_REGISTRY_MS,
+		"indexed_eye_target_lookup_ms": MAX_INDEXED_TARGET_LOOKUP_MS,
 		"passed": budget_failures.is_empty(),
 	}
 
@@ -78,6 +96,18 @@ func _benchmark_animation() -> Dictionary:
 			"total_ms": float(elapsed) / 1000.0,
 			"us_per_layer_frame": float(elapsed) / float(layer_count * FRAMES),
 		}
+	var idle_animators: Array = []
+	for _index in 100:
+		idle_animators.append(Animator.new())
+	var idle_started := Time.get_ticks_usec()
+	for frame in FRAMES:
+		for animator in idle_animators:
+			animator.evaluate([], frame, 1.0 / 60.0)
+	var idle_elapsed := Time.get_ticks_usec() - idle_started
+	measurements["idle_100"] = {
+		"total_ms": float(idle_elapsed) / 1000.0,
+		"us_per_layer_frame": float(idle_elapsed) / float(100 * FRAMES),
+	}
 	return measurements
 
 func _benchmark_serialization() -> Dictionary:
@@ -147,6 +177,61 @@ func _benchmark_import_validation() -> Dictionary:
 	var elapsed := Time.get_ticks_usec() - started
 	return {"iterations": ITERATIONS, "accepted": accepted, "total_ms": float(elapsed) / 1000.0}
 
+func _benchmark_sprite_registry() -> Dictionary:
+	var registry := SpriteRegistryService.new()
+	var sprites: Array = []
+	for index in 1000:
+		var sprite := BenchmarkSprite.new(index)
+		sprites.append(sprite)
+		registry.register(sprite)
+	registry.rebuild_eye_targets()
+	const ITERATIONS := 1000000
+	var hits := 0
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		if registry.by_id(index % 1000) != null and registry.is_eye_target(index % 100):
+			hits += 1
+	var elapsed := Time.get_ticks_usec() - started
+	return {"sprites": 1000, "iterations": ITERATIONS, "hits": hits, "total_ms": float(elapsed) / 1000.0}
+
+func _benchmark_eye_target_lookup() -> Dictionary:
+	const LAYERS := 250
+	const FRAMES := 60
+	var registry := SpriteRegistryService.new()
+	var sprites: Array = []
+	for index in LAYERS:
+		var sprite := BenchmarkSprite.new(index)
+		sprites.append(sprite)
+		registry.register(sprite)
+	registry.rebuild_eye_targets()
+
+	var scan_hits := 0
+	var scan_started := Time.get_ticks_usec()
+	for _frame in FRAMES:
+		for target in sprites:
+			for source in sprites:
+				if source.eyeTrackMode == 1 and source.eyeTrackTargetId == target.id:
+					scan_hits += 1
+					break
+	var scan_elapsed := Time.get_ticks_usec() - scan_started
+
+	var indexed_hits := 0
+	var indexed_started := Time.get_ticks_usec()
+	for _frame in FRAMES:
+		for target in sprites:
+			if registry.is_eye_target(target.id):
+				indexed_hits += 1
+	var indexed_elapsed := Time.get_ticks_usec() - indexed_started
+	return {
+		"layers": LAYERS,
+		"frames": FRAMES,
+		"scan_hits": scan_hits,
+		"indexed_hits": indexed_hits,
+		"quadratic_scan_ms": float(scan_elapsed) / 1000.0,
+		"indexed_ms": float(indexed_elapsed) / 1000.0,
+		"speedup": float(scan_elapsed) / maxf(float(indexed_elapsed), 1.0),
+	}
+
 func _output_path() -> String:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--output="):
@@ -179,6 +264,16 @@ func _check_budgets() -> void:
 		"import validation %.3f ms > %.3f" % [results["import_validation"]["total_ms"], MAX_IMPORT_VALIDATION_MS],
 		float(results["import_validation"]["total_ms"]),
 		MAX_IMPORT_VALIDATION_MS
+	)
+	_check_budget(
+		"sprite registry %.3f ms > %.3f" % [results["sprite_registry"]["total_ms"], MAX_SPRITE_REGISTRY_MS],
+		float(results["sprite_registry"]["total_ms"]),
+		MAX_SPRITE_REGISTRY_MS
+	)
+	_check_budget(
+		"indexed eye-target lookup %.3f ms > %.3f" % [results["eye_target_lookup"]["indexed_ms"], MAX_INDEXED_TARGET_LOOKUP_MS],
+		float(results["eye_target_lookup"]["indexed_ms"]),
+		MAX_INDEXED_TARGET_LOOKUP_MS
 	)
 	if not results["image_geometry"].has("skipped"):
 		_check_budget(

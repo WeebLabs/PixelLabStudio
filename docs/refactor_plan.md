@@ -1,13 +1,13 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 6 integration hardening completion
+> Updated: 2026-08-06 — Phase 7 performance and memory completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–6 are complete. Phase 7 (performance and memory) is next.
+Progress: Phases 0–7 are complete. Phase 8 (final architecture and release hardening) is next.
 Completed phases remain covered by the cumulative test and performance gates.
 
 ## Phase 0 — Baseline and safety rails
@@ -99,6 +99,16 @@ Completed phases remain covered by the cumulative test and performance gates.
 - Reduce unnecessary per-frame polling/writes, repeated tree scans, geometry
   rebuilds, allocations, and full-image undo snapshots where evidence supports it.
 - Compare CI performance artifacts to Phase 0 and add focused regression gates.
+
+> Completed: 2026-08-06 — A live sprite registry replaces per-frame ID group
+> lookups and the layer-list's quadratic target-badge scans; hierarchy rebuilds
+> use direct maps. Idle animation and unchanged visual/UI paths avoid allocation
+> and redundant property writes. PSD preparation is bounded by Godot's worker
+> pool instead of layer-count OS threads. Undo image caches prune dead or
+> replaced references while snapshots retain the exact references required for
+> history. A 250-layer/60-frame target workload improved from 316.09 ms for the
+> old scan model to 3.67 ms indexed (86.1×), and new worker/registry/cache/source
+> contracts run in the cumulative suite.
 
 ## Phase 8 — Final architecture and release hardening
 

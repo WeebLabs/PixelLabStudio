@@ -4,6 +4,7 @@ var menu_buttons: Dictionary = {}
 var _duplicate_btn: Button
 var menu_bar_bg: ColorRect
 var _menu_hbox: HBoxContainer
+var _duplicate_disabled := false
 const MENU_BAR_HEIGHT = 28
 
 const COLOR_NORMAL = Color(0.75, 0.75, 0.8)
@@ -82,6 +83,9 @@ func _add_sep(parent: HBoxContainer):
 
 func _process(_delta):
 	var no_sprite = Global.heldSprite == null
+	if no_sprite == _duplicate_disabled:
+		return
+	_duplicate_disabled = no_sprite
 	_duplicate_btn.disabled = no_sprite
 	if no_sprite:
 		_duplicate_btn.add_theme_color_override("font_color", COLOR_DISABLED)

@@ -1305,13 +1305,14 @@ func updateData(sort_by_z: bool = true):
 	await get_tree().process_frame
 	if my_generation != _update_generation:
 		return
-	var spritesAll = get_tree().get_nodes_in_group("saved")
+	var spritesAll := Global.sprite_nodes()
 
 	if sort_by_z:
 		spritesAll.sort_custom(func(a, b): return a.z > b.z)
 
 	var spritesWithParents = []
 	var allSprites = []
+	var sprite_to_list_item := {}
 
 	for sprite in spritesAll:
 		var listObj = SpriteListObject.new()
@@ -1320,23 +1321,20 @@ func updateData(sort_by_z: bool = true):
 		listObj.parent = sprite.parentSprite
 		# Fallback: look up parent by ID when parentSprite isn't set yet (e.g. during load)
 		if listObj.parent == null and sprite.parentId != null:
-			for other in spritesAll:
-				if other.id == sprite.parentId:
-					listObj.parent = other
-					break
+			listObj.parent = Global.sprite_by_id(sprite.parentId)
 		if listObj.parent != null:
 			spritesWithParents.append(listObj)
 		allSprites.append(listObj)
+		sprite_to_list_item[sprite] = listObj
 
 		container.add_child(listObj)
 
 	# Build parent-child relationships
 	for child in spritesWithParents:
-		for obj in allSprites:
-			if child.parent == obj.sprite:
-				child.parentTag = obj
-				obj.childrenTags.append(child)
-				break
+		var parent_item = sprite_to_list_item.get(child.parent)
+		if parent_item != null:
+			child.parentTag = parent_item
+			parent_item.childrenTags.append(child)
 
 	# DFS flatten: roots first, then children in z-sorted order
 	var roots = []
@@ -1387,7 +1385,8 @@ func refreshHierarchy():
 	if items.size() == 0:
 		return
 
-	# Reset relationships
+	# Reset relationships and build a direct sprite -> row index.
+	var sprite_to_item := {}
 	for obj in items:
 		obj.childrenTags = []
 		obj.parentTag = null
@@ -1396,15 +1395,15 @@ func refreshHierarchy():
 		obj._collapse_btn.text = ""
 		obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		obj.parent = obj.sprite.parentSprite
+		sprite_to_item[obj.sprite] = obj
 
 	# Build parent-child relationships
 	for obj in items:
 		if obj.parent != null:
-			for other in items:
-				if obj.parent == other.sprite:
-					obj.parentTag = other
-					other.childrenTags.append(obj)
-					break
+			var parent_item = sprite_to_item.get(obj.parent)
+			if parent_item != null:
+				obj.parentTag = parent_item
+				parent_item.childrenTags.append(obj)
 
 	# DFS flatten
 	var roots = []

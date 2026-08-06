@@ -1,6 +1,6 @@
 # Quality Baseline
 
-> Updated: 2026-08-06 — Phase 6 import and integration gates
+> Updated: 2026-08-06 — Phase 7 performance and memory gates
 
 This document records the reproducible safety rails used throughout the
 refactor. Exact timing artifacts are written to `.artifacts/` and retained by
@@ -37,14 +37,16 @@ required because Godot 4.6.3's normal headless editor shutdown can crash while
 generating extension documentation whenever a GDExtension is loaded; that
 engine/editor defect is separate from application runtime behavior.
 
-`run_performance.sh` benchmarks six repeatable CPU paths: animation
+`run_performance.sh` benchmarks eight repeatable CPU paths: animation
 evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization,
 100-layer schema validation/migration, runtime blink/microphone state updates,
-alpha-to-polygon image geometry, and one million binary import-boundary checks. It
-stores exact results and enforces broad smoke ceilings of 15 microseconds per
+alpha-to-polygon image geometry, one million binary import-boundary checks,
+one million indexed sprite lookups, and indexed-versus-quadratic eye-target
+resolution. It stores exact results and enforces broad smoke ceilings of 15 microseconds per
 100-layer animation layer-frame, 500 ms for serialization, 3,000 ms for schema
 validation, 1,000 ms per 100,000 runtime-service updates, and 200 ms for image
-geometry, and 500 ms for import validation. Phase work should compare
+geometry, 2,000 ms each for one million import and sprite-registry validations,
+and 100 ms for 15,000 indexed eye-target lookups. Phase work should compare
 the same CI-runner artifact before and after changes; a ceiling is not a
 performance target.
 
@@ -117,6 +119,18 @@ builds, and 396.42 ms for one million import-boundary validation iterations.
 All smoke budgets passed. Integration coverage adds valid and malformed APNG,
 truncated PSD, exact PackBits row, Stream Deck packet/URL/path, NDI geometry,
 and shutdown-ownership contracts.
+
+## Phase 7 measurement
+
+The cumulative gate measured 3.37 µs/layer-frame for active animation at 100
+layers and 0.24 µs/layer-frame for the new 100-layer idle fast path. The
+representative eye-target badge workload (250 layers × 60 frames) measured
+316.09 ms using the removed per-row scan model and 3.67 ms using the registry,
+an 86.1× speedup. One million indexed registry/target queries took 611.81 ms.
+The same run measured 571.48 ms for avatar validation, 40.45 ms for runtime
+services, 54.82 ms for serialization, 19.41 ms for image geometry, and 389.64
+ms for import validation; every smoke budget passed. Exact JSON remains in the
+ignored `.artifacts/performance.json` and CI artifacts.
 
 ## Known third-party limitation
 

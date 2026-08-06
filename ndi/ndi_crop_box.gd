@@ -246,8 +246,7 @@ func _set_freeze(frozen: bool):
 		Global.main.origin.get_parent().position.y = 0
 		Global.main.yVel = 0
 		# Push sprites to max downward wobble extent, zero horizontal wobble
-		var sprites = get_tree().get_nodes_in_group("saved")
-		for sprite_obj in sprites:
+		for sprite_obj in Global.sprite_nodes():
 			if sprite_obj.visible:
 				sprite_obj.wob.position.y = abs(sprite_obj.yAmp)
 				sprite_obj.wob.position.x = 0

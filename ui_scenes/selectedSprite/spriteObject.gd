@@ -130,6 +130,7 @@ var animClips: Array = []
 var _animator = null
 var _animRot := 0.0
 var _animTrans := Vector2.ZERO
+var _anim_had_clips := false
 
 # Blend mode + opacity (per-layer compositing). blendMode is a BlendMode.Mode int;
 # opacity (0..1) is folded into the talk/blink self_modulate every frame (see talkBlink).
@@ -208,6 +209,10 @@ var toggle = "null"
 var _skip_ready_reparent = false
 var _prebuilt_pma_image: Image = null
 var _prebuilt_polygons: Array = []
+var _last_visual_key := -1
+var _last_visual_opacity := -1.0
+var _last_visual_has_wiggle := false
+var _last_visual_has_editor := false
 
 func _make_premultiplied_texture(img: Image) -> ImageTexture:
 	var pma = img.duplicate()
@@ -336,6 +341,7 @@ func _ready():
 	
 	
 	add_to_group(str(id))
+	Global.register_sprite(self)
 
 	# Avatar load handles reparenting synchronously and sets _skip_ready_reparent,
 	# so we don't need to suspend on a timer that does nothing afterwards
@@ -362,6 +368,9 @@ func _ready():
 
 	if wiggleEnabled:
 		_set_wiggle_active(true)
+
+func _exit_tree() -> void:
+	Global.unregister_sprite(self)
 	
 func replaceSprite(pathNew):
 	var img = Image.new()
@@ -514,16 +523,16 @@ func _process(delta):
 		animation()
 
 func animation():
-	
+	if frames <= 1:
+		return
 	var speed = max(float(animSpeed),Engine.max_fps*6.0)
-	if animSpeed > 0 and frames > 1:
+	if animSpeed > 0:
 		if Global.animationTick % int((speed)/float(animSpeed)) == 0:
 			if sprite.frame == frames - 1:
 				sprite.frame = 0
 			else:
 				sprite.frame += 1
-	if frames > 1:
-		remakePolygon()
+	remakePolygon()
 
 func setZIndex():
 	sprite.z_index = z
@@ -588,6 +597,16 @@ func talkBlink():
 	# Fold per-layer opacity into the same gray self_modulate: premultiplied content scales
 	# correctly when every channel is multiplied by o, and shader blend modes read it as COLOR.a.
 	var o = a * opacity
+	var visual_key := int(value) | (int(faded > 0) << 8)
+	var has_wiggle := _wiggleAppendage != null
+	var has_editor := _wigglePathEditor != null
+	if visual_key == _last_visual_key and is_equal_approx(o, _last_visual_opacity) \
+		and has_wiggle == _last_visual_has_wiggle and has_editor == _last_visual_has_editor:
+		return
+	_last_visual_key = visual_key
+	_last_visual_opacity = o
+	_last_visual_has_wiggle = has_wiggle
+	_last_visual_has_editor = has_editor
 	sprite.self_modulate = Color(o, o, o, o)
 	# When the sprite is only showing because of the edit-mode faded preview, render
 	# it on layer 2 so the NDI camera (layer 1 only) doesn't pick up the preview frame.
@@ -768,9 +787,9 @@ func wobble():
 	if eyeTrack and Global.eyeTrackingGloballyEnabled and not (Global.main.editMode and Global.heldSprite == self):
 		if eyeTrackMode == 1:
 			if eyeTrackTargetId != null:
-				var nodes = get_tree().get_nodes_in_group(str(eyeTrackTargetId))
-				if nodes.size() > 0 and nodes[0] != self:
-					target_world_pos = nodes[0].global_position
+				var target_sprite := Global.sprite_by_id(eyeTrackTargetId)
+				if target_sprite != null and target_sprite != self:
+					target_world_pos = target_sprite.global_position
 					have_target = true
 		else:
 			target_world_pos = Global.cursorWorldPos
@@ -841,6 +860,14 @@ func stretch(length,delta):
 # Advance this layer's animation clips one frame; results land in _animRot /
 # _animTrans (consumed by the rotation composite and wobble() respectively).
 func _anim_update(delta):
+	if animClips.is_empty():
+		if _anim_had_clips and _animator != null:
+			_animator.reset()
+		_anim_had_clips = false
+		_animRot = 0.0
+		_animTrans = Vector2.ZERO
+		return
+	_anim_had_clips = true
 	if _animator == null:
 		_animator = LayerAnimator.new()
 	_animator.evaluate(animClips, tick, delta)
@@ -895,6 +922,7 @@ func setWiggleChildrenFollow(on: bool):
 		_release_wiggle_children()
 
 func _set_wiggle_active(on: bool):
+	_last_visual_key = -1
 	if on:
 		if wigglePath.size() < 2:
 			_auto_fit_wiggle_path()
@@ -1477,22 +1505,26 @@ func setClip(toggle):
 	clipped = toggle
 
 func getAllLinkedSprites():
-	var nodes = get_tree().get_nodes_in_group("saved")
 	var linkedSprites = []
-	for node in nodes:
+	for node in Global.sprite_nodes():
 		if node.parentId == id:
 			linkedSprites.append(node)
 	return linkedSprites
 
 func getAllDescendants() -> Array:
-	var result = []
-	var stack = getAllLinkedSprites()
+	var children_by_parent := {}
+	for node in Global.sprite_nodes():
+		if node.parentId == null:
+			continue
+		if not children_by_parent.has(node.parentId):
+			children_by_parent[node.parentId] = []
+		children_by_parent[node.parentId].append(node)
+	var result := []
+	var stack: Array = children_by_parent.get(id, []).duplicate()
 	while stack.size() > 0:
 		var current = stack.pop_back()
 		result.append(current)
-		for node in get_tree().get_nodes_in_group("saved"):
-			if node.parentId == current.id:
-				stack.append(node)
+		stack.append_array(children_by_parent.get(current.id, []))
 	return result
 
 func visToggle(keys):

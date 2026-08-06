@@ -83,11 +83,16 @@ func _shutdown_import_workers() -> void:
 		_psd_parser.cancel()
 	if _anim_parser != null and _anim_parser.has_method("cancel"):
 		_anim_parser.cancel()
-	for worker in [_psd_thread, _import_thread, _anim_thread]:
+	for worker in [_psd_thread, _anim_thread]:
 		if worker != null and worker.is_started():
 			worker.wait_to_finish()
+	if _import_group_id >= 0:
+		WorkerThreadPool.wait_for_group_task_completion(_import_group_id)
+		_import_group_id = -1
+	if _load_group_id >= 0:
+		WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
+		_load_group_id = -1
 	_psd_thread = null
-	_import_thread = null
 	_anim_thread = null
 	_psd_parser = null
 	_anim_parser = null
@@ -465,19 +470,12 @@ func swapMode() -> void:
 
 
 func _next_z_index() -> int:
-	var max_z = -1
-	for s in get_tree().get_nodes_in_group("saved"):
-		if s.z > max_z:
-			max_z = s.z
-	return max_z + 1
+	return Global.maximum_sprite_z() + 1
 
 
 func _next_sprite_id() -> int:
-	var existing_ids := {}
-	for existing_sprite in get_tree().get_nodes_in_group("saved"):
-		existing_ids[existing_sprite.id] = true
 	var candidate := _sprite_id_random.randi()
-	while existing_ids.has(candidate):
+	while Global.sprite_by_id(candidate) != null:
 		candidate = _sprite_id_random.randi()
 	return candidate
 
@@ -517,13 +515,11 @@ var _psd_result = null
 var _psd_progress_dialog: Node2D = null
 var _psd_replace_mode: bool = false
 
-# Threaded sprite creation (post-PSD-import)
-var _import_thread: Thread = null
+# Worker-pool sprite preparation (post-PSD-import)
+var _import_group_id := -1
 var _import_layers: Array = []
 var _import_canvas_size: Vector2 = Vector2.ZERO
 var _import_results: Array = []
-var _import_mutex: Mutex = null
-var _import_completed: int = 0
 var _import_normal_layers: Dictionary = {}
 var _import_progress_dialog2: Node2D = null
 
@@ -531,6 +527,7 @@ var _import_progress_dialog2: Node2D = null
 var _load_keys: Array = []
 var _load_data_ref = null
 var _load_results: Array = []
+var _load_group_id := -1
 
 var _anim_parser: APNGParser = null
 var _anim_thread: Thread = null
@@ -651,52 +648,37 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, norm
 	_import_normal_layers = normal_layers
 	_import_results = []
 	_import_results.resize(selected_layers.size())
-	_import_completed = 0
-	_import_mutex = Mutex.new()
+	if selected_layers.is_empty():
+		_import_layers = []
+		_import_normal_layers = {}
+		Global.pushUpdate("No PSD layers were selected.")
+		return
 
 	# Show progress dialog for sprite creation phase
 	_import_progress_dialog2 = _create_psd_progress_dialog()
 	_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites..."
 	add_child(_import_progress_dialog2)
 
-	# Start coordinator thread that spawns per-layer workers
-	_import_thread = Thread.new()
-	var start_error := _import_thread.start(_precompute_all_layers)
-	if start_error != OK:
-		_import_thread = null
-		_import_mutex = null
+	# Use the bounded engine pool instead of creating one OS thread per layer.
+	_import_group_id = WorkerThreadPool.add_group_task(
+		_precompute_import_layer, selected_layers.size(), -1, false, "PSD layer preparation"
+	)
+	if _import_group_id < 0:
 		_import_progress_dialog2.queue_free()
 		_import_progress_dialog2 = null
 		Global.pushUpdate("Could not start the PSD processing worker.")
-		Global.epicFail(start_error)
+		Global.epicFail(ERR_CANT_CREATE)
 
-func _precompute_all_layers():
-	var count = _import_layers.size()
-	var threads: Array = []
-
-	for i in range(count):
-		var t = Thread.new()
-		var layer = _import_layers[i]
-		var idx = i
-		t.start(func():
-			var img = layer.image
-			var pma = img.duplicate()
-			pma.premultiply_alpha()
-			var bitmap = BitMap.new()
-			bitmap.create_from_image_alpha(img)
-			var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0)
-			_import_results[idx] = {
-				"pma_image": pma,
-				"polygons": polygons
-			}
-			_import_mutex.lock()
-			_import_completed += 1
-			_import_mutex.unlock()
-		)
-		threads.append(t)
-
-	for t in threads:
-		t.wait_to_finish()
+func _precompute_import_layer(index: int) -> void:
+	var image: Image = _import_layers[index].image
+	var premultiplied := image.duplicate()
+	premultiplied.premultiply_alpha()
+	var bitmap := BitMap.new()
+	bitmap.create_from_image_alpha(image)
+	_import_results[index] = {
+		"pma_image": premultiplied,
+		"polygons": bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0),
+	}
 
 func _load_worker_decode(idx: int):
 	# Runs on a worker thread. Decodes the PNG, premultiplies alpha, and builds the
@@ -736,22 +718,19 @@ func _load_worker_decode(idx: int):
 	_load_results[idx] = result
 
 func _process_import_thread(_delta):
-	if _import_thread == null:
+	if _import_group_id < 0:
 		return
 
 	# Update progress
 	var count = _import_layers.size()
 	if count > 0 and _import_progress_dialog2 != null:
-		_import_mutex.lock()
-		var completed = _import_completed
-		_import_mutex.unlock()
+		var completed := WorkerThreadPool.get_group_processed_element_count(_import_group_id)
 		_import_progress_dialog2.get_node("ProgressBar").value = float(completed) / count
 		_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites... " + str(completed) + "/" + str(count)
 
-	# Check if coordinator thread is done
-	if !_import_thread.is_alive():
-		_import_thread.wait_to_finish()
-		_import_thread = null
+	if WorkerThreadPool.is_group_task_completed(_import_group_id):
+		WorkerThreadPool.wait_for_group_task_completion(_import_group_id)
+		_import_group_id = -1
 
 		if _import_progress_dialog2 != null:
 			_import_progress_dialog2.queue_free()
@@ -800,7 +779,6 @@ func _finalize_psd_import():
 
 	_import_layers = []
 	_import_results = []
-	_import_mutex = null
 	_import_normal_layers = {}
 
 	_save_post_import_snapshot()
@@ -1149,12 +1127,14 @@ func _on_load_dialog_file_selected(path):
 	var _load_bar: ProgressBar = null
 	if _load_total > 0:
 		# Run PNG decode + premult + polygon generation in parallel across worker threads
-		var group_id = WorkerThreadPool.add_group_task(_load_worker_decode, _load_total, -1, false, "Avatar load")
+		_load_group_id = WorkerThreadPool.add_group_task(_load_worker_decode, _load_total, -1, false, "Avatar load")
+		if _load_group_id < 0:
+			Global.pushUpdate("Avatar worker pool unavailable; using synchronous image setup.")
 		var _load_start_ms = Time.get_ticks_msec()
 		var _last_bar_ms = _load_start_ms
 		# Only show the bar if decode is still running after 200 ms — fast loads skip it
 		const BAR_SHOW_DELAY_MS = 200
-		while !WorkerThreadPool.is_group_task_completed(group_id):
+		while _load_group_id >= 0 and !WorkerThreadPool.is_group_task_completed(_load_group_id):
 			await get_tree().process_frame
 			var now = Time.get_ticks_msec()
 			if _load_dialog == null and now - _load_start_ms >= BAR_SHOW_DELAY_MS:
@@ -1163,10 +1143,12 @@ func _on_load_dialog_file_selected(path):
 				_load_bar = _load_dialog.get_node("ProgressBar")
 			if _load_dialog != null and now - _last_bar_ms >= 100:
 				_last_bar_ms = now
-				var done = WorkerThreadPool.get_group_processed_element_count(group_id)
+				var done = WorkerThreadPool.get_group_processed_element_count(_load_group_id)
 				_load_bar.value = float(done) / float(_load_total)
 				_load_dialog.position = get_viewport().get_visible_rect().size * 0.5
-		WorkerThreadPool.wait_for_group_task_completion(group_id)
+		if _load_group_id >= 0:
+			WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
+			_load_group_id = -1
 		if _load_bar != null:
 			_load_bar.value = 1.0
 
@@ -1209,14 +1191,14 @@ func _on_load_dialog_file_selected(path):
 	#   - reparent to declared parent (replaces the per-sprite 0.1s _ready timer cascade)
 	#   - pre-warm remakePolygon for animated sprites (so first-tick rebuild is a no-op)
 	#   - re-enable physics so the first _process tick (drag snap, wobble) lands before reveal
-	for spr in get_tree().get_nodes_in_group("saved"):
+	for spr in Global.sprite_nodes():
 		if spr.parentId != null:
-			var parents = get_tree().get_nodes_in_group(str(spr.parentId))
-			if parents.size() > 0:
+			var parent_sprite := Global.sprite_by_id(spr.parentId)
+			if parent_sprite != null:
 				spr.get_parent().remove_child(spr)
-				parents[0].sprite.add_child(spr)
-				spr.parentSprite = parents[0]
-				spr.set_owner(parents[0].sprite)
+				parent_sprite.sprite.add_child(spr)
+				spr.parentSprite = parent_sprite
+				spr.set_owner(parent_sprite.sprite)
 				spr._force_drag_snap = true
 			else:
 				spr.parentId = null

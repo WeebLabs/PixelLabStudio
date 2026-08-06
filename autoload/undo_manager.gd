@@ -34,18 +34,26 @@ func _is_meta_key(item) -> bool:
 func _snapshot() -> Dictionary:
 	var data = {}
 	var nodes = get_tree().get_nodes_in_group("saved")
+	var live_ids := {}
 	var idx = 0
 	for child in nodes:
 		if child.type == "sprite":
-			if not _image_cache.has(child.id):
+			live_ids[child.id] = true
+			if _image_cache.get(child.id) != child.imageData:
 				_image_cache[child.id] = child.imageData
 			var normal_image: Image = null
 			if child.normalImageData != null:
-				if not _normal_cache.has(child.id):
+				if _normal_cache.get(child.id) != child.normalImageData:
 					_normal_cache[child.id] = child.normalImageData
 				normal_image = _normal_cache[child.id]
+			else:
+				_normal_cache.erase(child.id)
 			data[idx] = SpriteState.capture_snapshot(child, _image_cache[child.id], normal_image)
 		idx += 1
+	for sprite_id in _image_cache.keys():
+		if not live_ids.has(sprite_id):
+			_image_cache.erase(sprite_id)
+			_normal_cache.erase(sprite_id)
 
 	# Snapshot light gizmo
 	if Global.main and Global.main._light_gizmo:

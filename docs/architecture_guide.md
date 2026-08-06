@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Phase 6 hardened import and integration boundaries
+> Last updated: 2026-08-06 — Phase 7 indexed runtime and bounded worker pools
 
 ## Overview
 
@@ -63,6 +63,7 @@ PNGTuberPlus/
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
 │   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
+│   ├── domain/sprite_registry.gd  Live ID/target index for runtime hot paths
 │   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
 │   ├── apng_parser.gd             Bounded APNG parser and compositor
@@ -127,6 +128,15 @@ Additional parsers (not autoloaded, instantiated on demand):
 > pointer. `main.gd` attaches/detaches itself explicitly so scene-bound Global
 > references and interaction modes are cleared during shutdown or scene swaps.
 > Pure transition tests live in `tests/unit/test_runtime_services.gd`.
+
+> Updated: 2026-08-06 — `Global` owns a `SpriteRegistry` populated by each
+> sprite's ready/exit lifecycle. Scene-tree groups remain the compatibility
+> enumeration mechanism, but per-frame eye-target resolution, target badges,
+> ID collision checks, maximum-Z lookup, post-load reparenting, and descendant
+> traversal use direct indexes. The registry prunes invalid objects, atomically
+> handles reused IDs, and rebuilds the set of eye-target IDs at most once per
+> process frame. This removes the layer list's former all-sprites scan from
+> every row on every frame.
 
 ---
 
@@ -332,6 +342,12 @@ atomic round-trip/recovery cases are fixture-tested in
 > also owns the native file dialogs and the timestamp policy deciding whether a
 > newer `user://session.pngtp` should be offered for recovery.
 
+> Updated: 2026-08-06 — Undo snapshots continue sharing immutable `Image`
+> references rather than copying or encoding them. The live image/normal caches
+> now replace changed references, erase cleared normal maps, and prune IDs no
+> longer present in the rig; retained undo/redo snapshots themselves remain the
+> only owners needed to restore deleted layers.
+
 ### PSD Import (`psd_parser.gd`)
 
 - Runs in background thread with progress reporting
@@ -348,6 +364,12 @@ atomic round-trip/recovery cases are fixture-tested in
 > composition. `main.gd` cancels and joins PSD/APNG workers before it detaches
 > from `Global`, and reports worker-start failures without leaving modal UI or
 > stale thread references behind.
+
+> Updated: 2026-08-06 — Post-PSD premultiplication and alpha-polygon work uses
+> one `WorkerThreadPool` group task with an isolated result slot per layer,
+> replacing the previous coordinator that created one OS thread per selected
+> layer. Avatar-load pool ownership is tracked too, and both groups are joined
+> before main-scene teardown.
 
 ### Unified Replace (`replace_review_dialog.gd`)
 
@@ -403,6 +425,14 @@ Key bindings (edit mode, handled in `global.gd`):
 | Z / Y      | Undo / Redo                               |
 | Mouse wheel| Cycle sprite selection (only while the cursor is over the open viewport) |
 | Ctrl+Scroll| Over the viewport: zoom (10%-400%). Over a sidebar: nudge the hovered slider/spinbox by one `step`. Sliders never adjust without Ctrl, and the viewport never zooms while the cursor is over a sidebar |
+
+> Updated: 2026-08-06 — The view-mode volume and sensitivity sliders now write
+> `Global`/settings from `value_changed`; they no longer rewrite unchanged
+> values every frame. Layer-list hierarchy builds use direct sprite-to-row maps
+> rather than nested parent searches, and row badges only write Control
+> properties when their underlying state changes. Sprites with no animation
+> clips bypass animator allocation/evaluation and unchanged talk/blink visual
+> state bypasses repeated CanvasItem writes.
 | Middle drag| Pan viewport                              |
 | Ctrl+K     | Tap: screenshot; Hold (≥1s): record transparent video. Format (WebM/APNG/GIF) and FPS (15/30/60) configurable in Settings. APNG/GIF default to 15 FPS, WebM defaults to 30 FPS. When NDI is enabled, captures the NDI crop view (auto-framed avatar) instead of the main camera view (updated 2026-03-12) |
 | Left click | Select sprite / deselect on empty space   |

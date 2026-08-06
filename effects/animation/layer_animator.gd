@@ -40,6 +40,9 @@ func _ensure(n: int) -> void:
 func evaluate(clips: Array, tick: int, delta: float) -> void:
 	rot = 0.0
 	trans = Vector2.ZERO
+	if clips.is_empty():
+		_rt.clear()
+		return
 	_ensure(clips.size())
 	for i in clips.size():
 		var c: Dictionary = clips[i]
@@ -48,6 +51,11 @@ func evaluate(clips: Array, tick: int, delta: float) -> void:
 			_eval_oscillate(c, String(c.get("channel", "rotation")), tick, st)
 		else:
 			_eval_twitch(c, String(c.get("channel", "rotation")), st, delta)
+
+func reset() -> void:
+	rot = 0.0
+	trans = Vector2.ZERO
+	_rt.clear()
 
 func _eval_oscillate(c: Dictionary, channel: String, tick: int, st: Dictionary) -> void:
 	if channel == "translation":
