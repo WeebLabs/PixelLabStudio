@@ -1,8 +1,10 @@
 extends Node2D
 
-const JsonStore = preload("res://autoload/persistence/json_file_store.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
+const CaptureControllerScene = preload("res://main_scenes/controllers/capture_controller.gd")
+const ViewportControllerScene = preload("res://main_scenes/controllers/viewport_controller.gd")
+const SaveControllerScene = preload("res://main_scenes/controllers/save_controller.gd")
 
 var editMode = true
 
@@ -17,11 +19,6 @@ var editMode = true
 @onready var spriteList = $UILayer/EditControls/SpriteList
 
 @onready var replaceReviewDialog = $ReplaceReviewDialog
-# Save/Load FileDialogs are created in code (see _create_save_load_dialogs)
-# rather than in the scene because scene-tree FileDialogs don't reliably
-# route to the OS native dialog even with use_native_dialog=true set.
-var saveDialog: FileDialog = null
-var loadDialog: FileDialog = null
 @onready var psdImportDialog = $PSDImportDialog
 
 @onready var lines = $Lines
@@ -37,29 +34,9 @@ var _ndi_label: Label = null
 
 var _light_gizmo: Node2D = null
 
-var _save_thread: Thread = null
-var _save_progress: float = 0.0
-var _save_progress_dialog: Node2D = null
-
-var _screenshot_dialog: FileDialog = null
-var _screenshot_image: Image = null
-
-# Recording state
-var _recording: bool = false
-var _recording_vp: SubViewport = null
-var _recording_cam: Camera2D = null
-var _recording_file: FileAccess = null
-var _recording_temp_path: String = ""
-var _recording_frame_count: int = 0
-var _recording_timer: float = 0.0
-var _recording_size: Vector2i = Vector2i.ZERO
-var _record_dialog: FileDialog = null
-var _encode_thread: Thread = null
-var _encoding: bool = false
-var _encode_progress: float = 0.0
-var _encode_progress_dialog: Node2D = null
-var _encode_progress_path: String = ""
-var _encode_total_frames: int = 0
+var capture_controller: CaptureController = null
+var viewport_controller: ViewportController = null
+var save_controller: AvatarSaveController = null
 
 
 #Scene Reference
@@ -71,40 +48,15 @@ var saveLoaded = false
 var yVel = 0
 var bounceSlider = 250
 
-# Window-resize freeze. While the window is being resized, sprites halt
-# (see spriteObject._process). After the viewport size stays put for
-# RESIZE_COOLDOWN_FRAMES consecutive frames we clear the flag and force one
-# drag-snap so the resumed physics don't react to the cumulative position
-# delta. _last_viewport_size tracks the previous frame's size for change
-# detection.
-const RESIZE_COOLDOWN_FRAMES = 5
+# Compatibility-facing flag polled by spriteObject while ViewportController
+# owns the resize cooldown and one-shot drag snap.
 var resize_active: bool = false
-var _resize_cooldown: int = 0
-var _last_viewport_size: Vector2 = Vector2.ZERO
 
-# Session auto-save. Every time the user makes an undoable edit, _session_dirty
-# is flipped on; after SESSION_AUTO_SAVE_INTERVAL seconds the rig is encoded
-# in a background thread and written to SESSION_SAVE_PATH. On the next launch,
-# if the session file is newer than the lastAvatar save, we offer to restore
-# instead of loading the older one.
-const SESSION_SAVE_PATH = "user://session.pngtp"
-const SESSION_AUTO_SAVE_INTERVAL = 60.0
-var _session_dirty: bool = false
-var _session_timer: float = 0.0
-var _session_thread: Thread = null
-var _session_recovery_dialog: Node2D = null
 var bounceGravity = 1000
 
 #Costumes
 var costume = 1
 var bounceOnCostumeChange = false
-
-#Zooming
-var scaleOverall = 100
-
-#Camera Pan
-var _panning = false
-var _pan_offset = Vector2.ZERO
 
 var bounceChange = 0.0
 var screen_scale = 1.0
@@ -126,8 +78,16 @@ func _exit_tree() -> void:
 func _ready():
 	Global.attach_main(self)
 	Global.fail = $Failed
-
-	_create_save_load_dialogs()
+	capture_controller = CaptureControllerScene.new()
+	capture_controller.name = "CaptureController"
+	add_child(capture_controller)
+	capture_controller.setup(self, Global, Saving)
+	viewport_controller = ViewportControllerScene.new()
+	viewport_controller.setup(self, Global, Saving)
+	save_controller = SaveControllerScene.new()
+	save_controller.name = "AvatarSaveController"
+	add_child(save_controller)
+	save_controller.setup(self, Global, Saving, UndoManager)
 
 	screen_scale = DisplayServer.screen_get_scale()
 
@@ -153,20 +113,7 @@ func _ready():
 	$UILayer/ControlPanel/VersionLabels.visible = false
 	$UILayer/ControlPanel/Links.visible = false
 
-	# Hook every undoable edit to the session-dirty flag so the auto-save tick
-	# in _process knows there's unsaved work to capture.
-	UndoManager.state_saved.connect(_on_undo_state_saved)
-
-	# Startup load: if a session-recovery file exists and is newer than the
-	# lastAvatar save, prompt the user to restore it instead of loading the
-	# older file. Otherwise fall back to the normal lastAvatar restore.
-	# (UndoManager.save_state is gated on saveLoaded, so any state captures
-	# during load itself are no-ops.)
-	var last_avatar_path = Saving.settings.get("lastAvatar", "")
-	if _has_recoverable_session(last_avatar_path):
-		_show_session_recovery_dialog(last_avatar_path)
-	elif last_avatar_path != "":
-		_on_load_dialog_file_selected(last_avatar_path)
+	save_controller.startup_restore()
 	Saving.settings["newUser"] = false
 
 	if Saving.settings.has("volume"):
@@ -392,8 +339,6 @@ func ndi_mark_dirty():
 		ndi_manager.mark_dirty()
 
 func _process(delta):
-	_update_resize_state()
-
 	# Freeze bounce while dragging the NDI crop box
 	var crop_frozen = ndi_manager != null and ndi_manager.crop_dragging
 	if crop_frozen:
@@ -427,53 +372,27 @@ func _process(delta):
 		OS.shell_open(ProjectSettings.globalize_path("user://"))
 	
 	moveSpriteMenu(delta)
-	zoomScene()
 	
 	fileSystemOpen = isFileSystemOpen()
 
 	_process_psd_thread(delta)
 	_process_import_thread(delta)
 	_process_anim_thread(delta)
-	_process_save_thread(delta)
-	_process_session_save(delta)
-	_process_recording(delta)
-	panCamera()
-	followShadow()
+	save_controller.process_frame(delta)
+	viewport_controller.process_frame()
 
 	# NDI status indicator
 	if _ndi_label != null and ndi_manager != null:
 		_ndi_label.visible = !editMode and ndi_manager.is_enabled()
 
 func _unhandled_input(event):
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_MIDDLE:
-			_panning = event.pressed
-	elif event is InputEventMouseMotion and _panning:
-		_pan_offset -= event.relative / camera.zoom
-		onWindowSizeChange()
-
-func panCamera():
-	camera.position = origin.position + _pan_offset
-
-func followShadow():
-	shadow.visible = is_instance_valid(Global.heldSprite)
-	if !shadow.visible:
-		return
-	
-	shadow.global_position = Global.heldSprite.sprite.global_position + Vector2(6,6)
-	shadow.global_rotation = Global.heldSprite.sprite.global_rotation
-	shadow.offset = Global.heldSprite.sprite.offset
-		
-	shadow.texture = Global.heldSprite.sprite.texture
-	shadow.hframes = Global.heldSprite.sprite.hframes
-	shadow.frame = Global.heldSprite.sprite.frame
+	viewport_controller.handle_unhandled_input(event)
 	
 
 func isFileSystemOpen():
-	for obj in [saveDialog, loadDialog]:
-		if obj.visible:
-			Global.heldSprite = null
-			return true
+	if save_controller != null and save_controller.is_dialog_open():
+		Global.heldSprite = null
+		return true
 	if psdImportDialog.visible:
 		Global.heldSprite = null
 		return true
@@ -484,9 +403,7 @@ func isFileSystemOpen():
 		return true
 	if _replace_dialog != null and _replace_dialog.visible:
 		return true
-	if _screenshot_dialog != null and _screenshot_dialog.visible:
-		return true
-	if _record_dialog != null and _record_dialog.visible:
+	if capture_controller != null and capture_controller.is_dialog_open():
 		return true
 	return false
 
@@ -503,145 +420,30 @@ func _notification(what):
 				controlPanel.visible = true
 			pushUpdates.visible = true
 		NOTIFICATION_WM_CLOSE_REQUEST:
-			if _save_thread != null:
-				_save_thread.wait_to_finish()
-				_save_thread = null
-			if _save_progress_dialog != null:
-				_save_progress_dialog.queue_free()
-				_save_progress_dialog = null
+			if save_controller != null:
+				save_controller.shutdown()
 			# Belt-and-suspenders: also persist settings here in case the autoload's
 			# _exit_tree doesn't fire (force-quit, certain Godot/OS paths)
 			Saving.write_settings(Saving.settingsPath)
 		30:
 			onWindowSizeChange()
 
-# Drives the resize-freeze: while the viewport size changes between frames,
-# `resize_active` is true and sprites halt entirely. When the size has been
-# stable for RESIZE_COOLDOWN_FRAMES frames we clear the flag and force a
-# one-shot drag-snap on every sprite so they resume cleanly from the new
-# origin without feeding the cumulative position delta into stretch().
-func _update_resize_state():
-	var s = get_viewport().get_visible_rect().size
-	if s != _last_viewport_size:
-		_last_viewport_size = s
-		resize_active = true
-		_resize_cooldown = RESIZE_COOLDOWN_FRAMES
-		return
-	if _resize_cooldown > 0:
-		_resize_cooldown -= 1
-		if _resize_cooldown == 0:
-			resize_active = false
-			for spr in get_tree().get_nodes_in_group("saved"):
-				spr._force_drag_snap = true
+func onWindowSizeChange() -> void:
+	viewport_controller.window_size_changed()
 
-func onWindowSizeChange():
-	if !saveLoaded:
-		return
-	Saving.settings["windowSize"] = var_to_str(get_window().size)
-	var s = get_viewport().get_visible_rect().size
-	origin.position = s*0.5
-	# Sprites are children of `origin` and would otherwise stretch/glitch when
-	# origin teleports. We don't snap here — _update_resize_state() freezes
-	# sprite _process while the window is mid-resize and force-snaps each
-	# sprite once when the viewport size stabilizes.
 
-	lines.position = s*0.5
-	lines.drawLine()
-	
-	camera.position = origin.position + _pan_offset
-	# All HUD lives on UILayer (CanvasLayer) — positions are viewport-relative
-	# directly, no camera offset needed.
-	controlPanel.position = s  # bottom-right anchor; children use negative offsets
-	tutorial.position = controlPanel.position
-	spriteList.position.y = editControls.MENU_BAR_HEIGHT + 2
-	spriteList._apply_size()
-	pushUpdates.position = Vector2(0, s.y)  # bottom-left anchor
-
-func zoomScene():
-	# Handles Zooming. Only over the open viewport, never while the cursor is
-	# over a sidebar (there Ctrl+scroll nudges the hovered slider instead).
-	if Input.is_action_pressed("control") and not Global.isMouseOverSidebar():
-		if Input.is_action_just_pressed("scrollUp"):
-			if scaleOverall < 400:
-				camera.zoom += Vector2(0.1,0.1)
-				scaleOverall += 10
-				changeZoom()
-		if Input.is_action_just_pressed("scrollDown"):
-			if scaleOverall > 10:
-				camera.zoom -= Vector2(0.1,0.1)
-				scaleOverall -= 10
-				changeZoom()
-	
-	$UILayer/ControlPanel/ZoomLabel.modulate.a = lerp($UILayer/ControlPanel/ZoomLabel.modulate.a,0.0,0.02)
-	
-func changeZoom():
-	# HUD nodes on UILayer (CanvasLayer) don't need zoom compensation, but the
-	# crosshair Lines node is in world space (it draws through the world origin)
-	# and still needs to be scaled inversely so it stays a constant screen size.
-	lines.scale = Vector2(1.0, 1.0) / camera.zoom
-
-	$UILayer/ControlPanel/ZoomLabel.modulate.a = 6.0
-	$UILayer/ControlPanel/ZoomLabel.text = "Zoom : " + str(scaleOverall) + "%"
-	
-	Global.pushUpdate("Set zoom to " + str(scaleOverall) + "%")
-	onWindowSizeChange()
-	
-#When the user speaks!
-func onSpeak():
+func onSpeak() -> void:
 	if origin.get_parent().position.y > -16:
 		yVel = bounceSlider * -1
 
-func updateWindowTransparency():
-	var ndi_active = ndi_manager != null and ndi_manager.is_enabled()
-	if ndi_active and !editMode:
-		# NDI handles transparency via SubViewport — disable expensive window compositing
-		get_viewport().transparent_bg = false
-		_set_window_transparent(false)
-		RenderingServer.set_default_clear_color(Global.backgroundColor if Global.backgroundColor.a != 0.0 else Color(0.3, 0.3, 0.3))
-	else:
-		get_viewport().transparent_bg = !editMode
-		if Global.backgroundColor.a != 0.0:
-			get_viewport().transparent_bg = false
-		_set_window_transparent(get_viewport().transparent_bg)
-		RenderingServer.set_default_clear_color(Global.backgroundColor)
 
-# On Windows, turning the native transparent-window flag off at runtime can
-# leave the transparent main viewport backed by black after NDI or edit mode
-# toggles. Never turn it off there; only restore it when a transparent viewport
-# needs it. Viewport alpha/clear color still control whether each frame is
-# actually transparent or opaque.
-func _set_window_transparent(want: bool):
-	if OS.get_name() == "Windows":
-		if want and !get_window().transparent:
-			get_window().transparent = true
-		return
-	if get_window().transparent != want:
-		get_window().transparent = want
+func updateWindowTransparency() -> void:
+	viewport_controller.update_window_transparency()
 
-#Swaps between edit mode and view mode
-func swapMode():
-	
-	Global.heldSprite = null
-	
-	editMode = !editMode
-	Global.pushUpdate("Toggled editing mode.")
-	
-	updateWindowTransparency()
-	#processing
-	editControls.set_process(editMode)
-	controlPanel.set_process(!editMode)
-	#visibility
-	editControls.visible = editMode
-	tutorial.visible = editMode
-	controlPanel.visible = !editMode
-	lines.visible = editMode
-	spriteList.visible = editMode
-	viewerArrows.visible = editMode
-	if ndi_manager != null:
-		ndi_manager.set_crop_visible(editMode and ndi_manager.is_enabled())
-	if _light_gizmo != null:
-		_light_gizmo.queue_redraw()
-	onWindowSizeChange()
+
+func swapMode() -> void:
+	viewport_controller.swap_mode()
+
 
 func _next_z_index() -> int:
 	var max_z = -1
@@ -1243,14 +1045,10 @@ func _import_png_files(paths: Array):
 	_save_post_import_snapshot()
 
 func _on_save_button_pressed():
-	# popup_file_dialog() is the FileDialog-specific show method that routes
-	# through DisplayServer to the OS native picker when use_native_dialog=true.
-	# Generic popup() / popup_centered() / setting .visible don't reliably
-	# trigger the native path (see godotengine/godot#82531).
-	saveDialog.popup_file_dialog()
+	save_controller.show_save_dialog()
 
 func _on_load_button_pressed():
-	loadDialog.popup_file_dialog()
+	save_controller.show_load_dialog()
 
 #LOAD AVATAR
 func _on_load_dialog_file_selected(path):
@@ -1477,7 +1275,7 @@ func _on_load_dialog_file_selected(path):
 	# The session-recovery file is ephemeral — never promote it to lastAvatar,
 	# otherwise startup auto-load and Reset would pull from it instead of the
 	# user's actual saved avatar.
-	if path != SESSION_SAVE_PATH:
+	if path != AvatarSaveController.SESSION_SAVE_PATH:
 		Saving.settings["lastAvatar"] = path
 		# Persist immediately — _exit_tree isn't reliable across all shutdown paths
 		Saving.write_settings(Saving.settingsPath)
@@ -1523,9 +1321,6 @@ func _on_load_dialog_file_selected(path):
 	origin.visible = true
 	var fade = create_tween()
 	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
-
-func _create_save_progress_dialog() -> Node2D:
-	return _create_progress_dialog("Saving avatar...")
 
 func _create_progress_dialog(status_text: String) -> Node2D:
 	# Builds a modal progress dialog on UILayer (viewport-space), with a
@@ -1573,434 +1368,19 @@ func _create_progress_dialog(status_text: String) -> Node2D:
 	$UILayer.add_child(dialog)
 	return dialog
 
-func takeScreenshot():
-	if _screenshot_image != null:
-		return  # Previous capture pending save
+func onScreenshotPressed() -> void:
+	if capture_controller != null:
+		capture_controller.on_capture_pressed()
 
-	# If NDI is enabled, capture the NDI crop view directly
-	if ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_viewport != null:
-		_screenshot_image = ndi_manager.ndi_viewport.get_texture().get_image()
-	else:
-		var vp_size = get_viewport().get_visible_rect().size
 
-		var screenshot_vp = SubViewport.new()
-		screenshot_vp.transparent_bg = true
-		screenshot_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-		screenshot_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-		screenshot_vp.size = Vector2i(vp_size)
-		screenshot_vp.world_2d = get_viewport().world_2d
-		screenshot_vp.canvas_cull_mask = 1  # Sprites only, no UI (layer 2)
-		screenshot_vp.gui_disable_input = true
-		screenshot_vp.handle_input_locally = false
-		add_child(screenshot_vp)
+func onScreenshotReleased() -> void:
+	if capture_controller != null:
+		capture_controller.on_capture_released()
 
-		var screenshot_cam = Camera2D.new()
-		screenshot_cam.position = camera.position
-		screenshot_cam.zoom = camera.zoom
-		screenshot_vp.add_child(screenshot_cam)
-		screenshot_cam.make_current()
-
-		await RenderingServer.frame_post_draw
-
-		_screenshot_image = screenshot_vp.get_texture().get_image()
-		screenshot_vp.queue_free()
-
-	if _screenshot_dialog == null:
-		_create_screenshot_dialog()
-
-	var timestamp = Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "_")
-	_screenshot_dialog.current_file = "screenshot_" + timestamp + ".png"
-	_screenshot_dialog.popup_centered(Vector2i(600, 400))
-
-func _create_save_load_dialogs():
-	# OS.get_user_data_dir() resolves the absolute filesystem path that
-	# `user://` maps to — the native picker needs a real path, not Godot's
-	# virtual prefix. After the first navigation FileDialog tracks the user's
-	# last-visited current_dir, so subsequent opens land where they left off.
-	var user_dir = OS.get_user_data_dir()
-
-	saveDialog = FileDialog.new()
-	saveDialog.title = "Save Avatar"
-	saveDialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	saveDialog.access = FileDialog.ACCESS_FILESYSTEM
-	saveDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
-	saveDialog.use_native_dialog = true
-	saveDialog.current_dir = user_dir
-	saveDialog.file_selected.connect(_on_save_dialog_file_selected)
-	add_child(saveDialog)
-
-	loadDialog = FileDialog.new()
-	loadDialog.title = "Load Avatar"
-	loadDialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	loadDialog.access = FileDialog.ACCESS_FILESYSTEM
-	loadDialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
-	loadDialog.use_native_dialog = true
-	loadDialog.current_dir = user_dir
-	loadDialog.file_selected.connect(_on_load_dialog_file_selected)
-	add_child(loadDialog)
-
-func _create_screenshot_dialog():
-	_screenshot_dialog = FileDialog.new()
-	_screenshot_dialog.title = "Save Screenshot"
-	_screenshot_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	_screenshot_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	_screenshot_dialog.filters = PackedStringArray(["*.png;PNG Image"])
-	_screenshot_dialog.use_native_dialog = true
-	_screenshot_dialog.file_selected.connect(_on_screenshot_dialog_file_selected)
-	add_child(_screenshot_dialog)
-
-func _on_screenshot_dialog_file_selected(path: String):
-	if _screenshot_image == null:
-		return
-	if !path.ends_with(".png"):
-		path += ".png"
-	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
-	var err = _screenshot_image.save_png(path)
-	if err == OK:
-		Global.pushUpdate("Screenshot saved: " + path.get_file())
-	else:
-		Global.pushUpdate("Failed to save screenshot.")
-	_screenshot_image = null
-
-# --- Screenshot press/release (hold-to-record) ---
-
-func onScreenshotPressed():
-	pass  # Timing tracked in global.gd; recording starts from _process after 1s threshold
-
-func onScreenshotReleased():
-	if _recording:
-		_stopRecording()
-	elif Global._screenshot_press_time > 0:
-		# Tap — take screenshot (existing behavior)
-		takeScreenshot()
-
-# --- Recording ---
-
-func _process_recording(delta):
-	# Start recording after 1s hold
-	if !_recording and !_encoding and Global._screenshot_key_held and Global._screenshot_press_time > 0:
-		if Time.get_ticks_msec() - Global._screenshot_press_time >= 1000:
-			_startRecording()
-
-	# Capture frames at configured FPS
-	if _recording:
-		_recording_timer += delta
-		var interval = 1.0 / float(Saving.settings.get("recordingFPS", 30))
-		while _recording_timer >= interval:
-			_captureRecordingFrame()
-			_recording_timer -= interval
-
-	# Poll encode progress and check thread completion
-	if _encoding:
-		_poll_encode_progress()
-		if _encode_thread != null and !_encode_thread.is_alive():
-			_encode_thread.wait_to_finish()
-			_encode_thread = null
-			_encoding = false
-			if _encode_progress_dialog != null:
-				_encode_progress_dialog.queue_free()
-				_encode_progress_dialog = null
-			_cleanup_recording_temp()
-
-func _startRecording():
-	if _recording or _encoding:
-		return
-	if !_is_ffmpeg_available():
-		Global.pushUpdate("FFmpeg not found. Install FFmpeg to record video.")
-		return
-
-	_recording = true
-	_recording_timer = 0.0
-	_recording_frame_count = 0
-	var use_ndi = ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_viewport != null
-	if use_ndi:
-		_recording_size = ndi_manager.ndi_viewport.size
-	else:
-		_recording_size = Vector2i(get_viewport().get_visible_rect().size)
-
-	# Temp file for raw RGBA frames
-	var temp_dir = OS.get_cache_dir() + "/pngtuber_recording"
-	DirAccess.make_dir_recursive_absolute(temp_dir)
-	_recording_temp_path = temp_dir + "/frames.raw"
-	_recording_file = FileAccess.open(_recording_temp_path, FileAccess.WRITE)
-
-	# SubViewport (same pattern as NDI)
-	_recording_vp = SubViewport.new()
-	_recording_vp.transparent_bg = true
-	_recording_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	_recording_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
-	_recording_vp.size = _recording_size
-	_recording_vp.world_2d = get_viewport().world_2d
-	_recording_vp.canvas_cull_mask = 1
-	_recording_vp.gui_disable_input = true
-	_recording_vp.handle_input_locally = false
-	add_child(_recording_vp)
-
-	_recording_cam = Camera2D.new()
-	_recording_vp.add_child(_recording_cam)
-	if use_ndi:
-		_recording_cam.position = ndi_manager.ndi_camera.position
-		_recording_cam.zoom = ndi_manager.ndi_camera.zoom
-	else:
-		_recording_cam.position = camera.position
-		_recording_cam.zoom = camera.zoom
-	_recording_cam.make_current()
-
-	Global.pushUpdate("Recording...")
-
-func _stopRecording():
-	if !_recording:
-		return
-	_recording = false
-
-	if _recording_file != null:
-		_recording_file.close()
-		_recording_file = null
-
-	if _recording_vp != null:
-		_recording_vp.queue_free()
-		_recording_vp = null
-		_recording_cam = null
-
-	if _recording_frame_count == 0:
-		Global.pushUpdate("No frames captured.")
-		_cleanup_recording_temp()
-		return
-
-	Global.pushUpdate("Encoding... (" + str(_recording_frame_count) + " frames)")
-
-	if _record_dialog == null:
-		_create_record_dialog()
-
-	var fmt = Saving.settings.get("recordingFormat", "webm")
-	var ext_map = {"webm": ".webm", "apng": ".apng", "gif": ".gif"}
-	var filter_map = {
-		"webm": "*.webm;WebM Video",
-		"apng": "*.apng;Animated PNG",
-		"gif": "*.gif;GIF Image"
-	}
-	var ext = ext_map.get(fmt, ".webm")
-	_record_dialog.filters = PackedStringArray([filter_map.get(fmt, "*.webm;WebM Video")])
-
-	var timestamp = Time.get_datetime_string_from_system().replace(":", "").replace("-", "").replace("T", "_")
-	_record_dialog.current_file = "recording_" + timestamp + ext
-	_record_dialog.popup_centered(Vector2i(600, 400))
-
-func _captureRecordingFrame():
-	if _recording_vp == null or _recording_file == null:
-		return
-	# Sync camera — use NDI crop view when active, otherwise main camera
-	if ndi_manager != null and ndi_manager.is_enabled() and ndi_manager.ndi_camera != null:
-		_recording_cam.position = ndi_manager.ndi_camera.position
-		_recording_cam.zoom = ndi_manager.ndi_camera.zoom
-	else:
-		_recording_cam.position = camera.position
-		_recording_cam.zoom = camera.zoom
-	var img = _recording_vp.get_texture().get_image()
-	if img != null:
-		_recording_file.store_buffer(img.get_data())
-		_recording_frame_count += 1
-
-func _is_ffmpeg_available() -> bool:
-	return _find_ffmpeg() != ""
-
-func _find_ffmpeg() -> String:
-	# Try common paths (GUI apps may not inherit full PATH)
-	var common_paths = []
-	if OS.get_name() == "Windows":
-		var program_files = OS.get_environment("ProgramFiles")
-		var localappdata = OS.get_environment("LOCALAPPDATA")
-		common_paths = [
-			OS.get_executable_path().get_base_dir() + "/ffmpeg.exe",
-			program_files + "/ffmpeg/bin/ffmpeg.exe",
-			localappdata + "/Microsoft/WinGet/Links/ffmpeg.exe",
-			"C:/ffmpeg/bin/ffmpeg.exe",
-		]
-	else:
-		common_paths = ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
-	for path in common_paths:
-		if FileAccess.file_exists(path):
-			return path
-	# Fallback to PATH
-	var output = []
-	var cmd = "where" if OS.get_name() == "Windows" else "which"
-	if OS.execute(cmd, ["ffmpeg"], output) == 0 and output.size() > 0:
-		return output[0].strip_edges()
-	return ""
-
-func _create_record_dialog():
-	_record_dialog = FileDialog.new()
-	_record_dialog.title = "Save Recording"
-	_record_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	_record_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	_record_dialog.filters = PackedStringArray(["*.webm;WebM Video"])
-	_record_dialog.use_native_dialog = true
-	_record_dialog.file_selected.connect(_on_record_dialog_file_selected)
-	_record_dialog.canceled.connect(_on_record_dialog_canceled)
-	add_child(_record_dialog)
-
-func _on_record_dialog_file_selected(path: String):
-	var fmt = Saving.settings.get("recordingFormat", "webm")
-	var ext_map = {"webm": ".webm", "apng": ".apng", "gif": ".gif"}
-	var ext = ext_map.get(fmt, ".webm")
-	if !path.ends_with(ext):
-		path += ext
-	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
-
-	_encoding = true
-	_encode_progress = 0.0
-	_encode_total_frames = _recording_frame_count
-	var raw_path = _recording_temp_path
-	var size = _recording_size
-
-	# Progress file for FFmpeg to write stats into
-	var temp_dir = OS.get_cache_dir() + "/pngtuber_recording"
-	_encode_progress_path = temp_dir + "/ffmpeg_progress.log"
-
-	# Show progress dialog
-	_encode_progress_dialog = _create_encode_progress_dialog()
-	add_child(_encode_progress_dialog)
-
-	_encode_thread = Thread.new()
-	var fps = int(Saving.settings.get("recordingFPS", 30))
-	_encode_thread.start(_encode_worker.bind(raw_path, size, path, _encode_progress_path, fps))
-
-func _create_encode_progress_dialog() -> Node2D:
-	var dialog = Node2D.new()
-	dialog.z_index = 4095
-	dialog.visibility_layer = 2
-	dialog.position = camera.position
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-160, -50)
-	bg.size = Vector2(320, 100)
-	bg.color = Color(0.15, 0.15, 0.15, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(bg)
-
-	var label = Label.new()
-	label.name = "StatusLabel"
-	label.position = Vector2(-150, -40)
-	label.size = Vector2(300, 24)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = "Encoding video..."
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(label)
-
-	var bar = ProgressBar.new()
-	bar.name = "ProgressBar"
-	bar.position = Vector2(-140, 0)
-	bar.size = Vector2(280, 24)
-	bar.min_value = 0.0
-	bar.max_value = 1.0
-	bar.value = 0.0
-	dialog.add_child(bar)
-
-	var blocker = Area2D.new()
-	blocker.add_to_group("penis")
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(3840, 2160)
-	col.shape = shape
-	blocker.add_child(col)
-	dialog.add_child(blocker)
-
-	return dialog
-
-func _poll_encode_progress():
-	if _encode_progress_dialog == null:
-		return
-	# Read FFmpeg progress file to extract current frame
-	if _encode_progress_path != "" and FileAccess.file_exists(_encode_progress_path):
-		var f = FileAccess.open(_encode_progress_path, FileAccess.READ)
-		if f != null:
-			var content = f.get_as_text()
-			f.close()
-			# Find last "frame=" line in the progress output
-			var lines = content.split("\n")
-			for i in range(lines.size() - 1, -1, -1):
-				if lines[i].begins_with("frame="):
-					var frame_str = lines[i].substr(6).strip_edges()
-					if frame_str.is_valid_int() and _encode_total_frames > 0:
-						_encode_progress = clampf(float(frame_str.to_int()) / float(_encode_total_frames), 0.0, 1.0)
-					break
-	_encode_progress_dialog.get_node("ProgressBar").value = _encode_progress
-	_encode_progress_dialog.position = camera.position
-
-func _encode_worker(raw_path: String, size: Vector2i, output_path: String, progress_path: String, fps: int = 30):
-	var ffmpeg = _find_ffmpeg()
-	if ffmpeg == "":
-		call_deferred("_on_encode_done", false)
-		return
-
-	var base_args = [
-		"-y",
-		"-f", "rawvideo",
-		"-pix_fmt", "rgba",
-		"-s", str(size.x) + "x" + str(size.y),
-		"-r", str(fps),
-		"-i", raw_path,
-	]
-
-	var fmt_args = []
-	if output_path.ends_with(".apng"):
-		fmt_args = [
-			"-c:v", "apng",
-			"-pix_fmt", "rgba",
-			"-plays", "0",
-		]
-	elif output_path.ends_with(".gif"):
-		var filtergraph = "split[s0][s1];[s0]palettegen=reserve_transparent=1[p];[s1][p]paletteuse=alpha_threshold=128"
-		fmt_args = [
-			"-filter_complex", filtergraph,
-			"-loop", "0",
-		]
-	else:
-		# WebM VP9 (default)
-		fmt_args = [
-			"-c:v", "libvpx-vp9",
-			"-pix_fmt", "yuva420p",
-			"-auto-alt-ref", "0",
-			"-crf", "30",
-			"-b:v", "0",
-		]
-
-	var args = base_args + fmt_args + ["-progress", progress_path, output_path]
-
-	var output = []
-	var exit_code = OS.execute(ffmpeg, args, output)
-	call_deferred("_on_encode_done", exit_code == 0)
-
-func _on_encode_done(success: bool):
-	if success:
-		Global.pushUpdate("Recording saved!")
-	else:
-		Global.pushUpdate("FFmpeg encoding failed.")
-
-func _on_record_dialog_canceled():
-	_cleanup_recording_temp()
-	Global.pushUpdate("Recording discarded.")
-
-func _cleanup_recording_temp():
-	if _recording_temp_path != "" and FileAccess.file_exists(_recording_temp_path):
-		DirAccess.remove_absolute(_recording_temp_path)
-	if _encode_progress_path != "" and FileAccess.file_exists(_encode_progress_path):
-		DirAccess.remove_absolute(_encode_progress_path)
-	_recording_temp_path = ""
-	_encode_progress_path = ""
-	_recording_frame_count = 0
-
-func _process_save_thread(_delta):
-	if _save_thread == null or _save_progress_dialog == null:
-		return
-	_save_progress_dialog.get_node("ProgressBar").value = _save_progress
-	# Recenter on viewport — handles window resize while saving.
-	_save_progress_dialog.position = get_viewport().get_visible_rect().size * 0.5
 
 # Build the same Dictionary structure manual save and session auto-save both
 # write out. Image references go in `_image_ref` / `_normal_image_ref` so the
-# background worker can base64-encode them off the main thread (see
-# `_save_worker` and `_session_save_worker`).
+# AvatarSaveController can base64-encode them off the main thread.
 func _build_avatar_save_data() -> Dictionary:
 	var data = {}
 	var nodes = get_tree().get_nodes_in_group("saved")
@@ -2087,262 +1467,6 @@ func _build_avatar_save_data() -> Dictionary:
 	data["_ndiCropRect"] = _crop
 	data["_ndiRulerY"] = float(_crop[3])
 	return data
-
-#SAVE AVATAR
-func _on_save_dialog_file_selected(path):
-	if _save_thread != null:
-		_save_thread.wait_to_finish()
-		_save_thread = null
-	# Wait for any in-flight session save too, so its worker doesn't race
-	# against the manual save by holding references to the same image data.
-	if _session_thread != null:
-		_session_thread.wait_to_finish()
-		_session_thread = null
-
-	var data = _build_avatar_save_data()
-
-	_save_progress = 0.0
-	# _create_save_progress_dialog attaches the dialog to UILayer itself.
-	_save_progress_dialog = _create_save_progress_dialog()
-
-	_save_thread = Thread.new()
-	_save_thread.start(_save_worker.bind(data, path))
-
-func _save_worker(data: Dictionary, path: String):
-	var total = data.size()
-	var done = 0
-	for id in data:
-		# Some keys (e.g. "_eyeTrackingGloballyEnabled") hold plain values
-		# rather than per-sprite dicts; skip them so .has() doesn't fail.
-		var entry = data[id]
-		if entry is Dictionary:
-			if entry.has("_image_ref"):
-				var img: Image = entry["_image_ref"]
-				entry["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
-				entry.erase("_image_ref")
-			if entry.has("_normal_image_ref"):
-				var nrml_img: Image = entry["_normal_image_ref"]
-				entry["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
-				entry.erase("_normal_image_ref")
-		done += 1
-		_save_progress = float(done) / float(total)
-	var schema_result := AvatarSave.normalize(data)
-	if not schema_result["ok"]:
-		call_deferred("_on_save_finished", path, data, schema_result)
-		return
-	var normalized_data: Dictionary = schema_result["value"]
-	var write_result := JsonStore.write_document_atomic(path, normalized_data)
-	call_deferred("_on_save_finished", path, normalized_data, write_result)
-
-func _on_save_finished(path: String, data: Dictionary, result: Dictionary):
-	if _save_thread != null:
-		_save_thread.wait_to_finish()
-		_save_thread = null
-	if _save_progress_dialog != null:
-		_save_progress_dialog.queue_free()
-		_save_progress_dialog = null
-	if not result["ok"]:
-		Global.pushUpdate("Save failed: " + result["error"])
-		_session_dirty = true
-		return
-	Saving.data = data
-	Saving.settings["lastAvatar"] = path
-	if not Saving.write_settings(Saving.settingsPath):
-		Global.pushUpdate(Saving.last_error)
-	Global.pushUpdate("Save complete: " + path.get_file())
-	_show_save_confirmation(path.get_file())
-	# The user's work is now persisted in their chosen save file; the
-	# session-recovery copy is redundant and would otherwise trigger a
-	# spurious "restore?" prompt on the next launch.
-	_discard_session_file()
-	_session_dirty = false
-	_session_timer = 0.0
-
-# --- Session auto-save -------------------------------------------------------
-
-# Signal callback for UndoManager.state_saved. Every edit that produces an
-# undoable snapshot marks the rig dirty for session purposes; the timer in
-# _process_session_save() decides when to flush.
-func _on_undo_state_saved():
-	_session_dirty = true
-
-# Per-frame tick: count up only while we have an avatar loaded, the rig is
-# dirty, and no save (manual or session) is in flight. When the interval
-# elapses, kick off a background encode + write to SESSION_SAVE_PATH.
-func _process_session_save(delta):
-	# Reap a finished thread first so we can start a new tick.
-	if _session_thread != null and !_session_thread.is_alive():
-		_session_thread.wait_to_finish()
-		_session_thread = null
-	if _save_thread != null or _session_thread != null:
-		return
-	if !saveLoaded or !_session_dirty:
-		return
-	_session_timer += delta
-	if _session_timer < SESSION_AUTO_SAVE_INTERVAL:
-		return
-	_session_timer = 0.0
-	_session_dirty = false  # re-armed by the next undo state save
-	var data = _build_avatar_save_data()
-	_session_thread = Thread.new()
-	_session_thread.start(_session_save_worker.bind(data))
-
-# Mirrors _save_worker but writes silently to SESSION_SAVE_PATH and does not
-# touch the progress UI or surface a confirmation.
-func _session_save_worker(data: Dictionary):
-	for id in data:
-		var entry = data[id]
-		if entry is Dictionary:
-			if entry.has("_image_ref"):
-				var img: Image = entry["_image_ref"]
-				entry["imageData"] = Marshalls.raw_to_base64(img.save_png_to_buffer())
-				entry.erase("_image_ref")
-			if entry.has("_normal_image_ref"):
-				var nrml_img: Image = entry["_normal_image_ref"]
-				entry["normalImageData"] = Marshalls.raw_to_base64(nrml_img.save_png_to_buffer())
-				entry.erase("_normal_image_ref")
-	var schema_result := AvatarSave.normalize(data)
-	if not schema_result["ok"]:
-		call_deferred("_on_session_save_failed", schema_result["error"])
-		return
-	var write_result := JsonStore.write_document_atomic(SESSION_SAVE_PATH, schema_result["value"])
-	if not write_result["ok"]:
-		call_deferred("_on_session_save_failed", write_result["error"])
-
-func _on_session_save_failed(message: String) -> void:
-	_session_dirty = true
-	push_warning("Session auto-save failed: " + message)
-
-func _discard_session_file():
-	if !FileAccess.file_exists(SESSION_SAVE_PATH):
-		return
-	var dir = DirAccess.open("user://")
-	if dir != null:
-		dir.remove(SESSION_SAVE_PATH.get_file())
-
-# True if a session file exists and is newer than the user's lastAvatar save
-# (or the lastAvatar is missing entirely). Used at startup to decide whether
-# to prompt for recovery instead of loading the lastAvatar.
-func _has_recoverable_session(last_avatar_path: String) -> bool:
-	if !FileAccess.file_exists(SESSION_SAVE_PATH):
-		return false
-	if last_avatar_path == "" or !FileAccess.file_exists(last_avatar_path):
-		return true
-	var session_mod = FileAccess.get_modified_time(SESSION_SAVE_PATH)
-	var avatar_mod = FileAccess.get_modified_time(last_avatar_path)
-	return session_mod > avatar_mod
-
-# Modal recovery prompt on UILayer, styled like the save-progress dialog: a
-# full-viewport dimmer + click-blocker behind a centered body with a label
-# and two buttons. Restore loads the session file; Discard deletes it and
-# loads the lastAvatar (if any) instead.
-func _show_session_recovery_dialog(last_avatar_path: String):
-	var dialog = Node2D.new()
-	dialog.z_index = 100
-	dialog.position = get_viewport().get_visible_rect().size * 0.5
-
-	var blocker = ColorRect.new()
-	blocker.position = Vector2(-5000, -5000)
-	blocker.size = Vector2(10000, 10000)
-	blocker.color = Color(0, 0, 0, 0.35)
-	blocker.mouse_filter = Control.MOUSE_FILTER_STOP
-	dialog.add_child(blocker)
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-220, -75)
-	bg.size = Vector2(440, 150)
-	bg.color = Color(0.13, 0.13, 0.15, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(bg)
-
-	var title = Label.new()
-	title.position = Vector2(-210, -62)
-	title.size = Vector2(420, 24)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.text = "Recover unsaved session?"
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(title)
-
-	var body = Label.new()
-	body.position = Vector2(-210, -35)
-	body.size = Vector2(420, 60)
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD
-	body.text = "A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
-	body.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(body)
-
-	var restore_btn = Button.new()
-	restore_btn.text = "Restore"
-	restore_btn.position = Vector2(-180, 38)
-	restore_btn.size = Vector2(160, 28)
-	restore_btn.pressed.connect(func(): _on_session_recovery_choice(true, last_avatar_path))
-	dialog.add_child(restore_btn)
-
-	var discard_btn = Button.new()
-	discard_btn.text = "Discard"
-	discard_btn.position = Vector2(20, 38)
-	discard_btn.size = Vector2(160, 28)
-	discard_btn.pressed.connect(func(): _on_session_recovery_choice(false, last_avatar_path))
-	dialog.add_child(discard_btn)
-
-	$UILayer.add_child(dialog)
-	_session_recovery_dialog = dialog
-
-func _on_session_recovery_choice(restore: bool, last_avatar_path: String):
-	if _session_recovery_dialog != null and is_instance_valid(_session_recovery_dialog):
-		_session_recovery_dialog.queue_free()
-		_session_recovery_dialog = null
-	if restore:
-		_on_load_dialog_file_selected(SESSION_SAVE_PATH)
-		# Keep the session file in place: the user's next manual save will
-		# clear it, and crashing again before that should still recover.
-	else:
-		_discard_session_file()
-		if last_avatar_path != "" and FileAccess.file_exists(last_avatar_path):
-			_on_load_dialog_file_selected(last_avatar_path)
-
-# Visible save-success toast on UILayer that lingers ~2 seconds, fades out
-# over half a second, and dismisses on click. More prominent than the
-# transient pushUpdate notification.
-func _show_save_confirmation(filename: String):
-	var dialog = Node2D.new()
-	dialog.z_index = 100
-	dialog.position = get_viewport().get_visible_rect().size * 0.5
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-200, -32)
-	bg.size = Vector2(400, 64)
-	bg.color = Color(0.13, 0.16, 0.13, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_STOP
-	bg.gui_input.connect(func(event):
-		if event is InputEventMouseButton and event.pressed:
-			dialog.queue_free()
-	)
-	dialog.add_child(bg)
-
-	var label = Label.new()
-	label.position = Vector2(-190, -22)
-	label.size = Vector2(380, 44)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.text = "✓ Saved: " + filename
-	label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.75))
-	label.add_theme_font_size_override("font_size", 14)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(label)
-
-	$UILayer.add_child(dialog)
-
-	# Hold 2s, fade out 0.5s, free. Tween is bound to the dialog so it
-	# auto-dies if the user clicks-to-dismiss earlier.
-	var tween = dialog.create_tween()
-	tween.tween_interval(2.0)
-	tween.tween_property(dialog, "modulate:a", 0.0, 0.5)
-	tween.tween_callback(dialog.queue_free)
 
 func _on_link_button_pressed():
 	Global.reparentMode = true

@@ -1,13 +1,13 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — Phase 2 runtime-service completion
+> Updated: 2026-08-06 — Phase 3 main-scene decomposition completion
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–2 are complete. Phase 3 (main scene decomposition) is next.
+Progress: Phases 0–3 are complete. Phase 4 (sprite domain behavior) is next.
 Completed phases remain covered by the cumulative test and performance gates.
 
 ## Phase 0 — Baseline and safety rails
@@ -40,6 +40,12 @@ Completed phases remain covered by the cumulative test and performance gates.
 - Extract avatar lifecycle, import orchestration, viewport/window behavior,
   editing commands, and file workflows one responsibility at a time.
 - Add integration tests around each extracted boundary before moving the next.
+
+> Completed: 2026-08-06 — Capture/FFmpeg, viewport/window, and
+> save/session-recovery lifecycles now live in injected, independently testable
+> controllers. `main.gd` fell from roughly 2,900 to 2,037 lines while preserving
+> its scene-signal interface. The test harness now treats isolated Godot script
+> errors as failures as well as checking the production recovery import.
 
 ## Phase 4 — Sprite domain behavior
 

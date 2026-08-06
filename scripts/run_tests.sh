@@ -15,10 +15,11 @@ case "$ENGINE_VERSION" in
 esac
 
 IMPORT_LOG="$(mktemp -t pngtuberplus-import.XXXXXX)"
+TEST_LOG="$(mktemp -t pngtuberplus-test.XXXXXX)"
 TEST_WORKSPACE="$(mktemp -d -t pngtuberplus-tests.XXXXXX)"
 
 cleanup() {
-	rm -f "$IMPORT_LOG"
+	rm -f "$IMPORT_LOG" "$TEST_LOG"
 	if [[ -n "$TEST_WORKSPACE" && -d "$TEST_WORKSPACE" ]]; then
 		rm -rf "$TEST_WORKSPACE"
 	fi
@@ -35,8 +36,14 @@ cp "$PROJECT_ROOT/tests/test_project.godot" "$TEST_WORKSPACE/project.godot"
 cp -R "$PROJECT_ROOT/tests" "$TEST_WORKSPACE/tests"
 cp -R "$PROJECT_ROOT/effects" "$TEST_WORKSPACE/effects"
 cp -R "$PROJECT_ROOT/autoload" "$TEST_WORKSPACE/autoload"
+mkdir -p "$TEST_WORKSPACE/main_scenes"
+cp -R "$PROJECT_ROOT/main_scenes/controllers" "$TEST_WORKSPACE/main_scenes/controllers"
 mkdir -p "$TEST_WORKSPACE/test"
 cp "$PROJECT_ROOT/test/testBody.png" "$TEST_WORKSPACE/test/testBody.png"
 
 "$GODOT_EXECUTABLE" --headless --path "$TEST_WORKSPACE" \
-	--script res://tests/test_runner.gd -- --source-root="$PROJECT_ROOT"
+	--script res://tests/test_runner.gd -- --source-root="$PROJECT_ROOT" 2>&1 | tee "$TEST_LOG"
+if grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script" "$TEST_LOG" >/dev/null; then
+	echo "Godot reported an error during the isolated test run." >&2
+	exit 1
+fi

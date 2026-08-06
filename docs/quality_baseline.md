@@ -80,6 +80,16 @@ ceiling is 1,000 ms to catch accidental per-frame algorithmic regressions on
 slower CI hardware. The cumulative 100-layer animation result remained at
 3.45 µs/layer-frame in the same run.
 
+## Phase 3 measurement
+
+Main-scene decomposition does not add work to the avatar animation hot path.
+After extraction, the cumulative gate measured 3.23 µs/layer-frame for 100
+layers, 547.71 ms for 100 validations of a 100-layer avatar, 40.05 ms for
+100,000 runtime-service updates, 52.56 ms for 100 serialization passes, and
+19.04 ms for 25 image-geometry builds. All smoke budgets passed. Controller
+contracts add coverage for FFmpeg arguments, capture cleanup, zoom limits,
+session recovery selection, and PNG worker encoding.
+
 ## Known third-party limitation
 
 godot-ndi v1.2.6 has an upstream macOS shutdown crash that reproduces merely by

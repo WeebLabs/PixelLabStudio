@@ -1,6 +1,6 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-08-06 — Godot 4.6 baseline, automated quality gates, and dependency cleanup
+> Last updated: 2026-08-06 — Phase 3 main-scene controller boundaries
 
 ## Overview
 
@@ -20,7 +20,11 @@ The app has two primary modes:
 ```
 PNGTuberPlus/
 ├── main_scenes/           Main scene, edit controls, control panel
-│   ├── main.tscn / main.gd       Entry point and orchestrator (~28 KB)
+│   ├── main.tscn / main.gd       Entry point and scene coordinator
+│   ├── controllers/               Explicit main-scene lifecycle boundaries
+│   │   ├── capture_controller.gd  Screenshot, recording, FFmpeg ownership
+│   │   ├── save_controller.gd     Save dialogs, workers, session recovery
+│   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
 │   ├── EditControls.gd            Top menu bar (edit mode)
 │   ├── ControlPanel.gd            Right-side streaming panel (view mode)
 │   ├── Tutorial.gd                First-run tutorial overlay
@@ -134,6 +138,19 @@ Key child nodes:
 - `Lines` — origin crosshair drawing
 - `PushUpdates` — floating notification system
 - Various file dialog nodes
+
+> Updated: 2026-08-06 — `main.gd` is the compatibility-facing scene
+> coordinator and delegates three independent lifecycles under
+> `main_scenes/controllers/`. `CaptureController` owns screenshots, recording
+> viewports/files, FFmpeg discovery/arguments/progress, and deterministic
+> cleanup. `ViewportController` owns resize settling, camera pan/zoom,
+> selection-shadow following, window transparency, and edit/view layout.
+> `AvatarSaveController` owns native save/load dialogs, manual and session-save
+> threads, recovery selection, and save confirmation. Each controller receives
+> `main`, `Global`, and `Saving` explicitly in `setup()` rather than resolving
+> autoloads internally. Existing scene-signal method names remain as thin
+> wrappers on `main.gd`. Pure format, zoom-boundary, recovery-policy, and image
+> encoding contracts live in `tests/unit/test_main_controllers.gd`.
 
 ---
 
@@ -274,6 +291,13 @@ for avatar-level metadata. A root entry is treated as a layer only when it is a
 validated dictionary with `type == "sprite"`. Current schema migration and
 atomic round-trip/recovery cases are fixture-tested in
 `tests/unit/test_persistence.gd`.
+
+> Updated: 2026-08-06 — Save execution is coordinated by
+> `main_scenes/controllers/save_controller.gd`. It serializes the scene snapshot
+> supplied by `main.gd`, owns both worker threads, joins them on shutdown, and
+> keeps manual-save and recovery-copy writes mutually exclusive. The controller
+> also owns the native file dialogs and the timestamp policy deciding whether a
+> newer `user://session.pngtp` should be offered for recovery.
 
 ### PSD Import (`psd_parser.gd`)
 
