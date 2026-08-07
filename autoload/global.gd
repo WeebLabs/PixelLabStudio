@@ -524,25 +524,30 @@ func _input(event):
 		if event.is_action_pressed("scrollDown"):
 			_scroll_input -= 1
 
-# True while the cursor is over the editing chrome (left/right sidebar or the
-# top menu bar) in edit mode. Screen-space bounds are used because the sidebar
+# True while the cursor is over application chrome rather than the canvas: the
+# left/right sidebars and top menu bar in edit mode, the revealed portion of the
+# menu bar in viewer mode. Screen-space bounds are used because the panel
 # backgrounds are MOUSE_FILTER_IGNORE, so gui_get_hovered_control() reads null
 # over their blank areas. Shared by the zoom guard, the Ctrl+scroll slider
 # nudge, and the sprite-cycle scroll accumulator. Bounds match mouse_cursor.gd.
 func isMouseOverSidebar() -> bool:
-	if main == null or not main.editMode:
+	if main == null:
 		return false
 	var vp = get_viewport()
 	if vp == null:
 		return false
 	var left_width := -1.0 if spriteEdit == null else float(spriteEdit.panel_width)
 	var right_width := -1.0 if spriteList == null else float(spriteList.panel_width)
-	return SidebarUIFactory.is_over_editor_chrome(
+	return SidebarUIFactory.is_over_app_chrome(
 		vp.get_mouse_position(),
 		vp.get_visible_rect().size,
 		main.editMode,
 		left_width,
 		right_width,
+		SidebarUIFactory.MENU_BAR_HEIGHT,
+		SidebarUIFactory.LEFT_CHROME_PADDING,
+		SidebarUIFactory.RIGHT_CHROME_PADDING,
+		main.controlPanel.chrome_height(),
 	)
 
 # Walk up from the control under the cursor to the nearest Range (HSlider /

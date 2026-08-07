@@ -713,7 +713,7 @@ func _apply_size():
 	var s = get_viewport().get_visible_rect().size
 	panel_height = s.y
 	# Clamp bg top to menu bar bottom so it never overlaps the menu bar
-	var menu_bar_bottom = 28  # MENU_BAR_HEIGHT
+	var menu_bar_bottom = SidebarUIFactory.MENU_BAR_HEIGHT
 	var bg_top = max(round(position.y) - 2, menu_bar_bottom)
 	_bg.position = Vector2(-19, bg_top - round(position.y))
 	_bg.size = Vector2(panel_width + 19, round(s.y) - bg_top)

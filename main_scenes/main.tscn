@@ -2,24 +2,10 @@
 
 [ext_resource type="Script" uid="uid://dy05dyqxmh3jp" path="res://main_scenes/main.gd" id="1_06alx"]
 [ext_resource type="Script" uid="uid://ci5xh7bjnxlgx" path="res://main_scenes/ControlPanel.gd" id="4_5ygs2"]
-[ext_resource type="Texture2D" uid="uid://goff8ioh380e" path="res://ui_scenes/button sprites/buttonBack.png" id="4_xenui"]
-[ext_resource type="Texture2D" uid="uid://da4jthat2oas4" path="res://ui_scenes/button sprites/fancy.png" id="5_75a7k"]
-[ext_resource type="Texture2D" uid="uid://djf1mbv36vr68" path="res://ui_scenes/microphoneSelect/micButtong.png" id="5_fo0ai"]
 [ext_resource type="Script" uid="uid://c58m8rs83skjj" path="res://main_scenes/originLineDrawing.gd" id="7_2u7em"]
-[ext_resource type="Texture2D" uid="uid://cg3nqowbcixpy" path="res://ui_scenes/volume/barOver.png" id="7_ldv55"]
-[ext_resource type="Texture2D" uid="uid://cpwoby3dan2qc" path="res://ui_scenes/settings/settingsWheel.png" id="7_prm87"]
-[ext_resource type="Texture2D" uid="uid://7277tveyaer1" path="res://ui_scenes/volume/bar.png" id="8_8ojw0"]
 [ext_resource type="PackedScene" uid="uid://fxku5nddarp8" path="res://ui_scenes/mouse/mouse_cursor.tscn" id="8_fd33p"]
-[ext_resource type="Texture2D" uid="uid://b3f8r3fwq3eiq" path="res://ui_scenes/volume/bar2.png" id="9_7p50a"]
 [ext_resource type="PackedScene" uid="uid://d3anahesvdgfh" path="res://ui_scenes/spriteEditMenu/sprite_viewer.tscn" id="9_uqv8p"]
-[ext_resource type="Script" uid="uid://b08l0ydhexb3p" path="res://ui_scenes/VolumeBar.gd" id="10_2pg0e"]
-[ext_resource type="Texture2D" uid="uid://b38tt6dnu05w4" path="res://ui_scenes/volume/bar3.png" id="11_u7d58"]
-[ext_resource type="Script" uid="uid://coahrejufundn" path="res://ui_scenes/volume/Sensitive.gd" id="12_lhsja"]
-[ext_resource type="Texture2D" uid="uid://dktyrgbundggq" path="res://ui_scenes/volume/slider.png" id="13_fvncv"]
-[ext_resource type="Texture2D" uid="uid://dcsvrpj5f5bfv" path="res://ui_scenes/button sprites/links.png" id="13_opm22"]
 [ext_resource type="FontFile" uid="uid://ukj8gv8ucqsg" path="res://font/goober_pixel.ttf" id="14_62jp4"]
-[ext_resource type="Script" uid="uid://b1r8djldgl7lx" path="res://ui_scenes/volume/volumeSlider.gd" id="14_claq4"]
-[ext_resource type="Script" uid="uid://dmubhr5y2asfc" path="res://ui_scenes/volume/sensitiveSlider.gd" id="15_jtkeq"]
 [ext_resource type="Script" uid="uid://bkf1ss18rhnew" path="res://main_scenes/EditControls.gd" id="17_bf1ic"]
 [ext_resource type="PackedScene" uid="uid://6ah4i0nx1tu6" path="res://ui_scenes/spriteEditMenu/chain.tscn" id="19_mt1os"]
 [ext_resource type="Texture2D" uid="uid://hunniqiw3ss4" path="res://ui_scenes/spriteEditMenu/failed.png" id="21_6nw1o"]
@@ -65,22 +51,6 @@ Button/styles/hover = SubResource("StyleBoxFlat_1dvnl")
 Button/styles/normal = SubResource("StyleBoxFlat_1dvnl")
 Button/styles/pressed = SubResource("StyleBoxFlat_1dvnl")
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_k8mk1"]
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_o06gb"]
-
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_yi3nu"]
-
-[sub_resource type="Theme" id="Theme_ske31"]
-HSlider/constants/grabber_offset = -5
-HSlider/icons/grabber = ExtResource("13_fvncv")
-HSlider/icons/grabber_disabled = ExtResource("13_fvncv")
-HSlider/icons/grabber_highlight = ExtResource("13_fvncv")
-HSlider/icons/tick = null
-HSlider/styles/grabber_area = SubResource("StyleBoxEmpty_k8mk1")
-HSlider/styles/grabber_area_highlight = SubResource("StyleBoxEmpty_o06gb")
-HSlider/styles/slider = SubResource("StyleBoxEmpty_yi3nu")
-
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ebmai"]
 size = Vector2(4294, 1879)
 
@@ -109,13 +79,11 @@ position = Vector2(-200, -28)
 
 [node name="ControlPanel" type="Node2D" parent="UILayer" unique_id=782465269]
 z_index = 4090
-position = Vector2(720, 720)
 script = ExtResource("4_5ygs2")
 
 [node name="MicInputSelect" type="Node2D" parent="UILayer/ControlPanel" unique_id=1136518653]
 visible = false
 z_index = 4096
-position = Vector2(-313, -585)
 script = ExtResource("26_17y2u")
 
 [node name="ScrollContainer" type="ScrollContainer" parent="UILayer/ControlPanel/MicInputSelect" unique_id=70250809]
@@ -129,129 +97,9 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 alignment = 2
 
-[node name="MicButtong" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=1818907553]
-position = Vector2(-36, -79)
-texture = ExtResource("5_fo0ai")
-
-[node name="Button" type="Button" parent="UILayer/ControlPanel/MicButtong" unique_id=1599099737]
-offset_left = -13.0
-offset_top = -12.0
-offset_right = 14.0
-offset_bottom = 14.0
-theme = SubResource("Theme_rv56a")
-flat = true
-
-[node name="SettingsButton" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=946563311]
-position = Vector2(-35, -115)
-texture = ExtResource("7_prm87")
-
-[node name="settingsButtons" type="Button" parent="UILayer/ControlPanel/SettingsButton" unique_id=808985133]
-offset_left = -13.0
-offset_top = -12.0
-offset_right = 14.0
-offset_bottom = 14.0
-theme = SubResource("Theme_rv56a")
-flat = true
-
 [node name="SettingsMenu" parent="UILayer/ControlPanel" unique_id=2016009802 instance=ExtResource("25_a76ao")]
 visible = false
 z_index = 4096
-position = Vector2(-431, -560)
-
-[node name="Edit" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=2129510892]
-texture_repeat = 2
-position = Vector2(-36, -31)
-texture = ExtResource("4_xenui")
-
-[node name="Button" type="Button" parent="UILayer/ControlPanel/Edit" unique_id=577897996]
-offset_left = -23.0
-offset_top = -23.0
-offset_right = 23.0
-offset_bottom = 23.0
-theme = SubResource("Theme_rv56a")
-flat = true
-
-[node name="Fancy" type="Sprite2D" parent="UILayer/ControlPanel/Edit" unique_id=2032429614]
-texture = ExtResource("5_75a7k")
-hframes = 7
-
-[node name="VolumeBar" type="TextureProgressBar" parent="UILayer/ControlPanel" unique_id=859369317]
-offset_left = -584.0
-offset_top = -27.0
-offset_right = -72.0
-offset_bottom = -11.0
-max_value = 0.2
-step = 0.0
-value = 0.015
-fill_mode = 1
-texture_under = ExtResource("8_8ojw0")
-texture_over = ExtResource("7_ldv55")
-texture_progress = ExtResource("9_7p50a")
-script = ExtResource("10_2pg0e")
-
-[node name="Sensitive" type="TextureProgressBar" parent="UILayer/ControlPanel" unique_id=2133279502]
-offset_left = -584.0
-offset_top = -51.0
-offset_right = -72.0
-offset_bottom = -35.0
-max_value = 1.0
-step = 0.01
-value = 1.0
-fill_mode = 1
-texture_under = ExtResource("8_8ojw0")
-texture_over = ExtResource("7_ldv55")
-texture_progress = ExtResource("11_u7d58")
-script = ExtResource("12_lhsja")
-
-[node name="volumeSlider" type="HSlider" parent="UILayer/ControlPanel" unique_id=1257039098]
-offset_left = -595.0
-offset_top = -29.0
-offset_right = -62.0
-offset_bottom = 3.0
-theme = SubResource("Theme_ske31")
-max_value = 0.2
-step = 0.0
-value = 0.185
-script = ExtResource("14_claq4")
-
-[node name="sensitiveSlider" type="HSlider" parent="UILayer/ControlPanel" unique_id=1347925879]
-offset_left = -595.0
-offset_top = -53.0
-offset_right = -62.0
-offset_bottom = -21.0
-theme = SubResource("Theme_ske31")
-max_value = 1.0
-step = 0.0
-value = 0.25
-script = ExtResource("15_jtkeq")
-
-[node name="Links" type="Sprite2D" parent="UILayer/ControlPanel" unique_id=340814711]
-position = Vector2(-651, -34)
-texture = ExtResource("13_opm22")
-
-[node name="kofi" type="Button" parent="UILayer/ControlPanel/Links" unique_id=612111262]
-offset_left = -62.0
-offset_top = -28.0
-offset_right = -15.0
-offset_bottom = 27.0
-theme = SubResource("Theme_rv56a")
-flat = true
-
-[node name="twitter" type="Button" parent="UILayer/ControlPanel/Links" unique_id=1149933682]
-offset_left = -5.0
-offset_top = -29.0
-offset_right = 61.0
-offset_bottom = 27.0
-theme = SubResource("Theme_rv56a")
-flat = true
-
-[node name="ZoomLabel" type="Label" parent="UILayer/ControlPanel" unique_id=1194857406]
-offset_left = -340.0
-offset_top = -77.0
-offset_right = -74.0
-offset_bottom = -51.0
-text = "Zoom : 100%"
-horizontal_alignment = 2
 
 [node name="EditControls" type="Node2D" parent="UILayer" unique_id=1927357329]
 visible = false
@@ -420,11 +268,6 @@ position = Vector2(360, 360)
 modulate = Color(0, 0, 0, 0.478431)
 z_index = -4096
 
-[connection signal="pressed" from="UILayer/ControlPanel/MicButtong/Button" to="." method="_on_button_pressed"]
-[connection signal="pressed" from="UILayer/ControlPanel/SettingsButton/settingsButtons" to="." method="_on_settings_buttons_pressed"]
-[connection signal="pressed" from="UILayer/ControlPanel/Edit/Button" to="." method="swapMode"]
-[connection signal="pressed" from="UILayer/ControlPanel/Links/kofi" to="." method="_on_kofi_pressed"]
-[connection signal="pressed" from="UILayer/ControlPanel/Links/twitter" to="." method="_on_twitter_pressed"]
 [connection signal="pressed" from="UILayer/Tutorial/Info/Button" to="UILayer/Tutorial" method="_on_button_pressed"]
 [connection signal="import_cancelled" from="PSDImportDialog" to="." method="_on_psd_import_cancelled"]
 [connection signal="import_confirmed" from="PSDImportDialog" to="." method="_on_psd_import_confirmed"]

@@ -51,8 +51,9 @@ func window_size_changed() -> void:
 	_main.lines.position = viewport_size * 0.5
 	_main.lines.drawLine()
 	_main.camera.position = _main.origin.position + _pan_offset
-	_main.controlPanel.position = viewport_size
-	_main.tutorial.position = _main.controlPanel.position
+	# The viewer control panel sizes itself from the viewport and needs no
+	# repositioning; the tutorial card is still pinned to the corner by hand.
+	_main.tutorial.position = viewport_size
 	_main.spriteList.position.y = _main.editControls.MENU_BAR_HEIGHT + 2
 	_main.spriteList._apply_size()
 	_main.pushUpdates.position = Vector2(0, viewport_size.y)
@@ -84,10 +85,9 @@ func swap_mode() -> void:
 	_global.pushUpdate("Toggled editing mode.")
 	update_window_transparency()
 	_main.editControls.set_process(_main.editMode)
-	_main.controlPanel.set_process(not _main.editMode)
 	_main.editControls.visible = _main.editMode
 	_main.tutorial.visible = _main.editMode
-	_main.controlPanel.visible = not _main.editMode
+	_main.controlPanel.set_active(not _main.editMode)
 	_main.lines.visible = _main.editMode
 	_main.spriteList.visible = _main.editMode
 	_main.viewerArrows.visible = _main.editMode
@@ -131,15 +131,12 @@ func _update_zoom_input() -> void:
 				_main.camera.zoom += ZOOM_STEP * float(downward_scale - _scale_percent) / ZOOM_STEP_PERCENT
 				_scale_percent = downward_scale
 				_apply_zoom()
-	var zoom_label: Label = _main.get_node("UILayer/ControlPanel/ZoomLabel")
-	zoom_label.modulate.a = lerpf(zoom_label.modulate.a, 0.0, 0.02)
 
 
 func _apply_zoom() -> void:
 	_main.lines.scale = Vector2.ONE / _main.camera.zoom
-	var zoom_label: Label = _main.get_node("UILayer/ControlPanel/ZoomLabel")
-	zoom_label.modulate.a = 6.0
-	zoom_label.text = "Zoom : %d%%" % _scale_percent
+	# The readout owns its own fade; this just says what to show.
+	_main.controlPanel.show_zoom(_scale_percent)
 	_global.pushUpdate("Set zoom to %d%%" % _scale_percent)
 	window_size_changed()
 

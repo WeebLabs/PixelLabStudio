@@ -157,7 +157,7 @@ Key child nodes:
 - `OriginMotion/Origin` — root container for all sprites; bounces vertically on speech
 - `Camera2D` — main viewport camera (zoom 10%-400%, middle-mouse pan)
 - `EditControls` — top menu bar in edit mode
-- `ControlPanel` — right-side streaming controls in view mode
+- `ControlPanel` — viewer mode's top menu bar, plus its popups and zoom readout
 - `SpriteViewer` — left sidebar sprite editor (child of EditControls)
 - `SpriteList` — right sidebar layer tree
 - `Lines` — origin crosshair drawing
@@ -220,6 +220,73 @@ Key child nodes:
 
 ---
 
+## Menu Bar (both modes)
+
+> Added: 2026-08-07 — Viewer mode rebuilt as a constructed layout on a shared menu bar.
+
+Both modes draw their top bar from one component, `ui_scenes/common/menu_bar.gd`
+(`class_name AppMenuBar extends Control`; the name is prefixed because Godot 4
+already ships a native `MenuBar`). Chrome, item styling, resize behaviour and
+popup placement live there once, so the two bars cannot drift apart.
+
+**Layout is constructed, not placed.** The bar is a full-width row holding three
+container zones separated by expanding spacers:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ left zone      ←spacer→   center zone   ←spacer→   right zone│  28px
+└──────────────────────────────────────────────────────────────┘
+```
+
+A bar that uses only the center zone renders as one centered strip, which is how
+edit mode reproduces its historical look. Viewer mode zones it: actions left,
+mic controls center, status right.
+
+- **Edit bar** (`main_scenes/EditControls.gd`): `Exit | Import Duplicate Replace | Save Load | Clear Reset`, all in the center zone. The file now only declares items; it owns no styling.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Edit | Mic Settings` left; `Duration` and `Level` mic meters center; NDI status right.
+
+**Item factories** are the only supported way to put something on a bar:
+`add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`.
+`set_button_tone` / `set_button_enabled` restyle in place.
+
+**Sizing gotcha.** A `Control` parented to a `Node2D` inherits a zero-sized
+anchorable rect, so anchors collapse it to its minimum width. The bar therefore
+sets its own `size` from the viewport in `_fit_to_viewport()` (reconnected to
+`Window.size_changed`) and positions itself directly. Its children anchor
+normally, because their parent is a `Control`.
+
+### Auto-reveal (viewer mode only)
+
+The viewer bar hides off the top edge and slides in while the cursor is near the
+top of the window. `configure_auto_reveal(true)` arms it; the edit bar stays
+pinned. Tunables are constants at the top of `menu_bar.gd`:
+
+| Constant | Meaning |
+|---|---|
+| `REVEAL_BAND_RATIO` (0.125) | fraction of window height that summons the bar |
+| `HIDE_BAND_RATIO` (0.180) | fraction the cursor must leave to dismiss it |
+| `BAND_MIN_PX` / `BAND_MAX_PX` | clamp, so the band works on both a tall desktop window and a small avatar window |
+| `SLIDE_SPEED` | reveal/conceal rate |
+
+The hide band is the larger of the two, so the bar cannot flicker on the
+boundary. The slide is a `_reveal` float advanced per frame (not a `Tween`), so
+re-entering mid-conceal reverses smoothly. `set_pin(key, bool)` holds the bar
+open while a popup is open or a slider is being dragged, when the cursor is
+legitimately outside the band. Pure helpers `reveal_band()` and `should_reveal()`
+are unit tested in `tests/unit/test_ui_components.gd`.
+
+`revealed_height()` feeds canvas hit-testing, so a concealed bar never steals
+clicks from the avatar (see Click-to-Select → Panel click-through guard).
+
+### Popups
+
+`anchor_popup(item, popup, size)` hangs a bar-owned popup from the item that
+opens it, clamped to the viewport. The settings menu and mic device list are
+still their original scenes; only their placement moved here, so a later popup
+redesign has one seam to work against rather than scattered literals.
+
+---
+
 ## Click-to-Select Architecture
 
 Selection in edit mode flows through these components:
@@ -248,6 +315,8 @@ Interactive controls (buttons, sliders, scroll containers) keep the default `MOU
 > Updated: 2026-06-12. Never select avatar elements behind a sidebar.
 
 Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas click over a panel still reaches `mouse_cursor.gd` and runs the physics pick. `mouse_cursor.gd:_is_over_panel()` is the screen-space guard that rejects those clicks: the pick is applied via `Global.select()` only when `!_is_over_panel()`. Previously the guard also let the click through whenever an opaque sprite sat behind the panel, so clicking blank sidebar space (or the gaps between layer-list rows) could select the element behind it; it now blocks unconditionally while over a panel. Both sidebars are always present in edit mode (the left SpriteViewer dims to 35% but stays visible when nothing is selected; the right SpriteList tracks `editMode`) and selection runs only in edit mode, so the guard does not gate on per-panel visibility. Bounds use each panel's live `panel_width`, so they track sidebar resizing.
+
+> Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
 ### Auto-scroll sprite list on selection
 

@@ -1,6 +1,7 @@
 extends RefCounted
 
 const SidebarComponent = preload("res://ui_scenes/common/sidebar_ui.gd")
+const MenuBarComponent = preload("res://ui_scenes/common/menu_bar.gd")
 
 
 func run(t) -> void:
@@ -9,6 +10,7 @@ func run(t) -> void:
 	_test_resize_edge_contract(t)
 	_test_editor_chrome_contract(t)
 	_test_slider_theme_contract(t)
+	_test_menu_bar_reveal_contract(t)
 	_test_sidebar_call_sites(t)
 
 
@@ -38,11 +40,54 @@ func _test_resize_edge_contract(t) -> void:
 
 func _test_editor_chrome_contract(t) -> void:
 	var viewport_size := Vector2(1280, 720)
-	t.assert_true(SidebarComponent.is_over_editor_chrome(Vector2(600, 10), viewport_size, true, 265, 310), "top menu blocks canvas interaction")
-	t.assert_true(SidebarComponent.is_over_editor_chrome(Vector2(100, 300), viewport_size, true, 265, 310), "left sidebar blocks canvas interaction")
-	t.assert_true(SidebarComponent.is_over_editor_chrome(Vector2(1100, 300), viewport_size, true, 265, 310), "right sidebar blocks canvas interaction")
-	t.assert_false(SidebarComponent.is_over_editor_chrome(Vector2(600, 300), viewport_size, true, 265, 310), "open canvas remains interactive")
-	t.assert_false(SidebarComponent.is_over_editor_chrome(Vector2(100, 300), viewport_size, false, 265, 310), "editor chrome guard is inactive in view mode")
+	t.assert_true(SidebarComponent.is_over_app_chrome(Vector2(600, 10), viewport_size, true, 265, 310), "top menu blocks canvas interaction")
+	t.assert_true(SidebarComponent.is_over_app_chrome(Vector2(100, 300), viewport_size, true, 265, 310), "left sidebar blocks canvas interaction")
+	t.assert_true(SidebarComponent.is_over_app_chrome(Vector2(1100, 300), viewport_size, true, 265, 310), "right sidebar blocks canvas interaction")
+	t.assert_false(SidebarComponent.is_over_app_chrome(Vector2(600, 300), viewport_size, true, 265, 310), "open canvas remains interactive")
+	t.assert_false(SidebarComponent.is_over_app_chrome(Vector2(100, 300), viewport_size, false, 265, 310), "sidebar bounds are inactive in view mode")
+
+	# Viewer mode: only the part of the menu bar that has slid into view blocks
+	# the canvas, so a concealed bar never steals clicks from the avatar.
+	var defaults := [
+		SidebarComponent.MENU_BAR_HEIGHT,
+		SidebarComponent.LEFT_CHROME_PADDING,
+		SidebarComponent.RIGHT_CHROME_PADDING,
+	]
+	t.assert_false(
+		SidebarComponent.is_over_app_chrome(Vector2(600, 10), viewport_size, false, 265, 310, defaults[0], defaults[1], defaults[2], 0.0),
+		"a concealed viewer bar leaves the canvas interactive",
+	)
+	t.assert_true(
+		SidebarComponent.is_over_app_chrome(Vector2(600, 10), viewport_size, false, 265, 310, defaults[0], defaults[1], defaults[2], 28.0),
+		"a revealed viewer bar blocks canvas interaction",
+	)
+	t.assert_false(
+		SidebarComponent.is_over_app_chrome(Vector2(600, 20), viewport_size, false, 265, 310, defaults[0], defaults[1], defaults[2], 14.0),
+		"a half-revealed viewer bar only blocks as far as it has slid in",
+	)
+
+
+func _test_menu_bar_reveal_contract(t) -> void:
+	# The reveal band is a fraction of window height, clamped so it stays usable
+	# on both a tall desktop window and a small avatar window.
+	t.assert_approx(MenuBarComponent.reveal_band(1080, MenuBarComponent.REVEAL_BAND_RATIO), 135.0, 0.001, "the reveal band follows window height")
+	t.assert_approx(MenuBarComponent.reveal_band(240, MenuBarComponent.REVEAL_BAND_RATIO), MenuBarComponent.BAND_MIN_PX, 0.001, "the reveal band has a floor on short windows")
+	t.assert_approx(MenuBarComponent.reveal_band(2160, MenuBarComponent.REVEAL_BAND_RATIO), MenuBarComponent.BAND_MAX_PX, 0.001, "the reveal band has a ceiling on tall windows")
+	t.assert_true(
+		MenuBarComponent.HIDE_BAND_RATIO > MenuBarComponent.REVEAL_BAND_RATIO,
+		"the bar is dismissed further out than it is summoned",
+	)
+
+	# Hysteresis: the same cursor position holds a revealed bar open but is not
+	# close enough to summon a concealed one.
+	var height := 720.0
+	var between := (MenuBarComponent.reveal_band(height, MenuBarComponent.REVEAL_BAND_RATIO)
+		+ MenuBarComponent.reveal_band(height, MenuBarComponent.HIDE_BAND_RATIO)) * 0.5
+	t.assert_false(MenuBarComponent.should_reveal(false, true, between, height), "a concealed bar needs the tighter band")
+	t.assert_true(MenuBarComponent.should_reveal(true, true, between, height), "a revealed bar keeps the wider band")
+	t.assert_true(MenuBarComponent.should_reveal(false, true, 4.0, height), "the top edge always summons the bar")
+	t.assert_false(MenuBarComponent.should_reveal(true, true, height - 10.0, height), "the far edge always dismisses the bar")
+	t.assert_false(MenuBarComponent.should_reveal(true, false, 4.0, height), "a cursor outside the window dismisses the bar")
 
 
 func _test_slider_theme_contract(t) -> void:
@@ -68,8 +113,23 @@ func _test_sidebar_call_sites(t) -> void:
 		t.assert_true(source.contains("SidebarUIFactory.create_slider_theme"), "each sidebar uses the shared slider resources")
 		t.assert_true(source.contains("SidebarUIFactory.clamp_panel_width"), "each sidebar uses the shared safe width clamp")
 		t.assert_false(source.contains("Image.create(16, 16"), "sidebars no longer duplicate grabber rasterization")
-	t.assert_true(global_source.contains("SidebarUIFactory.is_over_editor_chrome"), "global wheel routing uses the shared editor-chrome bounds")
-	t.assert_true(mouse_source.contains("Global.isMouseOverSidebar()"), "sprite selection uses the same editor-chrome guard as wheel routing")
+	t.assert_true(global_source.contains("SidebarUIFactory.is_over_app_chrome"), "global wheel routing uses the shared app-chrome bounds")
+	t.assert_true(mouse_source.contains("Global.isMouseOverSidebar()"), "sprite selection uses the same app-chrome guard as wheel routing")
+
+	# Both bars are built from the shared component, and neither hand-styles its
+	# own chrome. This is what stops the two modes drifting apart again.
+	var edit_bar_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/EditControls.gd"))
+	var viewer_bar_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/ControlPanel.gd"))
+	for source in [edit_bar_source, viewer_bar_source]:
+		t.assert_true(source.contains("AppMenuBar.new()"), "each mode builds its bar from the shared menu bar")
+		t.assert_true(source.contains("menu_bar.add_button"), "each mode adds bar items through the shared factory")
+		t.assert_false(source.contains("StyleBoxEmpty.new()"), "neither bar re-styles chrome the component already owns")
+		t.assert_false(source.contains("ColorRect.new()"), "neither bar draws its own bar background")
+	t.assert_true(viewer_bar_source.contains("menu_bar.anchor_popup"), "viewer popups are placed through the one anchoring seam")
+	t.assert_false(
+		FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd")).contains("ControlPanel/"),
+		"main reaches viewer panel children through its API, not by node path",
+	)
 
 
 func _source_root() -> String:

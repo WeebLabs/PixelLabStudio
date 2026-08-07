@@ -24,14 +24,15 @@ var editMode = true
 
 @onready var lines = $Lines
 
-@onready var settingsMenu = $UILayer/ControlPanel/SettingsMenu
+# The viewer control panel owns the bar popups; main only borrows the settings
+# menu for its startup values and the costume-hotkey capture.
+@onready var settingsMenu = controlPanel.settings_menu
 
 @onready var pushUpdates = $UILayer/PushUpdates
 
 @onready var shadow = $shadowSprite
 
 var ndi_manager: Node = null
-var _ndi_label: Label = null
 
 var _light_gizmo: Node2D = null
 var _background_input_capture: Node = null
@@ -132,20 +133,10 @@ func _ready():
 
 	Global.connect("startSpeaking",onSpeak)
 
-	$UILayer/ControlPanel/MicButtong/Button.gui_input.connect(_on_mic_button_gui_input)
-
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
-	
-	$UILayer/ControlPanel/Links.visible = false
 
 	save_controller.startup_restore()
 	Saving.settings["newUser"] = false
-
-	if Saving.settings.has("volume"):
-		$UILayer/ControlPanel/volumeSlider.value = Saving.settings["volume"]
-	if Saving.settings.has("sense"):
-		$UILayer/ControlPanel/sensitiveSlider.value = Saving.settings["sense"]
-	_style_control_sliders()
 
 	if Saving.settings.has("windowSize"):
 		get_window().size = ValueCodec.vector2i_value(Saving.settings["windowSize"], Vector2i(1280, 720))
@@ -270,84 +261,12 @@ func _prewarm_blend_shader():
 	warm.queue_free()
 	bbc.queue_free()
 
-func _style_control_sliders():
-	# White circle grabber (20x20, radius ~8)
-	var sz = 20
-	var center = sz / 2
-	var radius_sq = 64  # 8*8
-	var grabber_img = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
-	grabber_img.fill(Color(0, 0, 0, 0))
-	for px in range(sz):
-		for py in range(sz):
-			var dx = px - center
-			var dy = py - center
-			if dx * dx + dy * dy <= radius_sq:
-				grabber_img.set_pixel(px, py, Color(1.0, 1.0, 1.0, 1.0))
-	var grabber_tex = ImageTexture.create_from_image(grabber_img)
-
-	for s in [$UILayer/ControlPanel/volumeSlider, $UILayer/ControlPanel/sensitiveSlider]:
-		s.add_theme_icon_override("grabber", grabber_tex)
-		s.add_theme_icon_override("grabber_highlight", grabber_tex)
-		s.add_theme_icon_override("grabber_disabled", grabber_tex)
-		s.add_theme_constant_override("grabber_offset", 0)
-		s.add_theme_constant_override("center_grabber", 1)
-
-	# Right-click resets to factory defaults from autoload/saving.gd
-	Global.make_slider_resettable($UILayer/ControlPanel/volumeSlider, 0.185)
-	Global.make_slider_resettable($UILayer/ControlPanel/sensitiveSlider, 0.25)
-
-	# Align sliders vertically with their meter bars, and inset horizontally by the
-	# grabber radius so the disc stops at each end of the bar instead of overshooting
-	$UILayer/ControlPanel/volumeSlider.offset_top = -40
-	$UILayer/ControlPanel/volumeSlider.offset_bottom = -8
-	$UILayer/ControlPanel/volumeSlider.offset_left = -574
-	$UILayer/ControlPanel/volumeSlider.offset_right = -82
-	$UILayer/ControlPanel/sensitiveSlider.offset_top = -64
-	$UILayer/ControlPanel/sensitiveSlider.offset_bottom = -32
-	$UILayer/ControlPanel/sensitiveSlider.offset_left = -574
-	$UILayer/ControlPanel/sensitiveSlider.offset_right = -82
-
-	# Replace level meter textures with clean shapes
-	var bar_w = 512
-	var bar_h = 8
-
-	var under_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
-	under_img.fill(Color(0.2, 0.2, 0.22))
-	var under_tex = ImageTexture.create_from_image(under_img)
-
-	var pink_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
-	pink_img.fill(Color(1.0, 0.7, 0.8))
-	var pink_tex = ImageTexture.create_from_image(pink_img)
-
-	var blue_img = Image.create(bar_w, bar_h, false, Image.FORMAT_RGBA8)
-	blue_img.fill(Color(0.55, 0.78, 1.0))
-	var blue_tex = ImageTexture.create_from_image(blue_img)
-
-	for bar in [$UILayer/ControlPanel/VolumeBar, $UILayer/ControlPanel/Sensitive]:
-		bar.texture_under = under_tex
-		bar.texture_over = null
-	$UILayer/ControlPanel/Sensitive.texture_progress = pink_tex
-	$UILayer/ControlPanel/VolumeBar.texture_progress = blue_tex
-
 func _init_ndi():
 	var NDIManagerScript = load("res://ndi/ndi_output_manager.gd")
 	ndi_manager = Node.new()
 	ndi_manager.set_script(NDIManagerScript)
 	ndi_manager.name = "NDIManager"
 	add_child(ndi_manager)
-
-	# NDI status label above settings icon
-	_ndi_label = Label.new()
-	_ndi_label.name = "NDILabel"
-	_ndi_label.text = "NDI\nON"
-	_ndi_label.add_theme_font_size_override("font_size", 11)
-	_ndi_label.add_theme_constant_override("line_spacing", -4)
-	_ndi_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4))
-	_ndi_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_ndi_label.position = Vector2(-52, -168)
-	_ndi_label.size = Vector2(34, 28)
-	_ndi_label.visible = false
-	controlPanel.add_child(_ndi_label)
 
 func _create_light_gizmo():
 	# Lighting test disabled
@@ -421,8 +340,8 @@ func _process(delta):
 	viewport_controller.process_frame()
 
 	# NDI status indicator
-	if _ndi_label != null and ndi_manager != null:
-		_ndi_label.visible = !editMode and ndi_manager.is_enabled()
+	if ndi_manager != null:
+		controlPanel.set_ndi_active(ndi_manager.is_enabled())
 
 func _unhandled_input(event):
 	viewport_controller.handle_unhandled_input(event)
@@ -457,6 +376,8 @@ func _notification(what):
 		SceneTree.NOTIFICATION_APPLICATION_FOCUS_IN:
 			if !editMode:
 				controlPanel.visible = true
+				# Come back concealed rather than mid-reveal at the last cursor position.
+				controlPanel.menu_bar.snap_hidden()
 			pushUpdates.visible = true
 		NOTIFICATION_WM_CLOSE_REQUEST:
 			if save_controller != null:
@@ -1347,16 +1268,6 @@ func _on_link_button_pressed():
 	Global.pushUpdate("Linking sprite...")
 
 
-func _on_kofi_pressed():
-	OS.shell_open("https://ko-fi.com/kaiakairos")
-	Global.pushUpdate("Support me on ko-fi!")
-
-
-func _on_twitter_pressed():
-	OS.shell_open("https://twitter.com/kaiakairos")
-	Global.pushUpdate("Follow me on twitter!")
-
-
 # --- Unified Replace Flow ---
 
 var _replace_dialog: FileDialog = null
@@ -1735,26 +1646,6 @@ func moveSpriteMenu(delta):
 	
 
 	
-#UNAMED BUT THIS IS THE MICROPHONE MENU BUTTON
-func _on_button_pressed():
-	$UILayer/ControlPanel/MicInputSelect.visible = !$UILayer/ControlPanel/MicInputSelect.visible
-	settingsMenu.visible = false
-
-func _on_mic_button_gui_input(event):
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		Global.micMuted = !Global.micMuted
-		if Global.micMuted:
-			$UILayer/ControlPanel/MicButtong.modulate = Color(1, 0.3, 0.3)
-			Global.pushUpdate("Microphone muted.")
-		else:
-			$UILayer/ControlPanel/MicButtong.modulate = Color(1, 1, 1)
-			Global.pushUpdate("Microphone unmuted.")
-
-
-func _on_settings_buttons_pressed():
-	settingsMenu.visible = !settingsMenu.visible
-
-
 func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
 	if Global._z_input_active:
 		return

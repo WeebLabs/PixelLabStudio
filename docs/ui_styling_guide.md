@@ -149,6 +149,43 @@ When `Global.heldSprite == null`:
 
 ---
 
+## Menu Bar (both modes)
+
+> Added: 2026-08-07 — `ui_scenes/common/menu_bar.gd` (`AppMenuBar`)
+
+The one top bar component. Edit mode and viewer mode both build from it, so bar
+styling is defined here and nowhere else. Do not hand-style bar items at the
+call site; add a factory to the component instead.
+
+- **Bar**: 28px (`SidebarUI.MENU_BAR_HEIGHT`, shared with the sidebar chrome bounds), `Color(0.15, 0.15, 0.15)`, `MOUSE_FILTER_IGNORE` background
+- **Zones**: left / center / right `HBoxContainer`s separated by `SIZE_EXPAND_FILL` spacers; 8px edge margin, 2px between items, 16px between groups
+
+### Bar Button
+```gdscript
+btn.flat = true
+btn.focus_mode = FOCUS_NONE
+btn.add_theme_font_size_override("font_size", 14)
+# StyleBoxEmpty with 6px left/right content margin on every state
+```
+| Role | Normal | Hover |
+|------|--------|-------|
+| Standard | `Color(0.75, 0.75, 0.8)` | `Color(1, 1, 1)` |
+| Danger (Exit, Clear) | `Color(0.9, 0.45, 0.5)` | `Color(1.0, 0.6, 0.65)` |
+| Disabled | `Color(0.35, 0.35, 0.4)` | same |
+
+Separator: a `|` Label, font size 14, `Color(0.4, 0.4, 0.45)`.
+Caption label (meter captions): font size 12, `Color(0.6, 0.6, 0.65)`.
+
+### Level Meter
+A live meter with a threshold marker riding on it: the bar shows the signal, the
+disc shows where it triggers. Built by `add_level_meter()`.
+
+- **Meter** (`ProgressBar`, `show_percentage = false`): 128x8, 3px corner radius. Track `Color(0.2, 0.2, 0.22)`; fill is per-control (mic Duration `Color(1.0, 0.7, 0.8)`, mic Level `Color(0.55, 0.78, 1.0)`)
+- **Marker** (`HSlider` overlaid): `StyleBoxEmpty` for `slider` / `grabber_area` / `grabber_area_highlight` so only the grabber shows; 16px white disc from `SidebarUI.circle_texture`; `center_grabber = 1`, `grabber_offset = 0`; inset by the grabber radius at each end so the disc stops at the meter ends
+- `scrollable = false` and a non-zero `step`, so the shared Ctrl+wheel nudge moves one step rather than the whole range
+
+---
+
 ## Opacity + Blend Strip
 
 > Added: 2026-06-04 — `ui_scenes/spriteList/blend_section.gd` (`BlendOpacitySection`)

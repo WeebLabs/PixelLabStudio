@@ -70,19 +70,35 @@ func _test_optimized_call_sites(t) -> void:
 	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
 	var row_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/sprite_list_object.gd"))
 	var list_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/viewer.gd"))
-	var volume_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/volume/volumeSlider.gd"))
-	var sensitivity_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/volume/sensitiveSlider.gd"))
+	var viewer_bar_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/ControlPanel.gd"))
 	var undo_source := FileAccess.get_file_as_string(source_root.path_join("autoload/undo_manager.gd"))
 	t.assert_true(main_source.contains("WorkerThreadPool.add_group_task(\n\t\t_precompute_import_layer"), "PSD preparation uses the bounded engine worker pool")
 	t.assert_false(main_source.contains("var threads: Array"), "PSD preparation no longer creates one OS thread per layer")
 	t.assert_true(row_source.contains("Global.is_eye_track_target(sprite.id)"), "layer rows share one indexed eye-target calculation")
 	t.assert_false(row_source.contains("get_nodes_in_group(\"saved\")"), "layer rows no longer perform quadratic tree scans every frame")
 	t.assert_true(list_source.contains("sprite_to_list_item"), "layer hierarchy rebuild indexes parent rows directly")
-	for slider_source in [volume_source, sensitivity_source]:
-		t.assert_true(slider_source.contains("value_changed.connect"), "stream sliders persist settings only when values change")
-		t.assert_false(slider_source.contains("func _process"), "stream sliders no longer write settings every frame")
+	# The mic threshold sliders live on the viewer menu bar. Its _process polls the
+	# live meters every frame, so the settings write must stay on value_changed.
+	t.assert_true(viewer_bar_source.contains("value_changed.connect"), "stream sliders persist settings only when values change")
+	t.assert_false(
+		_function_body(viewer_bar_source, "func _process").contains("Saving."),
+		"the viewer bar no longer writes settings every frame",
+	)
 	t.assert_true(undo_source.contains("if not live_ids.has(sprite_id)"), "undo image caches prune sprites no longer in the live rig")
 	t.assert_true(undo_source.contains("_normal_cache.erase(child.id)"), "undo normal-image cache releases cleared maps")
+
+# The body of a top-level function, for assertions about what runs per frame.
+func _function_body(source: String, signature: String) -> String:
+	var start := source.find(signature)
+	if start < 0:
+		return ""
+	var body := ""
+	for line in source.substr(start).split("\n").slice(1):
+		if not line.is_empty() and not line.begins_with("\t"):
+			break
+		body += line + "\n"
+	return body
+
 
 func _source_root() -> String:
 	for argument in OS.get_cmdline_user_args():
