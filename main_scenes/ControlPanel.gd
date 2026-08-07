@@ -12,6 +12,8 @@ extends Node2D
 # panel is placed through AppMenuBar.anchor_popup, the one seam for bar popups.
 
 
+const GEAR_ICON = preload("res://ui_scenes/settings/settingsWheel.png")
+
 const LEVEL_COLOR := Color(0.55, 0.78, 1.0)
 const DURATION_COLOR := Color(1.0, 0.7, 0.8)
 
@@ -58,7 +60,9 @@ func _build_actions() -> void:
 # switch.
 func _build_right_zone() -> void:
 	_build_mic_meters()
-	_settings_button = menu_bar.add_button(menu_bar.right, "Settings", _on_settings_pressed)
+	_settings_button = menu_bar.add_icon_button(
+		menu_bar.right, GEAR_ICON, "Settings", _on_settings_pressed
+	)
 
 
 # The two microphone controls are the same widget with different wiring, so they

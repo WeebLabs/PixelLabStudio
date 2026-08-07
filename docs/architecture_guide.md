@@ -251,7 +251,7 @@ Edit mode keeps its editing actions in the center and puts the mode switch in th
 left zone; the viewer bar uses all three.
 
 - **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then `Settings` right.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a gear icon for Settings, right.
 
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
@@ -278,7 +278,8 @@ left zone; the viewer bar uses all three.
 > item that yields, and the viewer bar nominates its mic-meter group.
 
 **Item factories** are the only supported way to put something on a bar:
-`add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`.
+`add_button`, `add_icon_button`, `add_separator`, `add_label`, `add_group`,
+`add_level_meter`.
 `set_button_tone` / `set_button_enabled` restyle in place.
 
 **Sizing gotcha.** A `Control` parented to a `Node2D` inherits a zero-sized

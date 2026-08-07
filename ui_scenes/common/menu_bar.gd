@@ -18,7 +18,8 @@ extends Control
 # without a single hard-coded coordinate.
 #
 # Everything that goes on a bar is produced by the item factories below
-# (`add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`).
+# (`add_button`, `add_icon_button`, `add_separator`, `add_label`, `add_group`,
+# `add_level_meter`).
 # That is deliberate: styling lives here once instead of at every call site.
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
@@ -31,6 +32,10 @@ const ITEM_SEPARATION := 2
 const GROUP_SEPARATION := 16
 const FONT_SIZE := 14
 const LABEL_FONT_SIZE := 12
+const ITEM_PADDING := 6.0
+# 16 logical px lands 1:1 on the 32px source art at 2x scaling, so bar icons
+# stay crisp on a Retina display instead of being resampled.
+const ICON_SIZE := 16.0
 
 const COLOR_NORMAL := SidebarUIFactory.TEXT_BODY
 const COLOR_HOVER := Color(1.0, 1.0, 1.0)
@@ -182,8 +187,8 @@ func add_button(zone: Container, label: String, callback: Callable, danger := fa
 	button.add_theme_constant_override("h_separation", 0)
 
 	var style := StyleBoxEmpty.new()
-	style.content_margin_left = 6
-	style.content_margin_right = 6
+	style.content_margin_left = ITEM_PADDING
+	style.content_margin_right = ITEM_PADDING
 	for state in ["normal", "hover", "pressed", "focus"]:
 		button.add_theme_stylebox_override(state, style)
 
@@ -194,6 +199,30 @@ func add_button(zone: Container, label: String, callback: Callable, danger := fa
 	if callback.is_valid():
 		button.pressed.connect(callback)
 	zone.add_child(button)
+	return button
+
+
+# An icon in place of a label, for items whose symbol is clearer than their name.
+# The artwork is expected to be a white silhouette: it is tinted with the same
+# tones as the text buttons, so icon and text items light up alike on hover. A
+# tooltip is required, since an icon alone does not say what it does.
+func add_icon_button(
+	zone: Container,
+	icon: Texture2D,
+	tooltip: String,
+	callback: Callable,
+) -> Button:
+	var button := add_button(zone, "", callback)
+	button.icon = icon
+	button.tooltip_text = tooltip
+	button.expand_icon = true
+	# The button's own padding sits outside the icon, so add it back or the
+	# artwork is squeezed into what is left of the minimum width.
+	button.custom_minimum_size = Vector2(ICON_SIZE + ITEM_PADDING * 2.0, ICON_SIZE)
+	# Project default is nearest-neighbour filtering, which frays a 32px glyph
+	# scaled down to bar height.
+	button.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	set_button_tone(button, button.get_meta("base_color"), button.get_meta("hover_color"))
 	return button
 
 
@@ -283,12 +312,14 @@ func add_level_meter(
 	return {"meter": meter, "slider": slider}
 
 
-# Recolor a button without rebuilding it (enable/disable, active states).
+# Recolor a button without rebuilding it (enable/disable, active states). Tones
+# the icon alongside the text, so a text item and an icon item respond to the
+# same states identically.
 func set_button_tone(button: Button, color: Color, hover_color: Color) -> void:
-	button.add_theme_color_override("font_color", color)
-	button.add_theme_color_override("font_hover_color", hover_color)
-	button.add_theme_color_override("font_pressed_color", hover_color)
-	button.add_theme_color_override("font_focus_color", color)
+	for state in ["font_color", "font_focus_color", "icon_normal_color", "icon_focus_color"]:
+		button.add_theme_color_override(state, color)
+	for state in ["font_hover_color", "font_pressed_color", "icon_hover_color", "icon_pressed_color"]:
+		button.add_theme_color_override(state, hover_color)
 
 
 func set_button_enabled(button: Button, enabled: bool) -> void:

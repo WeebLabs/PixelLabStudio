@@ -217,6 +217,22 @@ btn.add_theme_font_size_override("font_size", 14)
 | Danger (Exit, Clear) | `Color(0.9, 0.45, 0.5)` | `Color(1.0, 0.6, 0.65)` |
 | Disabled | `Color(0.35, 0.35, 0.4)` | same |
 
+### Bar Icon Button
+For items whose symbol reads faster than their name (the viewer bar's Settings
+gear). Artwork must be a **white silhouette** on transparency: it is tinted with
+the same tones as the text buttons, so icon and text items light up together.
+
+```gdscript
+button.icon = texture
+button.expand_icon = true
+button.tooltip_text = "Settings"          # required; an icon alone says nothing
+button.custom_minimum_size = Vector2(ICON_SIZE + ITEM_PADDING * 2, ICON_SIZE)
+button.texture_filter = TEXTURE_FILTER_LINEAR
+```
+- **ICON_SIZE**: 16px. Chosen so the 32px source art lands 1:1 at 2x scaling and stays crisp on Retina; the project default is nearest-neighbour, which frays a resampled glyph, hence the explicit linear filter.
+- The button's own padding sits **outside** the icon, so it must be added back into the minimum width or the artwork is squeezed into what is left.
+- `set_button_tone()` sets `icon_normal_color` / `icon_hover_color` alongside the font colours, so one call tones any bar item.
+
 Separator: a `|` Label, font size 14, `Color(0.4, 0.4, 0.45)`.
 Caption label (meter captions): font size 12, `Color(0.6, 0.6, 0.65)`.
 
