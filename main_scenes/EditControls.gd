@@ -7,7 +7,6 @@ extends Node2D
 const MENU_BAR_HEIGHT = AppMenuBar.BAR_HEIGHT
 
 var menu_bar: AppMenuBar = null
-var menu_buttons: Dictionary = {}
 var _duplicate_btn: Button = null
 var _duplicate_disabled := false
 
@@ -18,23 +17,13 @@ func _ready():
 	add_child(menu_bar)
 
 	var zone := menu_bar.center
-	_add("Exit", _on_exit, true)
+	menu_bar.add_button(zone, "Exit", _on_exit, true)
 	menu_bar.add_separator(zone)
-	_add("Import", _on_import)
-	_duplicate_btn = _add("Duplicate", _on_duplicate)
-	_add("Replace", _on_replace)
+	menu_bar.add_button(zone, "Import", _on_import)
+	_duplicate_btn = menu_bar.add_button(zone, "Duplicate", _on_duplicate)
+	menu_bar.add_button(zone, "Replace", _on_replace)
 	menu_bar.add_separator(zone)
-	_add("Save", _on_save)
-	_add("Load", _on_load)
-	menu_bar.add_separator(zone)
-	_add("Clear", _on_clear, true)
-	_add("Reset", _on_reset)
-
-
-func _add(label: String, callback: Callable, danger := false) -> Button:
-	var button := menu_bar.add_button(menu_bar.center, label, callback, danger)
-	menu_buttons[label] = button
-	return button
+	MenuActions.add_avatar_file_actions(menu_bar, zone)
 
 
 func _process(_delta):
@@ -49,10 +38,6 @@ func _on_exit(): Global.main.swapMode()
 func _on_import(): Global.main._on_import_button_pressed()
 func _on_replace(): Global.main._on_replace_button_pressed()
 func _on_duplicate(): Global.main._on_duplicate_button_pressed()
-func _on_save(): Global.main._on_save_button_pressed()
-func _on_load(): Global.main._on_load_button_pressed()
-func _on_clear(): Global.main._on_clear_avatar_pressed()
-func _on_reset(): Global.main._on_reset_avatar_pressed()
 
 
 func _notification(what):

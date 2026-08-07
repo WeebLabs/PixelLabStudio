@@ -243,7 +243,14 @@ edit mode reproduces its historical look. Viewer mode zones it: actions left,
 mic controls center, status right.
 
 - **Edit bar** (`main_scenes/EditControls.gd`): `Exit | Import Duplicate Replace | Save Load | Clear Reset`, all in the center zone. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Edit | Mic Settings` left; `Duration` and `Level` mic meters center; NDI status right.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Edit | Mic Settings | Save Load | Clear Reset` left; `Duration` and `Level` mic meters center; NDI status right.
+
+> Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
+> now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
+> (`main_scenes/menu_actions.gd`), declared once so the two modes cannot drift in
+> wording, order, grouping or wiring. On the viewer bar the group comes last in
+> the left zone, which keeps the destructive pair furthest from the frequently
+> pressed Edit button and puts it in the same relative position as in edit mode.
 
 **Item factories** are the only supported way to put something on a bar:
 `add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`.
@@ -254,6 +261,14 @@ anchorable rect, so anchors collapse it to its minimum width. The bar therefore
 sets its own `size` from the viewport in `_fit_to_viewport()` (reconnected to
 `Window.size_changed`) and positions itself directly. Its children anchor
 normally, because their parent is a `Control`.
+
+**Crowding.** An `HBoxContainer` gives no warning when its children no longer
+fit, so a narrow window would overlap the zones. `_apply_crowding()` hides the
+center zone when `center_fits()` says the three zones cannot sit side by side,
+and shows it again as soon as they can: actions stay reachable and status stays
+readable, and the mic meters are what yield. The test is independent of the
+center's own visibility, so it cannot oscillate. It re-runs on window resize and
+whenever a zone's minimum size changes.
 
 ### Auto-reveal (viewer mode only)
 

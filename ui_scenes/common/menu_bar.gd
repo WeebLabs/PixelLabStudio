@@ -95,6 +95,8 @@ func _ready() -> void:
 	center = _add_zone("Center", GROUP_SEPARATION)
 	_row.add_child(_new_spacer())
 	right = _add_zone("Right", GROUP_SEPARATION)
+	for zone in [left, center, right]:
+		zone.minimum_size_changed.connect(_apply_crowding)
 
 	get_window().size_changed.connect(_fit_to_viewport)
 	set_process(_auto_reveal)
@@ -117,6 +119,23 @@ func _fit_to_viewport() -> void:
 	size = Vector2(get_viewport().get_visible_rect().size.x, BAR_HEIGHT)
 	position.x = 0.0
 	_apply_reveal()
+	_apply_crowding()
+
+
+# A window narrower than the three zones combined would overlap them, and an
+# HBoxContainer gives no warning when it happens. The center zone is the one
+# that yields: actions stay reachable and status stays readable, and the center
+# comes back the moment there is room for it again. The test is independent of
+# the center's own visibility, so it cannot oscillate.
+func _apply_crowding() -> void:
+	if center == null or center.get_child_count() == 0:
+		return
+	center.visible = center_fits(
+		size.x,
+		left.get_combined_minimum_size().x,
+		center.get_combined_minimum_size().x,
+		right.get_combined_minimum_size().x,
+	)
 
 
 # --- Item factories ----------------------------------------------------------
@@ -324,6 +343,22 @@ func _apply_reveal() -> void:
 
 
 # --- Pure helpers (unit tested) -----------------------------------------------
+
+# Whether all three zones fit side by side, including the edge margins and the
+# gap each spacer needs to stay visible as a gap.
+static func center_fits(
+	bar_width: float,
+	left_width: float,
+	center_width: float,
+	right_width: float,
+) -> bool:
+	var required := (
+		left_width + center_width + right_width
+		+ EDGE_MARGIN * 2.0
+		+ GROUP_SEPARATION * 2.0
+	)
+	return bar_width >= required
+
 
 static func reveal_band(viewport_height: float, ratio: float) -> float:
 	return clampf(viewport_height * ratio, BAND_MIN_PX, BAND_MAX_PX)

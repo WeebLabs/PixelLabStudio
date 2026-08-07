@@ -11,6 +11,8 @@ func run(t) -> void:
 	_test_editor_chrome_contract(t)
 	_test_slider_theme_contract(t)
 	_test_menu_bar_reveal_contract(t)
+	_test_menu_bar_crowding_contract(t)
+	_test_shared_menu_actions(t)
 	_test_sidebar_call_sites(t)
 
 
@@ -90,6 +92,17 @@ func _test_menu_bar_reveal_contract(t) -> void:
 	t.assert_false(MenuBarComponent.should_reveal(true, false, 4.0, height), "a cursor outside the window dismisses the bar")
 
 
+func _test_menu_bar_crowding_contract(t) -> void:
+	# The centre zone yields when the three zones cannot sit side by side, so a
+	# narrow window drops the mic meters instead of overlapping the buttons.
+	t.assert_true(MenuBarComponent.center_fits(1280, 420, 400, 40), "a wide bar shows every zone")
+	t.assert_false(MenuBarComponent.center_fits(700, 420, 400, 40), "a narrow bar drops the centre zone")
+	t.assert_true(MenuBarComponent.center_fits(700, 200, 300, 40), "a narrow bar keeps a centre zone that still fits")
+	# The threshold accounts for the edge margins and both spacers, so zones that
+	# sum to exactly the bar width do not fit.
+	t.assert_false(MenuBarComponent.center_fits(600, 200, 360, 40), "zones summing to the full width leave no room for margins")
+
+
 func _test_slider_theme_contract(t) -> void:
 	var resources := SidebarComponent.create_slider_theme()
 	var slider := HSlider.new()
@@ -100,6 +113,22 @@ func _test_slider_theme_contract(t) -> void:
 	t.assert_equal(slider.get_theme_stylebox("grabber_area"), resources["fill_disabled"], "disabled sliders use the shared muted fill")
 	t.assert_equal(slider.get_theme_icon("grabber"), resources["grab_disabled"], "disabled sliders use the shared muted grabber")
 	slider.free()
+
+
+# Save / Load / Clear / Reset appear on both bars. They are declared once in
+# MenuActions so the two modes cannot drift in wording, order or wiring.
+func _test_shared_menu_actions(t) -> void:
+	var source_root := _source_root()
+	var actions := FileAccess.get_file_as_string(source_root.path_join("main_scenes/menu_actions.gd"))
+	for label in ["Save", "Load", "Clear", "Reset"]:
+		t.assert_true(actions.contains('"%s"' % label), "the shared file actions include %s" % label)
+	t.assert_true(actions.contains('"Clear", func(): Global.main._on_clear_avatar_pressed(), true'), "Clear is marked danger in the shared file actions")
+
+	for relative_path in ["main_scenes/EditControls.gd", "main_scenes/ControlPanel.gd"]:
+		var source := FileAccess.get_file_as_string(source_root.path_join(relative_path))
+		t.assert_true(source.contains("MenuActions.add_avatar_file_actions"), "%s takes its file actions from the shared list" % relative_path)
+		for label in ["Save", "Load", "Clear", "Reset"]:
+			t.assert_false(source.contains('"%s"' % label), "%s does not redeclare the %s item" % [relative_path, label])
 
 
 func _test_sidebar_call_sites(t) -> void:
