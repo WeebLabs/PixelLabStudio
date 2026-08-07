@@ -6,12 +6,26 @@ const SaveCoordinator = preload("res://main_scenes/controllers/save_controller.g
 
 
 func run(t) -> void:
+	_test_controller_scripts_compile(t)
 	_test_capture_format_contract(t)
 	_test_ffmpeg_argument_contract(t)
 	_test_viewport_zoom_contract(t)
 	_test_session_recovery_contract(t)
 	_test_save_image_encoding_contract(t)
 	_test_main_decomposition_contract(t)
+
+
+# A controller that fails to compile makes every later call in this suite error
+# on a null base, which drops the remaining assertions without failing the run.
+# The usual cause is a bare global class_name: the isolated test workspace has no
+# script class registry, so controllers must reach other scripts via preload.
+func _test_controller_scripts_compile(t) -> void:
+	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator]]:
+		var script: GDScript = entry[1]
+		t.assert_true(
+			script != null and script.can_instantiate(),
+			"%s controller compiles in the isolated test workspace" % entry[0],
+		)
 
 
 func _test_capture_format_contract(t) -> void:

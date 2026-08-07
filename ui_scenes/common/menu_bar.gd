@@ -18,16 +18,16 @@ const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 
 # --- Chrome -----------------------------------------------------------------
 const BAR_HEIGHT := SidebarUIFactory.MENU_BAR_HEIGHT
-const BAR_COLOR := Color(0.15, 0.15, 0.15)
+const BAR_COLOR := SidebarUIFactory.DEFAULT_PANEL_COLOR
 const EDGE_MARGIN := 8.0
 const ITEM_SEPARATION := 2
 const GROUP_SEPARATION := 16
 const FONT_SIZE := 14
 const LABEL_FONT_SIZE := 12
 
-const COLOR_NORMAL := Color(0.75, 0.75, 0.8)
+const COLOR_NORMAL := SidebarUIFactory.TEXT_BODY
 const COLOR_HOVER := Color(1.0, 1.0, 1.0)
-const COLOR_DISABLED := Color(0.35, 0.35, 0.4)
+const COLOR_DISABLED := SidebarUIFactory.TEXT_DISABLED
 const COLOR_DANGER := Color(0.9, 0.45, 0.5)
 const COLOR_DANGER_HOVER := Color(1.0, 0.6, 0.65)
 const COLOR_SEPARATOR := Color(0.4, 0.4, 0.45)

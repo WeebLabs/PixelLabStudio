@@ -6,6 +6,7 @@ const SpriteState = preload("res://autoload/domain/sprite_state.gd")
 const CaptureControllerScene = preload("res://main_scenes/controllers/capture_controller.gd")
 const ViewportControllerScene = preload("res://main_scenes/controllers/viewport_controller.gd")
 const SaveControllerScene = preload("res://main_scenes/controllers/save_controller.gd")
+const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 
 var editMode = true
 
@@ -448,7 +449,7 @@ func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector
 var _psd_parser: PSDParser = null
 var _psd_thread: Thread = null
 var _psd_result = null
-var _psd_progress_dialog: Node2D = null
+var _psd_progress_dialog: ModalDialogUI = null
 var _psd_replace_mode: bool = false
 
 # Worker-pool sprite preparation (post-PSD-import)
@@ -457,7 +458,7 @@ var _import_layers: Array = []
 var _import_canvas_size: Vector2 = Vector2.ZERO
 var _import_results: Array = []
 var _import_normal_layers: Dictionary = {}
-var _import_progress_dialog2: Node2D = null
+var _import_progress_dialog2: ModalDialogUI = null
 
 # Threaded avatar JSON load (parallel PNG decode + polygon generation per sprite)
 var _load_keys: Array = []
@@ -468,7 +469,7 @@ var _load_group_id := -1
 var _anim_parser: APNGParser = null
 var _anim_thread: Thread = null
 var _anim_result = null
-var _anim_progress_dialog: Node2D = null
+var _anim_progress_dialog: ModalDialogUI = null
 var _anim_replace_mode: bool = false
 var _anim_import_name: String = ""
 var _anim_queue: Array = []
@@ -485,8 +486,7 @@ func _begin_psd_parse(path: String, replace_mode: bool) -> void:
 	_psd_result = null
 
 	# Show progress bar
-	_psd_progress_dialog = _create_import_progress_dialog("Loading PSD...")
-	add_child(_psd_progress_dialog)
+	_psd_progress_dialog = _create_progress_dialog("Loading PSD...")
 
 	# Run parser in a thread
 	_psd_thread = Thread.new()
@@ -500,48 +500,6 @@ func _begin_psd_parse(path: String, replace_mode: bool) -> void:
 		Global.pushUpdate("Could not start the PSD import worker.")
 		Global.epicFail(start_error)
 
-func _create_import_progress_dialog(status_text: String) -> Node2D:
-	var dialog = Node2D.new()
-	dialog.z_index = 4095
-	dialog.visibility_layer = 2
-	dialog.position = camera.position
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-160, -50)
-	bg.size = Vector2(320, 100)
-	bg.color = Color(0.15, 0.15, 0.15, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(bg)
-
-	var label = Label.new()
-	label.name = "StatusLabel"
-	label.position = Vector2(-150, -40)
-	label.size = Vector2(300, 24)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = status_text
-	dialog.add_child(label)
-
-	var bar = ProgressBar.new()
-	bar.name = "ProgressBar"
-	bar.position = Vector2(-140, 0)
-	bar.size = Vector2(280, 24)
-	bar.min_value = 0.0
-	bar.max_value = 1.0
-	bar.value = 0.0
-	dialog.add_child(bar)
-
-	var blocker = Area2D.new()
-	blocker.add_to_group("canvas_input_blocker")
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(3840, 2160)
-	col.shape = shape
-	blocker.add_child(col)
-	dialog.add_child(blocker)
-
-	dialog.set_process(true)
-	return dialog
-
 func _process_psd_thread(_delta):
 	if _psd_thread == null or _psd_parser == null:
 		return
@@ -549,8 +507,8 @@ func _process_psd_thread(_delta):
 		return
 
 	# Update progress bar
-	_psd_progress_dialog.get_node("ProgressBar").value = _psd_parser.progress
-	_psd_progress_dialog.get_node("StatusLabel").text = _psd_parser.status_text
+	_psd_progress_dialog.set_progress(_psd_parser.progress)
+	_psd_progress_dialog.set_title(_psd_parser.status_text)
 
 	# Check if thread is done
 	if !_psd_thread.is_alive():
@@ -592,8 +550,7 @@ func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, norm
 		return
 
 	# Show progress dialog for sprite creation phase
-	_import_progress_dialog2 = _create_import_progress_dialog("Processing sprites...")
-	add_child(_import_progress_dialog2)
+	_import_progress_dialog2 = _create_progress_dialog("Processing sprites...")
 
 	# Use the bounded engine pool instead of creating one OS thread per layer.
 	_import_group_id = WorkerThreadPool.add_group_task(
@@ -661,8 +618,8 @@ func _process_import_thread(_delta):
 	var count = _import_layers.size()
 	if count > 0 and _import_progress_dialog2 != null:
 		var completed := WorkerThreadPool.get_group_processed_element_count(_import_group_id)
-		_import_progress_dialog2.get_node("ProgressBar").value = float(completed) / count
-		_import_progress_dialog2.get_node("StatusLabel").text = "Processing sprites... " + str(completed) + "/" + str(count)
+		_import_progress_dialog2.set_progress(float(completed) / count)
+		_import_progress_dialog2.set_title("Processing sprites... " + str(completed) + "/" + str(count))
 
 	if WorkerThreadPool.is_group_task_completed(_import_group_id):
 		WorkerThreadPool.wait_for_group_task_completion(_import_group_id)
@@ -742,8 +699,7 @@ func _start_animated_import(path: String, is_replace: bool):
 
 	_anim_parser = APNGParser.new()
 
-	_anim_progress_dialog = _create_import_progress_dialog("Loading animated image...")
-	add_child(_anim_progress_dialog)
+	_anim_progress_dialog = _create_progress_dialog("Loading animated image...")
 
 	_anim_thread = Thread.new()
 	var start_error := _anim_thread.start(func(): return _anim_parser.parse(path))
@@ -762,8 +718,8 @@ func _process_anim_thread(_delta):
 	if _anim_progress_dialog == null:
 		return
 
-	_anim_progress_dialog.get_node("ProgressBar").value = _anim_parser.progress
-	_anim_progress_dialog.get_node("StatusLabel").text = _anim_parser.status_text
+	_anim_progress_dialog.set_progress(_anim_parser.progress)
+	_anim_progress_dialog.set_title(_anim_parser.status_text)
 
 	if !_anim_thread.is_alive():
 		_anim_result = _anim_thread.wait_to_finish()
@@ -1018,8 +974,7 @@ func _on_load_dialog_file_selected(path):
 	_load_results = []
 	_load_results.resize(_load_total)
 
-	var _load_dialog: Node2D = null
-	var _load_bar: ProgressBar = null
+	var _load_dialog: ModalDialogUI = null
 	if _load_total > 0:
 		# Run PNG decode + premult + polygon generation in parallel across worker threads
 		_load_group_id = WorkerThreadPool.add_group_task(_load_worker_decode, _load_total, -1, false, "Avatar load")
@@ -1033,19 +988,18 @@ func _on_load_dialog_file_selected(path):
 			await get_tree().process_frame
 			var now = Time.get_ticks_msec()
 			if _load_dialog == null and now - _load_start_ms >= BAR_SHOW_DELAY_MS:
-				# _create_progress_dialog attaches the dialog to UILayer itself.
+				# _create_progress_dialog attaches the dialog to UILayer itself,
+				# and it stays centred on its own.
 				_load_dialog = _create_progress_dialog("Loading avatar...")
-				_load_bar = _load_dialog.get_node("ProgressBar")
 			if _load_dialog != null and now - _last_bar_ms >= 100:
 				_last_bar_ms = now
 				var done = WorkerThreadPool.get_group_processed_element_count(_load_group_id)
-				_load_bar.value = float(done) / float(_load_total)
-				_load_dialog.position = get_viewport().get_visible_rect().size * 0.5
+				_load_dialog.set_progress(float(done) / float(_load_total))
 		if _load_group_id >= 0:
 			WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
 			_load_group_id = -1
-		if _load_bar != null:
-			_load_bar.value = 1.0
+		if _load_dialog != null:
+			_load_dialog.set_progress(1.0)
 
 	# Spawn sprites synchronously now that decode/polygon work is prebuilt — this
 	# loop is fast because each spriteObject._ready just adopts the prebuilt data
@@ -1174,51 +1128,16 @@ func _on_load_dialog_file_selected(path):
 	var fade = create_tween()
 	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
 
-func _create_progress_dialog(status_text: String) -> Node2D:
-	# Builds a modal progress dialog on UILayer (viewport-space), with a
-	# fullscreen dimmer + click-blocker behind it. Centered on the viewport.
-	# Caller does NOT need to add_child or update position — this function
-	# attaches to UILayer; recentering on resize is handled in _process.
-	var dialog = Node2D.new()
-	dialog.z_index = 100
-	dialog.position = get_viewport().get_visible_rect().size * 0.5
-
-	# Backdrop dimmer + input blocker covering the whole viewport.
-	# Oversized so it covers any plausible viewport without needing resize updates.
-	var blocker = ColorRect.new()
-	blocker.position = Vector2(-5000, -5000)
-	blocker.size = Vector2(10000, 10000)
-	blocker.color = Color(0, 0, 0, 0.35)
-	blocker.mouse_filter = Control.MOUSE_FILTER_STOP
-	dialog.add_child(blocker)
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-180, -55)
-	bg.size = Vector2(360, 110)
-	bg.color = Color(0.13, 0.13, 0.15, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(bg)
-
-	var label = Label.new()
-	label.name = "StatusLabel"
-	label.position = Vector2(-170, -42)
-	label.size = Vector2(340, 24)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.text = status_text
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(label)
-
-	var bar = ProgressBar.new()
-	bar.name = "ProgressBar"
-	bar.position = Vector2(-160, 5)
-	bar.size = Vector2(320, 24)
-	bar.min_value = 0.0
-	bar.max_value = 1.0
-	bar.value = 0.0
-	dialog.add_child(bar)
-
+# The one progress dialog: save, load, PSD/APNG import, video encoding. Layout,
+# palette, centring and the modal input guard all come from ModalDialogUI, which
+# attaches itself to the UI layer, so callers only supply the status text.
+func _create_progress_dialog(status_text: String) -> ModalDialogUI:
+	var dialog := ModalDialogUI.new()
 	$UILayer.add_child(dialog)
+	dialog.set_title(status_text)
+	dialog.add_progress_bar()
 	return dialog
+
 
 func onScreenshotPressed() -> void:
 	if capture_controller != null:

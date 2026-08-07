@@ -15,11 +15,15 @@ Reference for all programmatic UI styling used across both sidebars. These overr
 | Divider | `Color(0.3, 0.3, 0.35)` | Section separator lines (1px) |
 
 ### Text Hierarchy
-| Role | Color | Usage |
-|------|-------|-------|
-| Heading / bright text | `Color(0.85, 0.85, 0.9)` | `fileTitle`, toggle labels, active readouts |
-| Body / muted text | `Color(0.75, 0.75, 0.8)` | All standard labels, checkbox text |
-| Disabled text | `Color(0.35, 0.35, 0.4)` | Labels/buttons when no sprite selected |
+| Role | Color | Constant | Usage |
+|------|-------|----------|-------|
+| Heading / bright text | `Color(0.85, 0.85, 0.9)` | `SidebarUI.TEXT_HEADING` | `fileTitle`, toggle labels, active readouts, dialog titles |
+| Body / muted text | `Color(0.75, 0.75, 0.8)` | `SidebarUI.TEXT_BODY` | All standard labels, checkbox text, menu bar buttons |
+| Disabled text | `Color(0.35, 0.35, 0.4)` | `SidebarUI.TEXT_DISABLED` | Labels/buttons when no sprite selected |
+
+> Updated: 2026-08-07 — The palette lives in `ui_scenes/common/sidebar_ui.gd` as
+> named constants. Sidebars, the menu bar and dialogs all draw from them rather
+> than repeating literals, so a palette change is one edit.
 
 ### Accents
 | Role | Color | Usage |
@@ -146,6 +150,29 @@ When `Global.heldSprite == null`:
 - Labels: color overridden to `Color(0.35, 0.35, 0.4)`
 - Icon sprites: `modulate = Color(0.3, 0.3, 0.35)`
 - Left sidebar sections: `modulate = Color(1, 1, 1, 0.35)` (35% opacity dim)
+
+---
+
+## Modal Dialog
+
+> Added: 2026-08-07 — `ui_scenes/common/modal_dialog.gd` (`ModalDialog`)
+
+The one modal in the application: session recovery, save/load progress, import
+progress, video encoding. Two near-identical builders with hand-placed children
+and drifting colors were folded into it.
+
+- **Scrim**: full-rect `ColorRect`, `Color(0, 0, 0, 0.35)`, `MOUSE_FILTER_STOP`. This is the modal guard, consuming clicks before they reach `mouse_cursor._unhandled_input`; no `canvas_input_blocker` Area2D is needed.
+- **Panel**: `PanelContainer` in a `CenterContainer`, `StyleBoxFlat` with `bg_color = SidebarUI.DEFAULT_PANEL_COLOR`, 1px `SidebarUI.DEFAULT_DIVIDER_COLOR` border, 4px radius, 16px padding. Minimum width 360 (`set_panel_min_size` to widen).
+- **Title** (also the live status line on progress dialogs): 14px, `SidebarUI.TEXT_HEADING`, centered
+- **Message**: 12px, `SidebarUI.TEXT_BODY`, centered, word wrap
+- **Progress bar**: 20px tall, track `Color(0.2, 0.2, 0.22)`, fill `SidebarUI.SLIDER_FILL_ENABLED` (pink accent), 3px radius, matching the menu bar's level meters
+- **Actions**: centered `HBoxContainer`, default-theme buttons at 160x28. A `danger: true` action gets `Color(1.0, 0.6, 0.65)` on hover.
+- `visibility_layer = 2`, so dialogs never appear in NDI output
+
+**Sizing gotcha**, shared with the menu bar: anchors resolve once against the
+parent's anchorable rect and do not follow the window here. Both components
+therefore set their own `size` from the viewport and reconnect to
+`Window.size_changed`. Do not switch either back to `PRESET_FULL_RECT`.
 
 ---
 

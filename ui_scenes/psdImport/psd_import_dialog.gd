@@ -1,5 +1,7 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 signal import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary)
 signal import_cancelled
 
@@ -38,7 +40,7 @@ func _build_ui():
 	var panel_bg = ColorRect.new()
 	panel_bg.position = Vector2(-250, -230)
 	panel_bg.size = Vector2(500, 460)
-	panel_bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	panel_bg.color = SidebarUIFactory.DEFAULT_PANEL_COLOR
 	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_bg)
 
@@ -180,7 +182,7 @@ func setup(psd):
 		var dims_label = Label.new()
 		dims_label.text = str(layer.width) + " x " + str(layer.height)
 		dims_label.add_theme_font_size_override("font_size", 11)
-		dims_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		dims_label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
 		info.add_child(dims_label)
 
 		entry.add_child(info)

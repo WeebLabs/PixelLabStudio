@@ -1,5 +1,7 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 signal replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_size: Vector2, remove_orphans: bool)
 signal replace_cancelled
 
@@ -44,7 +46,7 @@ func _build_ui():
 	var panel_bg = ColorRect.new()
 	panel_bg.position = Vector2(-260, -250)
 	panel_bg.size = Vector2(520, 500)
-	panel_bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	panel_bg.color = SidebarUIFactory.DEFAULT_PANEL_COLOR
 	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_bg)
 
@@ -63,7 +65,7 @@ func _build_ui():
 	_summaryLabel.size = Vector2(500, 24)
 	_summaryLabel.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_summaryLabel.add_theme_font_size_override("font_size", 12)
-	_summaryLabel.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	_summaryLabel.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
 	add_child(_summaryLabel)
 
 	# Warning label (shown when 0 matches)
@@ -169,7 +171,7 @@ func _add_section_header(text: String):
 	var label = Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_HEADING)
 	_layerList.add_child(label)
 
 func _add_matched_entry(entry: Dictionary):
@@ -201,7 +203,7 @@ func _add_matched_entry(entry: Dictionary):
 	var dims_label = Label.new()
 	dims_label.text = str(int(dims.x)) + " x " + str(int(dims.y))
 	dims_label.add_theme_font_size_override("font_size", 11)
-	dims_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	dims_label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
 	info.add_child(dims_label)
 
 	row.add_child(info)
@@ -235,7 +237,7 @@ func _add_new_entry(item: Dictionary):
 	var dims_label = Label.new()
 	dims_label.text = str(int(dims.x)) + " x " + str(int(dims.y))
 	dims_label.add_theme_font_size_override("font_size", 11)
-	dims_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	dims_label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
 	info.add_child(dims_label)
 
 	row.add_child(info)

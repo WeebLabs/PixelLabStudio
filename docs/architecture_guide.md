@@ -287,6 +287,30 @@ redesign has one seam to work against rather than scattered literals.
 
 ---
 
+## Modal Dialogs
+
+> Added: 2026-08-07 — one modal component, `ui_scenes/common/modal_dialog.gd`.
+
+Session recovery, save/load progress, PSD/APNG import progress and video
+encoding all build from `ModalDialog`. It replaced two near-identical builders
+(`main._create_progress_dialog` on the UI layer and `main._create_import_progress_dialog`
+in world space) whose children were placed by hand and whose palettes had drifted
+apart.
+
+- Constructed: a viewport-covering `Control`, a `MOUSE_FILTER_STOP` scrim, and a `CenterContainer` holding the panel. It stays centred at any window size with no per-frame repositioning; the old builders recentred from `_process` and still froze at the viewport size they were created with.
+- The scrim is the modal input guard. World-space dialogs needed a `canvas_input_blocker` Area2D because they had no scrim; `psd_import_dialog` and `replace_review_dialog` still use that mechanism.
+- `visibility_layer = 2` keeps dialogs out of NDI output, which the save progress dialog previously did not do.
+- Callers compose: `set_title`, `add_message`, `add_progress_bar` / `set_progress`, `add_actions`. `main._create_progress_dialog(text)` is the one-line helper for progress dialogs and attaches to `UILayer` itself.
+
+Controllers under `main_scenes/controllers/` are copied into the isolated test
+workspace, which has **no global script class registry**. They must reference
+other scripts through `preload` (`ModalDialogUI`, `SidebarUIFactory`), never by
+bare `class_name`. A bare name compiles in the editor but fails there, and the
+failure silently drops the rest of that suite; `test_main_controllers` now opens
+with a compile guard that turns this into a visible failure.
+
+---
+
 ## Click-to-Select Architecture
 
 Selection in edit mode flows through these components:

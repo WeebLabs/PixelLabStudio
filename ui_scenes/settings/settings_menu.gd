@@ -1,5 +1,7 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
 var awaitingCostumeInput = -1
 
 var hasMouse = false
@@ -292,7 +294,7 @@ func _build_ndi_section():
 	var sep = ColorRect.new()
 	sep.position = Vector2(-4, 0)
 	sep.size = Vector2(380, 2)
-	sep.color = Color(0.5, 0.5, 0.5, 0.4)
+	sep.color = SidebarUIFactory.DEFAULT_DIVIDER_COLOR
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ndi_section.add_child(sep)
 
@@ -522,7 +524,7 @@ func _build_recording_section():
 	var sep = ColorRect.new()
 	sep.position = Vector2(-4, 0)
 	sep.size = Vector2(380, 2)
-	sep.color = Color(0.5, 0.5, 0.5, 0.4)
+	sep.color = SidebarUIFactory.DEFAULT_DIVIDER_COLOR
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_recording_section.add_child(sep)
 

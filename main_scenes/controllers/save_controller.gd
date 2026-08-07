@@ -3,9 +3,12 @@ extends Node
 
 const JsonStore = preload("res://autoload/persistence/json_file_store.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
+const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 
 const SESSION_SAVE_PATH := "user://session.pngtp"
 const SESSION_AUTO_SAVE_INTERVAL := 60.0
+
+const RECOVERY_DIALOG_SIZE := Vector2(440, 150)
 
 var save_dialog: FileDialog = null
 var load_dialog: FileDialog = null
@@ -17,12 +20,12 @@ var _undo_manager: Node = null
 
 var _save_thread: Thread = null
 var _save_progress := 0.0
-var _save_progress_dialog: Node2D = null
+var _save_progress_dialog: ModalDialogUI = null
 
 var _session_dirty := false
 var _session_timer := 0.0
 var _session_thread: Thread = null
-var _session_recovery_dialog: Node2D = null
+var _session_recovery_dialog: Control = null
 
 
 func setup(main_node: Node2D, global_service: Node, saving_service: Node, undo_service: Node) -> void:
@@ -49,8 +52,7 @@ func shutdown() -> void:
 
 func process_frame(delta: float) -> void:
 	if _save_thread != null and _save_progress_dialog != null:
-		_save_progress_dialog.get_node("ProgressBar").value = _save_progress
-		_save_progress_dialog.position = _main.get_viewport().get_visible_rect().size * 0.5
+		_save_progress_dialog.set_progress(_save_progress)
 
 	if _session_thread != null and not _session_thread.is_alive():
 		_join_thread("session")
@@ -200,60 +202,27 @@ func _has_recoverable_session(last_avatar_path: String) -> bool:
 	return should_recover(session_exists, avatar_exists, session_modified, avatar_modified)
 
 
+# Session recovery prompt. Layout, palette and centring come from ModalDialogUI;
+# this only declares the copy and the two choices.
 func _show_session_recovery_dialog(last_avatar_path: String) -> void:
-	var dialog := Node2D.new()
-	dialog.z_index = 100
-	dialog.position = _main.get_viewport().get_visible_rect().size * 0.5
-
-	var blocker := ColorRect.new()
-	blocker.position = Vector2(-5000, -5000)
-	blocker.size = Vector2(10000, 10000)
-	blocker.color = Color(0, 0, 0, 0.35)
-	blocker.mouse_filter = Control.MOUSE_FILTER_STOP
-	dialog.add_child(blocker)
-
-	var background := ColorRect.new()
-	background.position = Vector2(-220, -75)
-	background.size = Vector2(440, 150)
-	background.color = Color(0.13, 0.13, 0.15, 1.0)
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(background)
-
-	var title := Label.new()
-	title.position = Vector2(-210, -62)
-	title.size = Vector2(420, 24)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.text = "Recover unsaved session?"
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(title)
-
-	var body := Label.new()
-	body.position = Vector2(-210, -35)
-	body.size = Vector2(420, 60)
-	body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD
-	body.text = "A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
-	body.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dialog.add_child(body)
-
-	var restore_button := Button.new()
-	restore_button.text = "Restore"
-	restore_button.position = Vector2(-180, 38)
-	restore_button.size = Vector2(160, 28)
-	restore_button.pressed.connect(func(): _on_session_recovery_choice(true, last_avatar_path))
-	dialog.add_child(restore_button)
-
-	var discard_button := Button.new()
-	discard_button.text = "Discard"
-	discard_button.position = Vector2(20, 38)
-	discard_button.size = Vector2(160, 28)
-	discard_button.pressed.connect(func(): _on_session_recovery_choice(false, last_avatar_path))
-	dialog.add_child(discard_button)
-
+	var dialog := ModalDialogUI.new()
 	_main.get_node("UILayer").add_child(dialog)
+	dialog.set_panel_min_size(RECOVERY_DIALOG_SIZE)
+	dialog.set_title("Recover unsaved session?")
+	dialog.add_message(
+		"A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
+	)
+	dialog.add_actions([
+		{
+			"text": "Restore",
+			"callback": func(): _on_session_recovery_choice(true, last_avatar_path),
+		},
+		{
+			"text": "Discard",
+			"callback": func(): _on_session_recovery_choice(false, last_avatar_path),
+			"danger": true,
+		},
+	])
 	_session_recovery_dialog = dialog
 
 

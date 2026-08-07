@@ -1,6 +1,8 @@
 class_name CaptureController
 extends Node
 
+const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
+
 const HOLD_TO_RECORD_MS := 1000
 
 var _main: Node2D = null
@@ -22,7 +24,7 @@ var _record_dialog: FileDialog = null
 var _encode_thread: Thread = null
 var _encoding := false
 var _encode_progress := 0.0
-var _encode_progress_dialog: Node2D = null
+var _encode_progress_dialog: ModalDialogUI = null
 var _encode_progress_path := ""
 var _encode_total_frames := 0
 
@@ -302,8 +304,7 @@ func _poll_encode_progress() -> void:
 					if frame_text.is_valid_int() and _encode_total_frames > 0:
 						_encode_progress = clampf(float(frame_text.to_int()) / float(_encode_total_frames), 0.0, 1.0)
 					break
-	_encode_progress_dialog.get_node("ProgressBar").value = _encode_progress
-	_encode_progress_dialog.position = _main.get_viewport().get_visible_rect().size * 0.5
+	_encode_progress_dialog.set_progress(_encode_progress)
 
 
 func _encode_worker(raw_path: String, size: Vector2i, output_path: String, progress_path: String, fps: int) -> void:

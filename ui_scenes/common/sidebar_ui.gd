@@ -3,6 +3,12 @@ extends RefCounted
 
 const DEFAULT_PANEL_COLOR := Color(0.15, 0.15, 0.15)
 const DEFAULT_DIVIDER_COLOR := Color(0.3, 0.3, 0.35)
+
+# Shared text palette. Panels, the menu bar and dialogs all draw from these so
+# the application reads as one surface. See docs/ui_styling_guide.md.
+const TEXT_HEADING := Color(0.85, 0.85, 0.9)
+const TEXT_BODY := Color(0.75, 0.75, 0.8)
+const TEXT_DISABLED := Color(0.35, 0.35, 0.4)
 const SLIDER_FILL_ENABLED := Color(1.0, 0.7, 0.8)
 const SLIDER_FILL_DISABLED := Color(0.55, 0.4, 0.45)
 const SLIDER_GRAB_ENABLED := Color(1.0, 1.0, 1.0, 1.0)
