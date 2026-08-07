@@ -93,14 +93,14 @@ func _test_menu_bar_reveal_contract(t) -> void:
 
 
 func _test_menu_bar_crowding_contract(t) -> void:
-	# The centre zone yields when the three zones cannot sit side by side, so a
-	# narrow window drops the mic meters instead of overlapping the buttons.
-	t.assert_true(MenuBarComponent.center_fits(1280, 420, 400, 40), "a wide bar shows every zone")
-	t.assert_false(MenuBarComponent.center_fits(700, 420, 400, 40), "a narrow bar drops the centre zone")
-	t.assert_true(MenuBarComponent.center_fits(700, 200, 300, 40), "a narrow bar keeps a centre zone that still fits")
+	# When the zones cannot sit side by side, the bar's nominated collapsible item
+	# yields: the viewer bar drops its mic meters rather than overlap the buttons.
+	t.assert_true(MenuBarComponent.zones_fit(1280, 420, 400, 40), "a wide bar shows every zone")
+	t.assert_false(MenuBarComponent.zones_fit(700, 420, 400, 40), "a narrow bar collapses its nominated item")
+	t.assert_true(MenuBarComponent.zones_fit(700, 200, 300, 40), "content that still fits is not collapsed")
 	# The threshold accounts for the edge margins and both spacers, so zones that
 	# sum to exactly the bar width do not fit.
-	t.assert_false(MenuBarComponent.center_fits(600, 200, 360, 40), "zones summing to the full width leave no room for margins")
+	t.assert_false(MenuBarComponent.zones_fit(600, 200, 360, 40), "zones summing to the full width leave no room for margins")
 
 
 func _test_slider_theme_contract(t) -> void:

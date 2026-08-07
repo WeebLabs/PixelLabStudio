@@ -19,7 +19,7 @@ func _ready():
 
 	# The mode switch leads the left zone, the same place the viewer bar puts it.
 	# Everything else stays in the center zone as one strip.
-	menu_bar.add_button(menu_bar.left, "Switch to Player", _on_exit, true)
+	menu_bar.add_button(menu_bar.left, "Switch to Player", _on_exit)
 
 	var zone := menu_bar.center
 	menu_bar.add_button(zone, "Import", _on_import)

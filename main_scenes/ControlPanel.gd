@@ -45,34 +45,43 @@ func _ready() -> void:
 	add_child(menu_bar)
 
 	_build_actions()
-	_build_mic_controls()
-	_build_status()
+	_build_right_zone()
 	_build_zoom_readout()
 
 
 # --- Bar contents -------------------------------------------------------------
 
-# Left zone, in three groups: the mode switch (leading, the same place the edit
-# bar puts it), the tools that open a popup, and the avatar file actions shared
-# with the edit bar.
+# Mode switch at the far left, avatar file actions in the middle, and the mic
+# meters plus Settings at the far right. The two mode bars therefore agree on
+# where the mode switch and the file actions live.
 func _build_actions() -> void:
-	var zone := menu_bar.left
-	menu_bar.add_button(zone, "Switch to Editor", _on_edit_pressed)
-	menu_bar.add_separator(zone)
-	_mic_button = menu_bar.add_button(zone, "Mic", _on_mic_pressed)
+	menu_bar.add_button(menu_bar.left, "Switch to Editor", _on_edit_pressed)
+	MenuActions.add_avatar_file_actions(menu_bar, menu_bar.center)
+
+	# The Mic entry point is hidden pending its move into the settings panel. The
+	# device popup and the right-click mute stay wired so that becomes a
+	# relocation rather than a rewrite. An invisible child costs no bar space.
+	_mic_button = menu_bar.add_button(menu_bar.left, "Mic", _on_mic_pressed)
 	_mic_button.gui_input.connect(_on_mic_gui_input)
 	_mic_button.tooltip_text = "Left click: choose input device. Right click: mute."
-	_settings_button = menu_bar.add_button(zone, "Settings", _on_settings_pressed)
-	menu_bar.add_separator(zone)
-	MenuActions.add_avatar_file_actions(menu_bar, zone)
+	_mic_button.visible = false
 	_refresh_mic_tone()
+
+
+# Right zone, in order: the NDI telltale, the mic meters, then Settings closing
+# the bar opposite the mode switch.
+func _build_right_zone() -> void:
+	_ndi_label = menu_bar.add_label(menu_bar.right, "NDI", NDI_COLOR, AppMenuBar.LABEL_FONT_SIZE)
+	_ndi_label.visible = false
+	_build_mic_meters()
+	_settings_button = menu_bar.add_button(menu_bar.right, "Settings", _on_settings_pressed)
 
 
 # The two microphone controls are the same widget with different wiring, so they
 # are declared once and built in a loop. "Level" is the raw signal against the
 # threshold that starts a trigger; "Duration" is the decay that ends it, so its
 # marker sets how long the mouth stays open after a trigger.
-func _build_mic_controls() -> void:
+func _build_mic_meters() -> void:
 	var specs := [
 		{
 			"caption": "Duration",
@@ -96,9 +105,14 @@ func _build_mic_controls() -> void:
 		},
 	]
 
+	# The meters share one group so they can yield together when the bar is too
+	# narrow for everything; the buttons around them stay reachable.
+	var meters := menu_bar.add_group(menu_bar.right, AppMenuBar.GROUP_SEPARATION)
+	menu_bar.set_collapsible(meters)
+
 	for spec in specs:
 		var control := menu_bar.add_level_meter(
-			menu_bar.center,
+			meters,
 			spec["caption"],
 			spec["fill"],
 			spec["range"],
@@ -124,11 +138,6 @@ func _build_mic_controls() -> void:
 		Global.make_slider_resettable(slider, spec["default"])
 
 		_meters.append({"meter": control["meter"], "source": spec["source"]})
-
-
-func _build_status() -> void:
-	_ndi_label = menu_bar.add_label(menu_bar.right, "NDI", NDI_COLOR, AppMenuBar.LABEL_FONT_SIZE)
-	_ndi_label.visible = false
 
 
 func _build_zoom_readout() -> void:

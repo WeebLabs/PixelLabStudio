@@ -243,7 +243,7 @@ keeps its editing actions there and puts the mode switch in the left zone; the
 viewer bar zones everything: actions left, mic controls center, status right.
 
 - **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor | Mic Settings | Save Load | Clear Reset` left; `Duration` and `Level` mic meters center; NDI status right.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; `NDI` telltale, the `Duration` and `Level` mic meters, then `Settings` right.
 
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
@@ -253,10 +253,20 @@ viewer bar zones everything: actions left, mic controls center, status right.
 > pressed mode switch and puts it in the same relative position as in edit mode.
 
 > Updated: 2026-08-07 — The mode toggle is labelled `Switch to Editor` /
-> `Switch to Player` and leads the left zone on both bars, so it sits in the same
-> place whichever mode you are in. Moving it out of the edit bar's center strip
-> shifts that strip slightly right of the viewport centre, because the center
-> zone is centred between the left and right zones rather than against the window.
+> `Switch to Player`, is toned like any other item, and leads the left zone on
+> both bars, so it sits in the same place whichever mode you are in. Moving it
+> out of the edit bar's center strip shifts that strip slightly right of the
+> viewport centre, because the center zone is centred between the left and right
+> zones rather than against the window.
+
+> Updated: 2026-08-07 — Viewer bar rearranged: mode switch far left, the shared
+> file actions in the center, and `NDI  Duration  Level  Settings` filling the
+> right zone so Settings closes the bar opposite the mode switch. The `Mic`
+> button is built but hidden pending its move into the settings panel; its device
+> popup and right-click mute stay wired so that becomes a relocation rather than
+> a rewrite. With the file actions now in the center, the crowding rule can no
+> longer assume the center is expendable: `set_collapsible(node)` nominates the
+> item that yields, and the viewer bar nominates its mic-meter group.
 
 **Item factories** are the only supported way to put something on a bar:
 `add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`.
@@ -269,12 +279,15 @@ sets its own `size` from the viewport in `_fit_to_viewport()` (reconnected to
 normally, because their parent is a `Control`.
 
 **Crowding.** An `HBoxContainer` gives no warning when its children no longer
-fit, so a narrow window would overlap the zones. `_apply_crowding()` hides the
-center zone when `center_fits()` says the three zones cannot sit side by side,
-and shows it again as soon as they can: actions stay reachable and status stays
-readable, and the mic meters are what yield. The test is independent of the
-center's own visibility, so it cannot oscillate. It re-runs on window resize and
-whenever a zone's minimum size changes.
+fit, so a narrow window would overlap the zones. `set_collapsible(node)`
+nominates the one item that yields, and `_apply_crowding()` hides it when
+`zones_fit()` says the three zones cannot sit side by side, restoring it as soon
+as they can. Which item is expendable is the bar owner's judgement, not the
+component's: the viewer bar nominates its mic-meter group so the buttons around
+it stay reachable, and a bar that nominates nothing never collapses. The
+measurement always counts the collapsible item as if it were showing, so hiding
+it cannot change the answer and the state cannot oscillate. It re-runs on window
+resize and whenever a zone's minimum size changes.
 
 ### Auto-reveal (viewer mode only)
 

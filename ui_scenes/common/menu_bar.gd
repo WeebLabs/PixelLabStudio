@@ -63,6 +63,9 @@ var left: HBoxContainer = null
 var center: HBoxContainer = null
 var right: HBoxContainer = null
 
+# The item that yields when the bar runs out of room. See set_collapsible.
+var collapsible: Control = null
+
 var _background: ColorRect = null
 var _row: HBoxContainer = null
 var _auto_reveal := false
@@ -122,19 +125,30 @@ func _fit_to_viewport() -> void:
 	_apply_crowding()
 
 
+# Nominate the one item that yields when the bar runs out of room. Which item is
+# expendable is the bar owner's judgement, not the component's: the viewer bar
+# gives up its mic meters so the buttons stay reachable. Bars that nominate
+# nothing never collapse.
+func set_collapsible(node: Control) -> void:
+	collapsible = node
+	_apply_crowding()
+
+
 # A window narrower than the three zones combined would overlap them, and an
-# HBoxContainer gives no warning when it happens. The center zone is the one
-# that yields: actions stay reachable and status stays readable, and the center
-# comes back the moment there is room for it again. The test is independent of
-# the center's own visibility, so it cannot oscillate.
+# HBoxContainer gives no warning when it happens. The measurement always counts
+# the collapsible item as if it were showing, so hiding it cannot change the
+# answer and the state cannot oscillate.
 func _apply_crowding() -> void:
-	if center == null or center.get_child_count() == 0:
+	if collapsible == null:
 		return
-	center.visible = center_fits(
+	var hidden_width := 0.0
+	if not collapsible.visible:
+		hidden_width = collapsible.get_combined_minimum_size().x + GROUP_SEPARATION
+	collapsible.visible = zones_fit(
 		size.x,
 		left.get_combined_minimum_size().x,
 		center.get_combined_minimum_size().x,
-		right.get_combined_minimum_size().x,
+		right.get_combined_minimum_size().x + hidden_width,
 	)
 
 
@@ -346,7 +360,7 @@ func _apply_reveal() -> void:
 
 # Whether all three zones fit side by side, including the edge margins and the
 # gap each spacer needs to stay visible as a gap.
-static func center_fits(
+static func zones_fit(
 	bar_width: float,
 	left_width: float,
 	center_width: float,
