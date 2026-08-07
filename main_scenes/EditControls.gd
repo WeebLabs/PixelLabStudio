@@ -1,8 +1,9 @@
 extends Node2D
 
-# Edit mode's top menu bar. All items sit in the bar's center zone, which the
-# shared component renders as one centered strip. Chrome, styling and resize
-# behaviour come from AppMenuBar; this file only declares what is on the bar.
+# Edit mode's top menu bar. The editing actions sit in the center zone as one
+# strip; the mode switch sits at the left, matching the viewer bar. Chrome,
+# styling and resize behaviour come from AppMenuBar; this file only declares what
+# is on the bar.
 
 const MENU_BAR_HEIGHT = AppMenuBar.BAR_HEIGHT
 
@@ -16,9 +17,11 @@ func _ready():
 	menu_bar.name = "AppMenuBar"
 	add_child(menu_bar)
 
+	# The mode switch leads the left zone, the same place the viewer bar puts it.
+	# Everything else stays in the center zone as one strip.
+	menu_bar.add_button(menu_bar.left, "Switch to Player", _on_exit, true)
+
 	var zone := menu_bar.center
-	menu_bar.add_button(zone, "Exit", _on_exit, true)
-	menu_bar.add_separator(zone)
 	menu_bar.add_button(zone, "Import", _on_import)
 	_duplicate_btn = menu_bar.add_button(zone, "Duplicate", _on_duplicate)
 	menu_bar.add_button(zone, "Replace", _on_replace)

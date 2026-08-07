@@ -52,13 +52,12 @@ func _ready() -> void:
 
 # --- Bar contents -------------------------------------------------------------
 
-# Left zone, in three groups: the mode toggle, the tools that open a popup, and
-# the avatar file actions. The file group is shared with the edit bar and comes
-# last, which keeps the destructive pair furthest from the frequently pressed
-# Edit button and puts it in the same relative position in both modes.
+# Left zone, in three groups: the mode switch (leading, the same place the edit
+# bar puts it), the tools that open a popup, and the avatar file actions shared
+# with the edit bar.
 func _build_actions() -> void:
 	var zone := menu_bar.left
-	menu_bar.add_button(zone, "Edit", _on_edit_pressed)
+	menu_bar.add_button(zone, "Switch to Editor", _on_edit_pressed)
 	menu_bar.add_separator(zone)
 	_mic_button = menu_bar.add_button(zone, "Mic", _on_mic_pressed)
 	_mic_button.gui_input.connect(_on_mic_gui_input)

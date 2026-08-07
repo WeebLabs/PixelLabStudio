@@ -189,7 +189,7 @@ Key child nodes:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Exit | Add | Duplicate | Import PSD | Replace | Save | …  │  ← EditControls (menu_bar_bg, 28px)
+│ Switch to Player     Import | Duplicate | Replace | Save | …  │  ← EditControls menu bar (28px)
 ├──────────────┬──────────────────────────┬───────────────────┤
 │              │                          │  [speak][blink]   │
 │  Sprite      │                          │  [link][unlink]   │
@@ -238,19 +238,25 @@ container zones separated by expanding spacers:
 └──────────────────────────────────────────────────────────────┘
 ```
 
-A bar that uses only the center zone renders as one centered strip, which is how
-edit mode reproduces its historical look. Viewer mode zones it: actions left,
-mic controls center, status right.
+A bar that uses only the center zone renders as one centered strip. Edit mode
+keeps its editing actions there and puts the mode switch in the left zone; the
+viewer bar zones everything: actions left, mic controls center, status right.
 
-- **Edit bar** (`main_scenes/EditControls.gd`): `Exit | Import Duplicate Replace | Save Load | Clear Reset`, all in the center zone. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Edit | Mic Settings | Save Load | Clear Reset` left; `Duration` and `Level` mic meters center; NDI status right.
+- **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor | Mic Settings | Save Load | Clear Reset` left; `Duration` and `Level` mic meters center; NDI status right.
 
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
 > (`main_scenes/menu_actions.gd`), declared once so the two modes cannot drift in
 > wording, order, grouping or wiring. On the viewer bar the group comes last in
 > the left zone, which keeps the destructive pair furthest from the frequently
-> pressed Edit button and puts it in the same relative position as in edit mode.
+> pressed mode switch and puts it in the same relative position as in edit mode.
+
+> Updated: 2026-08-07 — The mode toggle is labelled `Switch to Editor` /
+> `Switch to Player` and leads the left zone on both bars, so it sits in the same
+> place whichever mode you are in. Moving it out of the edit bar's center strip
+> shifts that strip slightly right of the viewport centre, because the center
+> zone is centred between the left and right zones rather than against the window.
 
 **Item factories** are the only supported way to put something on a bar:
 `add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`.
