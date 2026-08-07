@@ -159,7 +159,9 @@ static func _normalize_sprite(value: Dictionary, key: String) -> Dictionary:
 
 
 static func _normalize_costume_layers(value: Array) -> Array:
-	var result: Array[int] = []
+	# Keep this untyped so var_to_str emits the legacy-compatible "[...]"
+	# representation rather than "Array[int]([...])".
+	var result: Array = []
 	for index in range(10):
 		result.append(ValueCodec.int_value(value[index] if index < value.size() else 1, 1, 0, 2))
 	return result

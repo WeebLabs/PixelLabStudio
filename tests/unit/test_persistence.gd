@@ -12,6 +12,7 @@ func run(t) -> void:
 	_test_settings_migration(t)
 	_test_avatar_migration(t)
 	_test_unsigned_sprite_identifiers(t)
+	_test_costume_membership_round_trip(t)
 	_test_bundled_avatar(t)
 	_test_schema_rejections(t)
 	_test_atomic_round_trip_and_recovery(t)
@@ -22,6 +23,7 @@ func _test_value_codec(t) -> void:
 	t.assert_equal(ValueCodec.vector2_value("Object(unsafe)", Vector2(7, 8)), Vector2(7, 8), "unexpected Variant syntax is not parsed")
 	t.assert_equal(ValueCodec.color_value("not a color", Color.RED), Color.RED, "malformed colors use a typed fallback")
 	t.assert_equal(ValueCodec.array_value("[1, 2, 3]"), [1, 2, 3], "legacy array strings decode")
+	t.assert_equal(ValueCodec.array_value("Array[int]([0, 1, 0])"), [0, 1, 0], "typed integer array strings decode")
 	t.assert_equal(ValueCodec.array_value("Resource(\"x\")", [9]), [9], "non-array Variant text is rejected")
 
 
@@ -85,6 +87,32 @@ func _test_unsigned_sprite_identifiers(t) -> void:
 	t.assert_equal(avatar["1"]["identification"], child_id, "large child identifiers are preserved")
 	t.assert_equal(avatar["1"]["parentId"], parent_id, "large parent references are preserved")
 	t.assert_equal(avatar["1"]["eyeTrackTargetId"], parent_id, "large eye-tracking references are preserved")
+
+
+func _test_costume_membership_round_trip(t) -> void:
+	var expected := [0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+	var source := {
+		"0": {
+			"type": "sprite",
+			"path": "legacy-costume.png",
+			"identification": 1,
+			"costumeLayers": "[0, 1, 0, 0, 0, 0, 0, 0, 0, 0]",
+		},
+		"1": {
+			"type": "sprite",
+			"path": "typed-costume.png",
+			"identification": 2,
+			"costumeLayers": "Array[int]([0, 1, 0, 0, 0, 0, 0, 0, 0, 0])",
+		},
+	}
+	var normalized := AvatarSave.normalize(source)
+	t.assert_true(normalized["ok"], "legacy and typed costume membership encodings normalize")
+	if not normalized["ok"]:
+		return
+	for key in ["0", "1"]:
+		var encoded: String = normalized["value"][key]["costumeLayers"]
+		t.assert_true(encoded.begins_with("["), "costume membership uses canonical plain-array text")
+		t.assert_equal(ValueCodec.array_value(encoded), expected, "disabled costume slots survive normalization")
 
 
 func _test_bundled_avatar(t) -> void:

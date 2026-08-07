@@ -348,6 +348,8 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 
 > Updated: 2026-08-06 — Sprite identifiers and their `parentId` / `eyeTrackTargetId` references preserve the complete unsigned 32-bit range produced by Godot's `RandomNumberGenerator.randi()`. Persistence must not narrow these values to signed 32-bit integers before uniqueness and hierarchy validation.
 
+> Updated: 2026-08-06 — Costume membership is serialized as canonical plain Array text (`[0, 1, ...]`). The compatibility decoder also accepts the transient Godot 4.6 typed form (`Array[int]([...])`) written by early schema-normalized builds; disabled slots must never fall back to the all-enabled default during load.
+
 Schema metadata uses `_schemaVersion`; underscore-prefixed root keys are reserved
 for avatar-level metadata. A root entry is treated as a layer only when it is a
 validated dictionary with `type == "sprite"`. Current schema migration and

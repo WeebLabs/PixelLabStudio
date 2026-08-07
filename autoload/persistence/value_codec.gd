@@ -96,7 +96,9 @@ static func array_value(value: Variant, fallback: Array = []) -> Array:
 		return value.duplicate(true)
 	if value is String:
 		var text := String(value).strip_edges()
-		if text.begins_with("[") and text.ends_with("]"):
+		var is_plain_array := text.begins_with("[") and text.ends_with("]")
+		var is_typed_int_array := text.begins_with("Array[int](") and text.ends_with(")")
+		if is_plain_array or is_typed_int_array:
 			var parsed: Variant = str_to_var(text)
 			if parsed is Array:
 				return parsed
