@@ -340,10 +340,6 @@ func _process(delta):
 	save_controller.process_frame(delta)
 	viewport_controller.process_frame()
 
-	# NDI status indicator
-	if ndi_manager != null:
-		controlPanel.set_ndi_active(ndi_manager.is_enabled())
-
 func _unhandled_input(event):
 	viewport_controller.handle_unhandled_input(event)
 	

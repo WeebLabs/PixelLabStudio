@@ -16,7 +16,6 @@ extends Node2D
 
 const LEVEL_COLOR := Color(0.55, 0.78, 1.0)
 const DURATION_COLOR := Color(1.0, 0.7, 0.8)
-const NDI_COLOR := Color(0.3, 1.0, 0.4)
 
 # The zoom readout is deliberately NOT on the bar: it is transient feedback for
 # a canvas gesture, and the cursor is nowhere near the top edge when zooming.
@@ -33,7 +32,6 @@ var menu_bar: AppMenuBar = null
 var _mic_button: Button = null
 var _settings_button: Button = null
 var _zoom_label: Label = null
-var _ndi_label: Label = null
 var _meters: Array = []
 var _active := false
 
@@ -68,11 +66,9 @@ func _build_actions() -> void:
 	_refresh_mic_tone()
 
 
-# Right zone, in order: the NDI telltale, the mic meters, then Settings closing
-# the bar opposite the mode switch.
+# Right zone: the mic meters, then Settings closing the bar opposite the mode
+# switch.
 func _build_right_zone() -> void:
-	_ndi_label = menu_bar.add_label(menu_bar.right, "NDI", NDI_COLOR, AppMenuBar.LABEL_FONT_SIZE)
-	_ndi_label.visible = false
 	_build_mic_meters()
 	_settings_button = menu_bar.add_button(menu_bar.right, "Settings", _on_settings_pressed)
 
@@ -179,10 +175,6 @@ func show_zoom(percent: int) -> void:
 	_zoom_label.text = "Zoom : %d%%" % percent
 	if _active:
 		_zoom_label.modulate.a = ZOOM_HOLD
-
-
-func set_ndi_active(enabled: bool) -> void:
-	_ndi_label.visible = enabled
 
 
 func _process(_delta: float) -> void:

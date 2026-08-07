@@ -93,14 +93,19 @@ func _test_menu_bar_reveal_contract(t) -> void:
 
 
 func _test_menu_bar_crowding_contract(t) -> void:
-	# When the zones cannot sit side by side, the bar's nominated collapsible item
+	# When the zones cannot clear each other, the bar's nominated collapsible item
 	# yields: the viewer bar drops its mic meters rather than overlap the buttons.
-	t.assert_true(MenuBarComponent.zones_fit(1280, 420, 400, 40), "a wide bar shows every zone")
-	t.assert_false(MenuBarComponent.zones_fit(700, 420, 400, 40), "a narrow bar collapses its nominated item")
-	t.assert_true(MenuBarComponent.zones_fit(700, 200, 300, 40), "content that still fits is not collapsed")
-	# The threshold accounts for the edge margins and both spacers, so zones that
-	# sum to exactly the bar width do not fit.
-	t.assert_false(MenuBarComponent.zones_fit(600, 200, 360, 40), "zones summing to the full width leave no room for margins")
+	t.assert_true(MenuBarComponent.zones_fit(1600, 200, 400, 500), "a wide bar shows every zone")
+	t.assert_false(MenuBarComponent.zones_fit(900, 200, 400, 500), "a narrow bar collapses its nominated item")
+
+	# The centre strip is centred on the bar, so the WIDER side binds, not the
+	# sum. These two have identical total content (920) in an identical bar: the
+	# balanced one fits and the lopsided one collides.
+	t.assert_true(MenuBarComponent.zones_fit(1200, 310, 300, 310), "balanced side zones leave the centre room")
+	t.assert_false(MenuBarComponent.zones_fit(1200, 100, 300, 520), "a heavy side zone collides with the centred strip")
+
+	# The threshold leaves the edge margin and a visible gap on each side.
+	t.assert_false(MenuBarComponent.zones_fit(600, 200, 200, 200), "zones packed to the full width leave no room for margins")
 
 
 func _test_slider_theme_contract(t) -> void:

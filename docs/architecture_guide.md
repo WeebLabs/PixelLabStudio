@@ -229,21 +229,29 @@ Both modes draw their top bar from one component, `ui_scenes/common/menu_bar.gd`
 already ships a native `MenuBar`). Chrome, item styling, resize behaviour and
 popup placement live there once, so the two bars cannot drift apart.
 
-**Layout is constructed, not placed.** The bar is a full-width row holding three
-container zones separated by expanding spacers:
+**Layout is constructed, not placed.** Three container zones. The side zones ride
+a row pinned to both edges; the center zone sits in its own full-width
+`CenterContainer`, so it centres on the **window**:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ left zone      ←spacer→   center zone   ←spacer→   right zone│  28px
+│ left zone                center zone               right zone│  28px
 └──────────────────────────────────────────────────────────────┘
+   pinned left        centred on the bar            pinned right
 ```
 
-A bar that uses only the center zone renders as one centered strip. Edit mode
-keeps its editing actions there and puts the mode switch in the left zone; the
-viewer bar zones everything: actions left, mic controls center, status right.
+> Updated: 2026-08-07 — The center zone used to sit between the two side zones,
+> balanced by expanding spacers. That reads as centred only while the two sides
+> happen to be the same width: once the viewer bar's right zone grew to hold the
+> meters and Settings, it silently dragged the centre strip left. The center zone
+> now has its own container spanning the bar, and is centred to within a pixel
+> regardless of what the sides hold.
+
+Edit mode keeps its editing actions in the center and puts the mode switch in the
+left zone; the viewer bar uses all three.
 
 - **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; `NDI` telltale, the `Duration` and `Level` mic meters, then `Settings` right.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then `Settings` right.
 
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
@@ -260,8 +268,9 @@ viewer bar zones everything: actions left, mic controls center, status right.
 > zones rather than against the window.
 
 > Updated: 2026-08-07 — Viewer bar rearranged: mode switch far left, the shared
-> file actions in the center, and `NDI  Duration  Level  Settings` filling the
-> right zone so Settings closes the bar opposite the mode switch. The `Mic`
+> file actions in the center, and `Duration  Level  Settings` filling the right
+> zone so Settings closes the bar opposite the mode switch. The green NDI
+> telltale is gone; NDI state is reported in the settings panel's NDI section. The `Mic`
 > button is built but hidden pending its move into the settings panel; its device
 > popup and right-click mute stay wired so that becomes a relocation rather than
 > a rewrite. With the file actions now in the center, the crowding rule can no
@@ -278,11 +287,13 @@ sets its own `size` from the viewport in `_fit_to_viewport()` (reconnected to
 `Window.size_changed`) and positions itself directly. Its children anchor
 normally, because their parent is a `Control`.
 
-**Crowding.** An `HBoxContainer` gives no warning when its children no longer
-fit, so a narrow window would overlap the zones. `set_collapsible(node)`
+**Crowding.** Nothing warns when the centred strip runs into a side zone; they
+simply draw over each other. `set_collapsible(node)`
 nominates the one item that yields, and `_apply_crowding()` hides it when
-`zones_fit()` says the three zones cannot sit side by side, restoring it as soon
-as they can. Which item is expendable is the bar owner's judgement, not the
+`zones_fit()` says the zones cannot clear each other, restoring it as soon as
+they can. Because the strip is centred on the bar, the binding constraint is the
+**wider** side zone, not the sum: two layouts with identical total content can
+differ, one fitting when balanced and the other colliding when lopsided. Which item is expendable is the bar owner's judgement, not the
 component's: the viewer bar nominates its mic-meter group so the buttons around
 it stay reachable, and a bar that nominates nothing never collapses. The
 measurement always counts the collapsible item as if it were showing, so hiding

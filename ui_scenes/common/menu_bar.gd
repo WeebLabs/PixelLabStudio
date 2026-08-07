@@ -4,11 +4,18 @@ extends Control
 # Shared top menu bar. Both application modes build their bar from this one
 # component, so the two can never drift apart visually.
 #
-# Layout is constructed, not placed: the bar is a full-width row holding three
-# container zones (left / center / right) separated by expanding spacers. Items
-# find their own position from their content, and the whole bar reflows on
-# resize without a single hard-coded coordinate. A bar that fills only the
-# center zone renders as one centered strip, which is how edit mode uses it.
+# Layout is constructed, not placed. Three container zones:
+#
+#   left ──────────────── center ──────────────── right
+#   pinned to the        centred on the          pinned to the
+#   left edge            WINDOW                  right edge
+#
+# The center zone is centred against the bar itself, in its own CenterContainer
+# spanning the full width, not shared between the side zones. Balancing it
+# between them looks correct only while the two sides happen to be the same
+# width: a heavy right zone silently drags the centre strip left. Items find
+# their own position from their content, and the whole bar reflows on resize
+# without a single hard-coded coordinate.
 #
 # Everything that goes on a bar is produced by the item factories below
 # (`add_button`, `add_separator`, `add_label`, `add_group`, `add_level_meter`).
@@ -68,6 +75,7 @@ var collapsible: Control = null
 
 var _background: ColorRect = null
 var _row: HBoxContainer = null
+var _center_holder: CenterContainer = null
 var _auto_reveal := false
 var _reveal := 1.0
 var _pins := {}
@@ -84,6 +92,7 @@ func _ready() -> void:
 	_background.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_background)
 
+	# Side zones ride a row pinned to both edges.
 	_row = HBoxContainer.new()
 	_row.name = "Row"
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -93,11 +102,20 @@ func _ready() -> void:
 	_row.add_theme_constant_override("separation", 0)
 	add_child(_row)
 
-	left = _add_zone("Left", ITEM_SEPARATION)
+	left = _add_zone(_row, "Left", ITEM_SEPARATION)
 	_row.add_child(_new_spacer())
-	center = _add_zone("Center", GROUP_SEPARATION)
-	_row.add_child(_new_spacer())
-	right = _add_zone("Right", GROUP_SEPARATION)
+	right = _add_zone(_row, "Right", GROUP_SEPARATION)
+
+	# The center zone gets its own full-width container so it centres on the
+	# window rather than on whatever space the side zones leave over. Added last
+	# so it draws above them if a very narrow window forces an overlap.
+	_center_holder = CenterContainer.new()
+	_center_holder.name = "CenterHolder"
+	_center_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_center_holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_center_holder)
+	center = _add_zone(_center_holder, "Center", GROUP_SEPARATION)
+
 	for zone in [left, center, right]:
 		zone.minimum_size_changed.connect(_apply_crowding)
 
@@ -134,10 +152,10 @@ func set_collapsible(node: Control) -> void:
 	_apply_crowding()
 
 
-# A window narrower than the three zones combined would overlap them, and an
-# HBoxContainer gives no warning when it happens. The measurement always counts
-# the collapsible item as if it were showing, so hiding it cannot change the
-# answer and the state cannot oscillate.
+# Nothing warns when the centred strip runs into a side zone; they simply draw
+# over each other. The measurement always counts the collapsible item as if it
+# were showing, so hiding it cannot change the answer and the state cannot
+# oscillate.
 func _apply_crowding() -> void:
 	if collapsible == null:
 		return
@@ -358,20 +376,19 @@ func _apply_reveal() -> void:
 
 # --- Pure helpers (unit tested) -----------------------------------------------
 
-# Whether all three zones fit side by side, including the edge margins and the
-# gap each spacer needs to stay visible as a gap.
+# Whether the three zones clear each other. Because the centre strip is centred
+# on the bar, the binding constraint is the WIDER side, not the sum: half the
+# width left over by the centre has to clear it, plus the edge margin and a
+# visible gap. Two zones of the same total width can therefore fit when balanced
+# and collide when lopsided.
 static func zones_fit(
 	bar_width: float,
 	left_width: float,
 	center_width: float,
 	right_width: float,
 ) -> bool:
-	var required := (
-		left_width + center_width + right_width
-		+ EDGE_MARGIN * 2.0
-		+ GROUP_SEPARATION * 2.0
-	)
-	return bar_width >= required
+	var half_gap := (bar_width - center_width) * 0.5
+	return half_gap >= maxf(left_width, right_width) + EDGE_MARGIN + GROUP_SEPARATION
 
 
 static func reveal_band(viewport_height: float, ratio: float) -> float:
@@ -394,13 +411,13 @@ static func should_reveal(
 
 # --- Construction helpers ------------------------------------------------------
 
-func _add_zone(zone_name: String, separation: int) -> HBoxContainer:
+func _add_zone(parent: Container, zone_name: String, separation: int) -> HBoxContainer:
 	var zone := HBoxContainer.new()
 	zone.name = zone_name
 	zone.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	zone.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	zone.add_theme_constant_override("separation", separation)
-	_row.add_child(zone)
+	parent.add_child(zone)
 	return zone
 
 
