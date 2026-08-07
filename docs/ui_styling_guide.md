@@ -124,11 +124,12 @@ cb.add_theme_color_override("font_color", Color(0.75, 0.75, 0.8))
 
 ---
 
-## Tab Bar (sidebar tabs)
+## Tab Bar
 
 > Added: 2026-05-29 — `ui_scenes/spriteList/sidebar_tab_bar.gd` (`SidebarTabBar`)
+> Updated: 2026-08-07 — Moved to `ui_scenes/common/tab_bar.gd` and renamed `AppTabBar`; the settings panel uses the same strip.
 
-Reusable tab strip used in the right sidebar (Details / Tracking / Physics).
+Reusable tab strip used in the right sidebar (Details / Tracking / Physics) and in the settings panel.
 Rule-based layout: an `HBoxContainer` of flat buttons with `SIZE_EXPAND_FILL`
 (equal widths), and a pink underline `ColorRect` placed under the active tab via
 `index / count` so it reflows at any width.
@@ -150,6 +151,22 @@ When `Global.heldSprite == null`:
 - Labels: color overridden to `Color(0.35, 0.35, 0.4)`
 - Icon sprites: `modulate = Color(0.3, 0.3, 0.35)`
 - Left sidebar sections: `modulate = Color(1, 1, 1, 0.35)` (35% opacity dim)
+
+---
+
+## Form Rows
+
+> Added: 2026-08-07 — `ui_scenes/common/form_ui.gd` (`FormUI`)
+
+Labelled control rows, used by the settings panel and available to any future
+form. Panels declare what a setting is; the row decides where it sits.
+
+- **Row**: `HBoxContainer`, 24px tall, 8px separation. Caption on the left at a fixed 118px so controls line up down the form; control fills the rest.
+- **Section**: heading (12px, `SidebarUI.TEXT_HEADING`) + 1px `DEFAULT_DIVIDER_COLOR` hairline + a 8px-separated column of rows.
+- **Caption**: 12px, `SidebarUI.TEXT_BODY`.
+- **Slider row**: shared slider theme, plus a right-aligned 56px readout in `TEXT_HEADING`. Pass a `format` Callable for readouts like `Unlimited` or `1 in 200`.
+- **Field** (`LineEdit`, and the hotkey bind buttons): `bg_color 0.1`, 3px corner radius, focus border `Color(0.45, 0.45, 0.5)`. Same look as the layer filter field.
+- **Flat row button**: 12px, `Color(0.7, 0.7, 0.75)`, white on hover; `danger: true` hovers `Color(0.9, 0.45, 0.5)`.
 
 ---
 

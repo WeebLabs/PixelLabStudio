@@ -1,607 +1,575 @@
 extends Node2D
 
+# The settings panel. A fixed-size dropdown from the menu bar's Settings button,
+# built entirely from the shared UI vocabulary: AppTabBar for the strip, FormUI
+# for the labelled rows, SidebarUI for the palette. Nothing here carries a
+# hard-coded child coordinate; every tab is a column of rows that reflows on its
+# own.
+#
+# Tabs are declared in _TABS and built by the matching _build_* method. To add a
+# setting, add a row to one of those methods. To add a category, add a tab.
+
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+const Form = preload("res://ui_scenes/common/form_ui.gd")
 
-var awaitingCostumeInput = -1
+const PANEL_SIZE := Vector2(420, 380)
+const PANEL_PADDING := 12
+const PANEL_CORNER_RADIUS := 4
+const _TABS := ["Audio", "Display", "Motion", "Hotkeys", "Output"]
 
-var hasMouse = false
+const COSTUME_COUNT := 10
+const NDI_WIDTHS := [512, 720, 1080, 1920]
+const RECORDING_FORMATS := ["webm", "apng", "gif"]
+const RECORDING_FORMAT_NAMES := ["Video (WebM)", "Animated PNG", "GIF"]
+const RECORDING_FPS := [15, 30, 60]
+const UNLIMITED_FPS := 241
 
-# NDI UI references (built in code)
-var _ndi_section: Node2D = null
+const BACKGROUND_PRESETS := [
+	{"name": "Transparent", "color": Color(0.0, 0.0, 0.0, 0.0)},
+	{"name": "Green", "color": Color(0.0, 1.0, 0.0, 1.0)},
+	{"name": "Blue", "color": Color(0.0, 0.0, 1.0, 1.0)},
+	{"name": "Magenta", "color": Color(1.0, 0.0, 1.0, 1.0)},
+]
+
+# Read by main.gd: which costume slot is capturing a key, and whether the cursor
+# is over the panel (so a keypress aimed at the panel is not eaten elsewhere).
+var awaitingCostumeInput := -1
+var hasMouse := false
+
+var _panel: PanelContainer = null
+var _tab_bar: AppTabBar = null
+var _bodies: Array[VBoxContainer] = []
+var _slider_theme: Dictionary = {}
+
+# Audio
+var _device_list: VBoxContainer = null
+var _mute_check: CheckBox = null
+
+# Display
+var _color_picker: ColorPickerButton = null
+var _filtering_check: CheckBox = null
+var _fps_slider: HSlider = null
+
+# Motion
+var _bounce_force: HSlider = null
+var _bounce_gravity: HSlider = null
+var _costume_bounce_check: CheckBox = null
+var _blink_speed: HSlider = null
+var _blink_chance: HSlider = null
+
+# Hotkeys
+var _hotkey_buttons: Array[Button] = []
+
+# Output
+var _ndi_status: Label = null
 var _ndi_toggle: CheckBox = null
-var _ndi_status_label: Label = null
-var _ndi_width_option: OptionButton = null
-var _ndi_mode_option: OptionButton = null
+var _ndi_width: OptionButton = null
+var _ndi_mode: OptionButton = null
+var _ndi_manual_row: HBoxContainer = null
 var _ndi_manual_w: SpinBox = null
 var _ndi_manual_h: SpinBox = null
-var _ndi_manual_container: HBoxContainer = null
-var _ndi_source_name_input: LineEdit = null
+var _ndi_source_name: LineEdit = null
+var _recording_format: OptionButton = null
+var _recording_fps: OptionButton = null
 
-# Recording UI references (built in code)
-var _recording_section: Node2D = null
-var _recording_format_option: OptionButton = null
-var _recording_fps_option: OptionButton = null
 
-func setvalues():
-	
-	$Background/ColorPickerButton.color = Global.backgroundColor
-	if Global.backgroundColor == Color(0.0,0.0,0.0,0.0):
-		$Background/ColorPickerButton.color = Color(1.0,1.0,1.0,1.0)
-	
-	
-	$MaxFPS/fpslabel.text = str(Engine.max_fps)
-	$MaxFPS/fpsDrag.value = Engine.max_fps
-	if Engine.max_fps == 0:
-		$MaxFPS/fpslabel.text = "Unlimited"
-		$MaxFPS/fpsDrag.value = 241
-	
-	$BounceForce/bounce.text = str(Saving.settings["bounce"])
-	$BounceForce/bounceForce.value = Saving.settings["bounce"]
-	$BounceGravity/bounce.text = str(Saving.settings["gravity"])
-	$BounceGravity/bounceGravity.value = Saving.settings["gravity"]
-	
-	_on_check_box_toggled(Global.filtering)
-	
-	$BlinkSpeed/blinkSpeed.value = int(1.0/Global.blinkSpeed)
-	$BlinkSpeed/Label.text = "blink speed: " + str(int(1.0/Global.blinkSpeed))
-	
-	$BlinkChance/blinkChance.value = Global.blinkChance
-	$BlinkChance/Label.text = "blink chance: 1 in " + str(Global.blinkChance) 
-	
-	$bounceOnCostume/costumeCheck.button_pressed = Global.main.bounceOnCostumeChange
+func _ready() -> void:
+	_slider_theme = SidebarUIFactory.create_slider_theme()
+	_build_panel()
 
-	_build_ndi_section()
-	_update_ndi_ui()
-	_build_recording_section()
-	_update_recording_ui()
 
-	# Right-click resets each slider to its factory default
-	Global.make_slider_resettable($MaxFPS/fpsDrag, 60)
-	Global.make_slider_resettable($BounceForce/bounceForce, 250)
-	Global.make_slider_resettable($BounceGravity/bounceGravity, 1000)
-	Global.make_slider_resettable($BlinkSpeed/blinkSpeed, 1)
-	Global.make_slider_resettable($BlinkChance/blinkChance, 200)
+func panel_size() -> Vector2:
+	return PANEL_SIZE
 
-	var costumeLabels = [$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton1/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton2/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton3/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton4/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton5/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton6/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton7/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton8/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton9/Label,$CostumeInputs/ScrollContainer/VBoxContainer/costumeButton10/Label,]
-	var tag = 1
-	for label in costumeLabels:
-		label.text = "costume " + str(tag) + " key: \"" + Global.main.costumeKeys[tag-1] + "\""
-		tag += 1
-	
-func _on_color_picker_button_color_changed(color):
-	get_viewport().transparent_bg = false
-	RenderingServer.set_default_clear_color(color)
+
+# Pull every control back into line with current state. Called once at startup
+# by main.gd and again each time the panel is opened.
+func setvalues() -> void:
+	_refresh_audio()
+	_refresh_display()
+	_refresh_motion()
+	_refresh_hotkeys()
+	_refresh_output()
+
+
+func _process(_delta: float) -> void:
+	hasMouse = visible and Rect2(Vector2.ZERO, PANEL_SIZE).has_point(
+		to_local(get_global_mouse_position())
+	)
+
+
+# --- Frame ---------------------------------------------------------------------
+
+func _build_panel() -> void:
+	_panel = PanelContainer.new()
+	_panel.name = "Panel"
+	_panel.size = PANEL_SIZE
+	_panel.custom_minimum_size = PANEL_SIZE
+	var style := StyleBoxFlat.new()
+	style.bg_color = SidebarUIFactory.DEFAULT_PANEL_COLOR
+	style.border_color = SidebarUIFactory.DEFAULT_DIVIDER_COLOR
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(PANEL_CORNER_RADIUS)
+	style.set_content_margin_all(PANEL_PADDING)
+	_panel.add_theme_stylebox_override("panel", style)
+	add_child(_panel)
+
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 10)
+	_panel.add_child(column)
+
+	_tab_bar = AppTabBar.new()
+	for title in _TABS:
+		_tab_bar.add_tab(title)
+	_tab_bar.tab_changed.connect(_show_tab)
+	column.add_child(_tab_bar)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+
+	var stack := VBoxContainer.new()
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(stack)
+
+	for builder in [_build_audio, _build_display, _build_motion, _build_hotkeys, _build_output]:
+		var body := Form.column(stack, Form.SECTION_SEPARATION)
+		builder.call(body)
+		_bodies.append(body)
+
+	_show_tab(0)
+
+
+func _show_tab(index: int) -> void:
+	for i in _bodies.size():
+		_bodies[i].visible = i == index
+
+
+# --- Audio ---------------------------------------------------------------------
+
+func _build_audio(body: VBoxContainer) -> void:
+	var input_group := Form.section(body, "Input device")
+	_device_list = Form.column(input_group, 2)
+
+	var behaviour := Form.section(body, "Behaviour")
+	_mute_check = Form.check_row(behaviour, "Mute microphone")
+	_mute_check.toggled.connect(_on_mute_toggled)
+
+
+func _refresh_audio() -> void:
+	if _device_list == null:
+		return
+	for child in _device_list.get_children():
+		child.queue_free()
+
+	var devices := AudioServer.get_input_device_list()
+	if devices.is_empty():
+		var empty := Label.new()
+		empty.text = "No input devices found."
+		empty.add_theme_font_size_override("font_size", Form.LABEL_FONT_SIZE)
+		empty.add_theme_color_override("font_color", SidebarUIFactory.TEXT_DISABLED)
+		_device_list.add_child(empty)
+	for device in devices:
+		_add_device_row(device)
+
+	_mute_check.set_pressed_no_signal(Global.micMuted)
+
+
+# One selectable device. The active one is marked by an accent dot and brighter
+# text rather than a separate widget, matching the layer list's selected row.
+func _add_device_row(device: String) -> void:
+	var active: bool = device == AudioServer.input_device
+
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", Form.ROW_SEPARATION)
+	_device_list.add_child(line)
+
+	var marker := Label.new()
+	marker.text = "●" if active else ""
+	marker.custom_minimum_size = Vector2(12, 0)
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_theme_font_size_override("font_size", Form.LABEL_FONT_SIZE)
+	marker.add_theme_color_override("font_color", SidebarUIFactory.SLIDER_FILL_ENABLED)
+	line.add_child(marker)
+
+	var pick := Button.new()
+	pick.text = device
+	pick.flat = true
+	pick.focus_mode = Control.FOCUS_NONE
+	pick.clip_text = true
+	pick.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pick.add_theme_font_size_override("font_size", Form.LABEL_FONT_SIZE)
+	pick.add_theme_color_override(
+		"font_color",
+		SidebarUIFactory.TEXT_HEADING if active else SidebarUIFactory.TEXT_BODY,
+	)
+	pick.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	pick.pressed.connect(_on_device_selected.bind(device))
+	line.add_child(pick)
+
+
+func _on_device_selected(device: String) -> void:
+	if Global.selectMicrophone(device, 1.0):
+		Saving.settings["audioDevice"] = device
+	else:
+		Global.pushUpdate("Microphone is no longer available.")
+	_refresh_audio()
+
+
+func _on_mute_toggled(pressed: bool) -> void:
+	Global.micMuted = pressed
+	Global.pushUpdate("Microphone muted." if pressed else "Microphone unmuted.")
+
+
+# --- Display -------------------------------------------------------------------
+
+func _build_display(body: VBoxContainer) -> void:
+	var background := Form.section(body, "Background")
+
+	var presets := Form.row(background, "")
+	for preset in BACKGROUND_PRESETS:
+		var swatch := Form.button(presets, preset["name"], _on_background_preset.bind(preset["color"]))
+		swatch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var custom := Form.row(background, "Custom colour")
+	_color_picker = ColorPickerButton.new()
+	_color_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_color_picker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_color_picker.custom_minimum_size = Vector2(0, Form.CONTROL_HEIGHT)
+	_color_picker.color_changed.connect(_on_custom_background)
+	custom.add_child(_color_picker)
+
+	var rendering := Form.section(body, "Rendering")
+	_filtering_check = Form.check_row(rendering, "Texture filtering")
+	_filtering_check.toggled.connect(_on_filtering_toggled)
+
+	var fps := Form.slider_row(
+		rendering, "Max FPS", 1, UNLIMITED_FPS, 1, _slider_theme,
+		func(value: float) -> String:
+			return "Unlimited" if int(value) == UNLIMITED_FPS else str(int(value))
+	)
+	_fps_slider = fps["slider"]
+	Global.make_slider_resettable(_fps_slider, 60)
+	Form.button(Form.row(rendering, ""), "Apply frame limit", _on_apply_fps)
+
+
+func _refresh_display() -> void:
+	var background: Color = Global.backgroundColor
+	_color_picker.color = Color(1, 1, 1, 1) if background.a == 0.0 else background
+	_filtering_check.set_pressed_no_signal(Global.filtering)
+	_fps_slider.value = UNLIMITED_FPS if Engine.max_fps == 0 else Engine.max_fps
+
+
+func _on_background_preset(color: Color) -> void:
+	_apply_background(color)
+
+
+func _on_custom_background(color: Color) -> void:
+	_apply_background(color)
+
+
+func _apply_background(color: Color) -> void:
+	get_viewport().transparent_bg = color.a == 0.0
 	Global.backgroundColor = color
 	Saving.settings["backgroundColor"] = var_to_str(color)
-	
-	Global.pushUpdate("Background color set to CUSTOM COLOR.")
-
-func _on_button_pressed():
-	get_viewport().transparent_bg = true
-	Global.backgroundColor = Color(0.0,0.0,0.0,0.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,0.0,0.0))
-	
-	Global.pushUpdate("Background color set to TRANSPARENT.")
-
-func _on_color_picker_button_picker_created():
-	get_viewport().transparent_bg = false
-	RenderingServer.set_default_clear_color($Background/ColorPickerButton.color)
-	
-func _on_fps_drag_value_changed(value):
-	if $MaxFPS/fpsDrag.value == 241:
-		$MaxFPS/fpslabel.text = "Unlimited"
-		return
-	$MaxFPS/fpslabel.text = str(value)
+	RenderingServer.set_default_clear_color(color)
+	Global.pushUpdate("Background colour updated.")
 
 
-func _on_confirm_pressed():
-	if $MaxFPS/fpsDrag.value == 241:
-		Engine.max_fps = 0
-		Saving.settings["maxFPS"] = 0
-		Global.pushUpdate("Max fps set to unlimited.")
-		return
-	Engine.max_fps = $MaxFPS/fpsDrag.value
-	Saving.settings["maxFPS"] = $MaxFPS/fpsDrag.value
-	
-	Global.pushUpdate("Max fps set to " + str(Engine.max_fps) + ".")
+func _on_filtering_toggled(pressed: bool) -> void:
+	var mode := 2 if pressed else 0
+	for sprite in get_tree().get_nodes_in_group("saved"):
+		sprite.sprite.texture_filter = mode
+	Global.filtering = pressed
+	Saving.settings["filtering"] = pressed
+	Global.pushUpdate("Texture filtering set to: " + str(pressed))
 
-func _on_green_button_pressed():
-	get_viewport().transparent_bg = false
-	Global.backgroundColor = Color(0.0,1.0,0.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,1.0,0.0,1.0))
-	RenderingServer.set_default_clear_color(Color(0.0,1.0,0.0,1.0))
-	
-	Global.pushUpdate("Background color set to GREEN.")
 
-func _on_blue_button_pressed():
-	get_viewport().transparent_bg = false
-	Global.backgroundColor = Color(0.0,0.0,1.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(0.0,0.0,1.0,1.0))
-	RenderingServer.set_default_clear_color(Color(0.0,0.0,1.0,1.0))
-	
-	Global.pushUpdate("Background color set to BLUE.")
+# Applied on demand rather than per slider step: retargeting the frame limit
+# mid-drag stutters the whole application.
+func _on_apply_fps() -> void:
+	var value := int(_fps_slider.value)
+	Engine.max_fps = 0 if value == UNLIMITED_FPS else value
+	Saving.settings["maxFPS"] = Engine.max_fps
+	Global.pushUpdate("Max fps set to " + ("unlimited" if Engine.max_fps == 0 else str(Engine.max_fps)) + ".")
 
-func _on_magenta_button_pressed():
-	get_viewport().transparent_bg = false
-	Global.backgroundColor = Color(1.0,0.0,1.0,1.0)
-	Saving.settings["backgroundColor"] = var_to_str(Color(1.0,0.0,1.0,1.0))
-	RenderingServer.set_default_clear_color(Color(1.0,0.0,1.0,1.0))
-	
-	Global.pushUpdate("Background color set to MAGENTA.")
 
-func _on_check_box_toggled(button_pressed):
-	var new = 0
-	if button_pressed:
-		new = 2
-	var nodes = get_tree().get_nodes_in_group("saved")
-	for sprite in nodes:
-		sprite.sprite.texture_filter = new
-	Global.filtering = button_pressed
-	Saving.settings["filtering"] = button_pressed
-	$AntiAliasing/CheckBox.button_pressed = button_pressed
-	
-	Global.pushUpdate("Texture filtering set to: " + str(button_pressed))
+# --- Motion --------------------------------------------------------------------
 
-func _on_bounce_force_value_changed(value):
-	$BounceForce/bounce.text = str(value)
+func _build_motion(body: VBoxContainer) -> void:
+	var bounce := Form.section(body, "Bounce")
+
+	var force := Form.slider_row(bounce, "Force", 0, 500, 1, _slider_theme)
+	_bounce_force = force["slider"]
+	_bounce_force.value_changed.connect(_on_bounce_force)
+	Global.make_slider_resettable(_bounce_force, 250)
+
+	var gravity := Form.slider_row(bounce, "Gravity", 0, 3000, 1, _slider_theme)
+	_bounce_gravity = gravity["slider"]
+	_bounce_gravity.value_changed.connect(_on_bounce_gravity)
+	Global.make_slider_resettable(_bounce_gravity, 1000)
+
+	_costume_bounce_check = Form.check_row(bounce, "Bounce on costume change")
+	_costume_bounce_check.toggled.connect(_on_costume_bounce)
+
+	var blink := Form.section(body, "Blink")
+
+	var speed := Form.slider_row(blink, "Speed", 0, 20, 1, _slider_theme)
+	_blink_speed = speed["slider"]
+	_blink_speed.value_changed.connect(_on_blink_speed)
+	Global.make_slider_resettable(_blink_speed, 1)
+
+	var chance := Form.slider_row(
+		blink, "Chance", 1, 300, 1, _slider_theme,
+		func(value: float) -> String: return "1 in %d" % int(value)
+	)
+	_blink_chance = chance["slider"]
+	_blink_chance.value_changed.connect(_on_blink_chance)
+	Global.make_slider_resettable(_blink_chance, 200)
+
+
+func _refresh_motion() -> void:
+	_bounce_force.value = Saving.settings["bounce"]
+	_bounce_gravity.value = Saving.settings["gravity"]
+	_costume_bounce_check.set_pressed_no_signal(Global.main.bounceOnCostumeChange)
+	_blink_speed.value = int(1.0 / Global.blinkSpeed) if Global.blinkSpeed > 0.0 else 0
+	_blink_chance.value = Global.blinkChance
+
+
+func _on_bounce_force(value: float) -> void:
 	Global.main.bounceSlider = value
 	Saving.settings["bounce"] = value
 	Global.main.ndi_mark_dirty()
 
-	Global.pushUpdate("Bounce force value changed.")
 
-func _on_bounce_gravity_value_changed(value):
-	$BounceGravity/bounce.text = str(value)
+func _on_bounce_gravity(value: float) -> void:
 	Global.main.bounceGravity = value
 	Saving.settings["gravity"] = value
 	Global.main.ndi_mark_dirty()
 
-	Global.pushUpdate("Bounce gravity value changed.")
 
-func costumeButtonsPressed(label,id):
-	label.text = "AWAITING INPUT"
+func _on_costume_bounce(pressed: bool) -> void:
+	Global.main.bounceOnCostumeChange = pressed
+	Saving.settings["bounceOnCostumeChange"] = pressed
+
+
+func _on_blink_speed(value: float) -> void:
+	var speed := 0.0 if value == 0 else 1.0 / float(value)
+	Global.blinkSpeed = speed
+	Saving.settings["blinkSpeed"] = speed
+
+
+func _on_blink_chance(value: float) -> void:
+	Global.blinkChance = int(value)
+	Saving.settings["blinkChance"] = int(value)
+
+
+# --- Hotkeys -------------------------------------------------------------------
+
+# Ten identical rows, built in a loop. The previous panel spelled each one out as
+# its own node tree plus a bind handler and a delete handler, twenty methods for
+# ten rows.
+func _build_hotkeys(body: VBoxContainer) -> void:
+	var group := Form.section(body, "Costume hotkeys")
+	for slot in range(1, COSTUME_COUNT + 1):
+		var line := Form.row(group, "Costume %d" % slot)
+
+		var bind := Button.new()
+		bind.flat = true
+		bind.focus_mode = Control.FOCUS_NONE
+		bind.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bind.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		bind.add_theme_font_size_override("font_size", Form.LABEL_FONT_SIZE)
+		bind.add_theme_color_override("font_color", SidebarUIFactory.TEXT_HEADING)
+		bind.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+		Form.apply_field_style(bind)
+		bind.pressed.connect(_on_hotkey_rebind.bind(slot))
+		line.add_child(bind)
+		_hotkey_buttons.append(bind)
+
+		Form.button(line, "x", _on_hotkey_cleared.bind(slot), true)
+
+
+func _refresh_hotkeys() -> void:
+	for slot in range(1, COSTUME_COUNT + 1):
+		_write_hotkey_label(slot)
+
+
+func _write_hotkey_label(slot: int) -> void:
+	_hotkey_buttons[slot - 1].text = Global.main.costumeKeys[slot - 1]
+
+
+func _on_hotkey_rebind(slot: int) -> void:
+	_hotkey_buttons[slot - 1].text = "press a key..."
 	await Global.main.emptiedCapture
-	awaitingCostumeInput = id - 1
-	
-	
+	awaitingCostumeInput = slot - 1
 	await Global.main.pressedKey
-	label.text = "costume " + str(id) + " key: \"" + Global.main.costumeKeys[id - 1] + "\""
+	_write_hotkey_label(slot)
 	await Global.main.emptiedCapture
 	awaitingCostumeInput = -1
 
-func _on_costume_button_1_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton1/Label
-	costumeButtonsPressed(label,1)
-func _on_costume_button_2_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton2/Label
-	costumeButtonsPressed(label,2)
-func _on_costume_button_3_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton3/Label
-	costumeButtonsPressed(label,3)
-func _on_costume_button_4_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton4/Label
-	costumeButtonsPressed(label,4)
-func _on_costume_button_5_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton5/Label
-	costumeButtonsPressed(label,5)
-func _on_costume_button_6_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton6/Label
-	costumeButtonsPressed(label,6)
-func _on_costume_button_7_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton7/Label
-	costumeButtonsPressed(label,7)
-func _on_costume_button_8_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton8/Label
-	costumeButtonsPressed(label,8)
-func _on_costume_button_9_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton9/Label
-	costumeButtonsPressed(label,9)
-func _on_costume_button_10_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton10/Label
-	costumeButtonsPressed(label,10)
+
+func _on_hotkey_cleared(slot: int) -> void:
+	Global.main.costumeKeys[slot - 1] = "null"
+	_write_hotkey_label(slot)
+	Global.pushUpdate("Deleted costume hotkey " + str(slot) + ".")
 
 
-func _on_blink_speed_value_changed(value):
-	if value == 0:
-		Global.blinkSpeed = 0.0
-		Saving.settings["blinkSpeed"] = 0.0
-		$BlinkSpeed/Label.text = "blink speed: 0"
-		return
-	Global.blinkSpeed = 1.0/float(value)
-	Saving.settings["blinkSpeed"] = 1.0/float(value)
-	$BlinkSpeed/Label.text = "blink speed: " + str(value)
+# --- Output --------------------------------------------------------------------
 
+func _build_output(body: VBoxContainer) -> void:
+	var ndi := Form.section(body, "NDI output")
 
-func _on_blink_chance_value_changed(value):
-	Global.blinkChance = value
-	Saving.settings["blinkChance"] = value
-	$BlinkChance/Label.text = "blink chance: 1 in " + str(value)
+	_ndi_status = Label.new()
+	_ndi_status.add_theme_font_size_override("font_size", Form.LABEL_FONT_SIZE)
+	_ndi_status.add_theme_color_override("font_color", Color(1.0, 0.5, 0.3))
+	_ndi_status.visible = false
+	ndi.add_child(_ndi_status)
 
-
-func _on_costume_check_toggled(button_pressed):
-	Global.main.bounceOnCostumeChange = button_pressed
-	Saving.settings["bounceOnCostumeChange"] = button_pressed
-
-
-func _process(delta):
-	var g = to_local(get_global_mouse_position())
-	if g.x < 0 or g.y < 0 or g.x > $NinePatchRect.size.x or g.y > $NinePatchRect.size.y:
-		hasMouse = false
-	else:
-		hasMouse = true
-
-func deleteKey(label,id):
-	Global.main.costumeKeys[id-1] = "null"
-	label.text = "costume " + str(id) + " key: \"" + Global.main.costumeKeys[id-1] + "\""
-	Global.pushUpdate("Deleted costume hotkey " + str(id) + ".")
-	
-func _on_delete_1_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton1/Label
-	deleteKey(label,1)
-
-func _on_delete_2_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton2/Label
-	deleteKey(label,2)
-
-func _on_delete_3_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton3/Label
-	deleteKey(label,3)
-
-func _on_delete_4_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton4/Label
-	deleteKey(label,4)
-
-func _on_delete_5_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton5/Label
-	deleteKey(label,5)
-
-func _on_delete_6_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton6/Label
-	deleteKey(label,6)
-
-func _on_delete_7_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton7/Label
-	deleteKey(label,7)
-
-func _on_delete_8_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton8/Label
-	deleteKey(label,8)
-
-func _on_delete_9_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton9/Label
-	deleteKey(label,9)
-
-func _on_delete_10_pressed():
-	var label = $CostumeInputs/ScrollContainer/VBoxContainer/costumeButton10/Label
-	deleteKey(label,10)
-
-# --- NDI Settings ---
-
-func _build_ndi_section():
-	if _ndi_section != null:
-		return
-
-	# Expand background to fit NDI section and shift menu up so it doesn't cover the settings icon
-	$NinePatchRect.offset_bottom += 160
-	position.y -= 160
-
-	_ndi_section = Node2D.new()
-	_ndi_section.name = "NDISettings"
-	_ndi_section.position = Vector2(22, 405)
-	add_child(_ndi_section)
-
-	# Separator line
-	var sep = ColorRect.new()
-	sep.position = Vector2(-4, 0)
-	sep.size = Vector2(380, 2)
-	sep.color = SidebarUIFactory.DEFAULT_DIVIDER_COLOR
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_ndi_section.add_child(sep)
-
-	# Title label
-	var title = Label.new()
-	title.position = Vector2(0, 6)
-	title.text = "NDI Output"
-	title.add_theme_font_size_override("font_size", 14)
-	_ndi_section.add_child(title)
-
-	# Status label (shows "plugin not installed" if needed)
-	_ndi_status_label = Label.new()
-	_ndi_status_label.position = Vector2(100, 6)
-	_ndi_status_label.add_theme_font_size_override("font_size", 11)
-	_ndi_status_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.3))
-	_ndi_section.add_child(_ndi_status_label)
-
-	# Enable toggle
-	var toggle_label = Label.new()
-	toggle_label.position = Vector2(0, 30)
-	toggle_label.text = "enabled"
-	_ndi_section.add_child(toggle_label)
-
-	_ndi_toggle = CheckBox.new()
-	_ndi_toggle.position = Vector2(130, 32)
-	_ndi_toggle.size = Vector2(24, 24)
+	_ndi_toggle = Form.check_row(ndi, "Enabled")
 	_ndi_toggle.toggled.connect(_on_ndi_toggle)
-	_ndi_section.add_child(_ndi_toggle)
 
-	# Width preset
-	var width_label = Label.new()
-	width_label.position = Vector2(0, 58)
-	width_label.text = "width"
-	_ndi_section.add_child(width_label)
+	_ndi_width = Form.option_row(ndi, "Width", NDI_WIDTHS)
+	_ndi_width.item_selected.connect(_on_ndi_width_selected)
 
-	_ndi_width_option = OptionButton.new()
-	_ndi_width_option.position = Vector2(77, 58)
-	_ndi_width_option.size = Vector2(100, 26)
-	_ndi_width_option.add_item("512", 0)
-	_ndi_width_option.add_item("720", 1)
-	_ndi_width_option.add_item("1080", 2)
-	_ndi_width_option.add_item("1920", 3)
-	_ndi_width_option.item_selected.connect(_on_ndi_width_selected)
-	_ndi_section.add_child(_ndi_width_option)
+	_ndi_mode = Form.option_row(ndi, "Mode", ["auto", "manual"])
+	_ndi_mode.item_selected.connect(_on_ndi_mode_selected)
 
-	# Mode selector
-	var mode_label = Label.new()
-	mode_label.position = Vector2(195, 58)
-	mode_label.text = "mode"
-	_ndi_section.add_child(mode_label)
+	var manual := Form.spin_row(ndi, "Manual size", 128, 3840)
+	_ndi_manual_w = manual[0]
+	_ndi_manual_h = manual[1]
+	_ndi_manual_row = _ndi_manual_w.get_parent()
+	_ndi_manual_row.visible = false
+	for spin in manual:
+		spin.value_changed.connect(_on_ndi_manual_size_changed)
 
-	_ndi_mode_option = OptionButton.new()
-	_ndi_mode_option.position = Vector2(240, 58)
-	_ndi_mode_option.size = Vector2(110, 26)
-	_ndi_mode_option.add_item("auto", 0)
-	_ndi_mode_option.add_item("manual", 1)
-	_ndi_mode_option.item_selected.connect(_on_ndi_mode_selected)
-	_ndi_section.add_child(_ndi_mode_option)
+	_ndi_source_name = Form.text_row(ndi, "Source name", "PixelLab Studio")
+	_ndi_source_name.text_submitted.connect(_on_ndi_source_name_committed)
+	_ndi_source_name.focus_exited.connect(_on_ndi_source_name_focus_exited)
 
-	# Manual resolution inputs
-	_ndi_manual_container = HBoxContainer.new()
-	_ndi_manual_container.position = Vector2(0, 90)
-	_ndi_manual_container.visible = false
-	_ndi_section.add_child(_ndi_manual_container)
+	var recording := Form.section(body, "Recording")
+	_recording_format = Form.option_row(recording, "Format", RECORDING_FORMAT_NAMES)
+	_recording_format.item_selected.connect(_on_recording_format_selected)
+	_recording_fps = Form.option_row(recording, "Frame rate", RECORDING_FPS)
+	_recording_fps.item_selected.connect(_on_recording_fps_selected)
 
-	var mw_label = Label.new()
-	mw_label.text = "w:"
-	_ndi_manual_container.add_child(mw_label)
 
-	_ndi_manual_w = SpinBox.new()
-	_ndi_manual_w.min_value = 128
-	_ndi_manual_w.max_value = 3840
-	_ndi_manual_w.step = 1
-	_ndi_manual_w.custom_minimum_size = Vector2(80, 0)
-	_ndi_manual_w.value_changed.connect(_on_ndi_manual_size_changed)
-	_ndi_manual_container.add_child(_ndi_manual_w)
+func _refresh_output() -> void:
+	_refresh_ndi()
+	_refresh_recording()
 
-	var mh_label = Label.new()
-	mh_label.text = "  h:"
-	_ndi_manual_container.add_child(mh_label)
 
-	_ndi_manual_h = SpinBox.new()
-	_ndi_manual_h.min_value = 128
-	_ndi_manual_h.max_value = 3840
-	_ndi_manual_h.step = 1
-	_ndi_manual_h.custom_minimum_size = Vector2(80, 0)
-	_ndi_manual_h.value_changed.connect(_on_ndi_manual_size_changed)
-	_ndi_manual_container.add_child(_ndi_manual_h)
-
-	# Source name (applied on Enter or focus-out to avoid recycling NDI per keystroke)
-	var name_label = Label.new()
-	name_label.position = Vector2(0, 122)
-	name_label.text = "source name"
-	_ndi_section.add_child(name_label)
-
-	_ndi_source_name_input = LineEdit.new()
-	_ndi_source_name_input.position = Vector2(105, 120)
-	_ndi_source_name_input.size = Vector2(245, 26)
-	_ndi_source_name_input.placeholder_text = "PixelLab Studio"
-	_ndi_source_name_input.text_submitted.connect(_on_ndi_source_name_committed)
-	_ndi_source_name_input.focus_exited.connect(_on_ndi_source_name_focus_exited)
-	_ndi_section.add_child(_ndi_source_name_input)
-
-func _update_ndi_ui():
-	if _ndi_section == null:
-		return
-
+func _refresh_ndi() -> void:
 	var ndi = Global.main.ndi_manager
 	if ndi == null:
 		return
 
-	var plugin_ok = ndi.is_plugin_available()
-
-	if !plugin_ok:
-		_ndi_status_label.text = "(plugin not installed)"
-		_ndi_toggle.disabled = true
-		_ndi_toggle.button_pressed = false
-		_ndi_width_option.disabled = true
-		_ndi_mode_option.disabled = true
-		if _ndi_source_name_input != null:
-			_ndi_source_name_input.editable = false
+	if not ndi.is_plugin_available():
+		_ndi_status.text = "Plugin not installed."
+		_ndi_status.visible = true
+		_ndi_toggle.set_pressed_no_signal(false)
+		for control in [_ndi_toggle, _ndi_width, _ndi_mode]:
+			control.disabled = true
+		_ndi_source_name.editable = false
 		return
 
-	_ndi_status_label.text = ""
+	_ndi_status.visible = false
 	_ndi_toggle.disabled = false
-	_ndi_toggle.button_pressed = ndi.is_enabled()
+	_ndi_toggle.set_pressed_no_signal(ndi.is_enabled())
 
-	if _ndi_source_name_input != null:
-		_ndi_source_name_input.text = Saving.settings.get("ndiSourceName", "PixelLab Studio")
-		_ndi_source_name_input.editable = true
+	_ndi_source_name.editable = true
+	_ndi_source_name.text = Saving.settings.get("ndiSourceName", "PixelLab Studio")
 
-	# Width preset
-	var widths = [512, 720, 1080, 1920]
-	var current_w = Saving.settings["ndiWidth"]
-	var idx = widths.find(current_w)
-	if idx >= 0:
-		_ndi_width_option.selected = idx
-	else:
-		_ndi_width_option.selected = 0
+	_ndi_width.selected = maxi(NDI_WIDTHS.find(Saving.settings["ndiWidth"]), 0)
 
-	# Mode
-	var mode = Saving.settings["ndiMode"]
-	_ndi_mode_option.selected = 1 if mode == "manual" else 0
-	_ndi_manual_container.visible = mode == "manual"
-
+	var mode: String = Saving.settings["ndiMode"]
+	_ndi_mode.selected = 1 if mode == "manual" else 0
+	_ndi_manual_row.visible = mode == "manual"
 	if mode == "manual":
 		_ndi_manual_w.value = Saving.settings["ndiManualWidth"]
 		_ndi_manual_h.value = Saving.settings["ndiManualHeight"]
 
-	var enabled = ndi.is_enabled()
-	_ndi_width_option.disabled = !enabled
-	_ndi_mode_option.disabled = !enabled
+	var enabled: bool = ndi.is_enabled()
+	_ndi_width.disabled = not enabled
+	_ndi_mode.disabled = not enabled
 
-func _on_ndi_toggle(pressed: bool):
+
+func _refresh_recording() -> void:
+	_recording_format.selected = maxi(
+		RECORDING_FORMATS.find(Saving.settings.get("recordingFormat", "webm")), 0
+	)
+	var fps_index := RECORDING_FPS.find(Saving.settings.get("recordingFPS", 30))
+	_recording_fps.selected = fps_index if fps_index >= 0 else 1
+
+
+func _on_ndi_toggle(pressed: bool) -> void:
 	var ndi = Global.main.ndi_manager
 	if ndi == null:
 		return
 	ndi.set_enabled(pressed)
-	_update_ndi_ui()
-	# Update crop box visibility
+	_refresh_ndi()
 	if Global.main.editMode:
 		ndi.set_crop_visible(pressed)
-	# Refresh window transparency (NDI disables it for performance)
+	# NDI disables window transparency for performance, so re-derive it.
 	Global.main.updateWindowTransparency()
-	if pressed:
-		Global.pushUpdate("NDI output enabled.")
-	else:
-		Global.pushUpdate("NDI output disabled.")
+	Global.pushUpdate("NDI output enabled." if pressed else "NDI output disabled.")
 
-func _on_ndi_width_selected(idx: int):
-	var widths = [512, 720, 1080, 1920]
-	if idx < widths.size():
-		var ndi = Global.main.ndi_manager
-		if ndi:
-			ndi.set_width(widths[idx])
-		Global.pushUpdate("NDI width set to " + str(widths[idx]) + ".")
 
-func _on_ndi_mode_selected(idx: int):
-	var mode = "auto" if idx == 0 else "manual"
+func _on_ndi_width_selected(index: int) -> void:
 	var ndi = Global.main.ndi_manager
-	if ndi:
+	if ndi != null:
+		ndi.set_width(NDI_WIDTHS[index])
+	Global.pushUpdate("NDI width set to " + str(NDI_WIDTHS[index]) + ".")
+
+
+func _on_ndi_mode_selected(index: int) -> void:
+	var mode := "auto" if index == 0 else "manual"
+	var ndi = Global.main.ndi_manager
+	if ndi != null:
 		ndi.set_mode(mode)
-	_ndi_manual_container.visible = mode == "manual"
+	_ndi_manual_row.visible = mode == "manual"
 	Global.pushUpdate("NDI mode set to " + mode + ".")
 
-func _on_ndi_manual_size_changed(_value: float):
+
+func _on_ndi_manual_size_changed(_value: float) -> void:
 	var ndi = Global.main.ndi_manager
-	if ndi and _ndi_manual_w and _ndi_manual_h:
+	if ndi != null:
 		ndi.set_manual_size(int(_ndi_manual_w.value), int(_ndi_manual_h.value))
 
-func _on_ndi_source_name_committed(new_text: String):
+
+func _on_ndi_source_name_committed(new_text: String) -> void:
 	_apply_ndi_source_name(new_text)
-	if _ndi_source_name_input != null:
-		_ndi_source_name_input.release_focus()
+	_ndi_source_name.release_focus()
 
-func _on_ndi_source_name_focus_exited():
-	if _ndi_source_name_input != null:
-		_apply_ndi_source_name(_ndi_source_name_input.text)
 
-func _apply_ndi_source_name(new_text: String):
+func _on_ndi_source_name_focus_exited() -> void:
+	_apply_ndi_source_name(_ndi_source_name.text)
+
+
+func _apply_ndi_source_name(new_text: String) -> void:
 	var ndi = Global.main.ndi_manager
 	if ndi == null:
 		return
-	var prev = Saving.settings.get("ndiSourceName", "PixelLab Studio")
+	var previous: String = Saving.settings.get("ndiSourceName", "PixelLab Studio")
 	ndi.set_source_name(new_text)
-	var applied = Saving.settings.get("ndiSourceName", "PixelLab Studio")
-	if _ndi_source_name_input != null:
-		_ndi_source_name_input.text = applied
-	if applied != prev:
+	var applied: String = Saving.settings.get("ndiSourceName", "PixelLab Studio")
+	_ndi_source_name.text = applied
+	if applied != previous:
 		Global.pushUpdate("NDI source name set to \"" + applied + "\".")
 
-# --- Recording Settings ---
 
-func _build_recording_section():
-	if _recording_section != null:
-		return
+func _on_recording_format_selected(index: int) -> void:
+	var format: String = RECORDING_FORMATS[index]
+	Saving.settings["recordingFormat"] = format
+	# Still frames are expensive per frame, so drop the default rate for them.
+	Saving.settings["recordingFPS"] = 15 if format != "webm" else 30
+	_refresh_recording()
+	Global.pushUpdate("Recording format set to " + RECORDING_FORMAT_NAMES[index] + ".")
 
-	$NinePatchRect.offset_bottom += 60
-	position.y -= 60
 
-	_recording_section = Node2D.new()
-	_recording_section.name = "RecordingSettings"
-	_recording_section.position = Vector2(22, 565)
-	add_child(_recording_section)
-
-	# Separator line
-	var sep = ColorRect.new()
-	sep.position = Vector2(-4, 0)
-	sep.size = Vector2(380, 2)
-	sep.color = SidebarUIFactory.DEFAULT_DIVIDER_COLOR
-	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_recording_section.add_child(sep)
-
-	# Title label
-	var title = Label.new()
-	title.position = Vector2(0, 6)
-	title.text = "Recording"
-	title.add_theme_font_size_override("font_size", 14)
-	_recording_section.add_child(title)
-
-	# Format label
-	var fmt_label = Label.new()
-	fmt_label.position = Vector2(0, 30)
-	fmt_label.text = "format"
-	_recording_section.add_child(fmt_label)
-
-	# Format OptionButton
-	_recording_format_option = OptionButton.new()
-	_recording_format_option.position = Vector2(77, 30)
-	_recording_format_option.size = Vector2(160, 26)
-	_recording_format_option.add_item("Video (WebM)", 0)
-	_recording_format_option.add_item("Animated PNG", 1)
-	_recording_format_option.add_item("GIF", 2)
-	_recording_format_option.item_selected.connect(_on_recording_format_selected)
-	_recording_section.add_child(_recording_format_option)
-
-	# FPS label
-	var fps_label = Label.new()
-	fps_label.position = Vector2(250, 30)
-	fps_label.text = "fps"
-	_recording_section.add_child(fps_label)
-
-	# FPS OptionButton
-	_recording_fps_option = OptionButton.new()
-	_recording_fps_option.position = Vector2(285, 30)
-	_recording_fps_option.size = Vector2(80, 26)
-	_recording_fps_option.add_item("15", 0)
-	_recording_fps_option.add_item("30", 1)
-	_recording_fps_option.add_item("60", 2)
-	_recording_fps_option.item_selected.connect(_on_recording_fps_selected)
-	_recording_section.add_child(_recording_fps_option)
-
-func _update_recording_ui():
-	if _recording_format_option == null:
-		return
-	var fmt = Saving.settings.get("recordingFormat", "webm")
-	var formats = ["webm", "apng", "gif"]
-	var idx = formats.find(fmt)
-	if idx >= 0:
-		_recording_format_option.selected = idx
-	else:
-		_recording_format_option.selected = 0
-
-	if _recording_fps_option != null:
-		var fps = Saving.settings.get("recordingFPS", 30)
-		var fps_values = [15, 30, 60]
-		var fps_idx = fps_values.find(fps)
-		if fps_idx >= 0:
-			_recording_fps_option.selected = fps_idx
-		else:
-			_recording_fps_option.selected = 1
-
-func _on_recording_format_selected(idx: int):
-	var formats = ["webm", "apng", "gif"]
-	if idx < formats.size():
-		Saving.settings["recordingFormat"] = formats[idx]
-		# Auto-set FPS based on format
-		var fmt = formats[idx]
-		if fmt == "apng" or fmt == "gif":
-			Saving.settings["recordingFPS"] = 15
-		elif fmt == "webm":
-			Saving.settings["recordingFPS"] = 30
-		_update_recording_ui()
-		Global.pushUpdate("Recording format set to " + _recording_format_option.get_item_text(idx) + ".")
-
-func _on_recording_fps_selected(idx: int):
-	var fps_values = [15, 30, 60]
-	if idx < fps_values.size():
-		Saving.settings["recordingFPS"] = fps_values[idx]
-		Global.pushUpdate("Recording FPS set to " + str(fps_values[idx]) + ".")
+func _on_recording_fps_selected(index: int) -> void:
+	Saving.settings["recordingFPS"] = RECORDING_FPS[index]
+	Global.pushUpdate("Recording FPS set to " + str(RECORDING_FPS[index]) + ".")

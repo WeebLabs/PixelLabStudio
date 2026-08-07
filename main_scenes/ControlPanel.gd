@@ -8,10 +8,8 @@ extends Node2D
 # is near the top of the window (see AppMenuBar's auto-reveal constants), which
 # keeps it out of the way of the avatar and out of a capture.
 #
-# This node also owns the two bar popups (settings, microphone device list) and
-# the transient zoom readout. The popups are still their original scenes; only
-# their placement is owned here, through AppMenuBar.anchor_popup, so the planned
-# popup redesign has one seam to work against.
+# This node also owns the settings panel and the transient zoom readout. The
+# panel is placed through AppMenuBar.anchor_popup, the one seam for bar popups.
 
 
 const LEVEL_COLOR := Color(0.55, 0.78, 1.0)
@@ -25,11 +23,9 @@ const ZOOM_FADE := 0.02
 const ZOOM_HOLD := 6.0
 
 @onready var settings_menu: Node2D = $SettingsMenu
-@onready var mic_select: Node2D = $MicInputSelect
 
 var menu_bar: AppMenuBar = null
 
-var _mic_button: Button = null
 var _settings_button: Button = null
 var _zoom_label: Label = null
 var _meters: Array = []
@@ -56,14 +52,6 @@ func _build_actions() -> void:
 	menu_bar.add_button(menu_bar.left, "Switch to Editor", _on_edit_pressed)
 	MenuActions.add_avatar_file_actions(menu_bar, menu_bar.center)
 
-	# The Mic entry point is hidden pending its move into the settings panel. The
-	# device popup and the right-click mute stay wired so that becomes a
-	# relocation rather than a rewrite. An invisible child costs no bar space.
-	_mic_button = menu_bar.add_button(menu_bar.left, "Mic", _on_mic_pressed)
-	_mic_button.gui_input.connect(_on_mic_gui_input)
-	_mic_button.tooltip_text = "Left click: choose input device. Right click: mute."
-	_mic_button.visible = false
-	_refresh_mic_tone()
 
 
 # Right zone: the mic meters, then Settings closing the bar opposite the mode
@@ -163,7 +151,6 @@ func set_active(active: bool) -> void:
 	if not active:
 		menu_bar.snap_hidden()
 		settings_menu.visible = false
-		mic_select.visible = false
 
 
 # How much of the bar is on screen, for canvas hit-testing.
@@ -180,7 +167,7 @@ func show_zoom(percent: int) -> void:
 func _process(_delta: float) -> void:
 	for entry in _meters:
 		entry["meter"].value = entry["source"].call()
-	menu_bar.set_pin(&"popup", settings_menu.visible or mic_select.visible)
+	menu_bar.set_pin(&"popup", settings_menu.visible)
 	_zoom_label.modulate.a = lerpf(_zoom_label.modulate.a, 0.0, ZOOM_FADE)
 
 
@@ -190,32 +177,10 @@ func _on_edit_pressed() -> void:
 	Global.main.swapMode()
 
 
-func _on_mic_pressed() -> void:
-	settings_menu.visible = false
-	_toggle_popup(mic_select, _mic_button, mic_select.get_node("ScrollContainer").size)
-
-
-func _on_mic_gui_input(event: InputEvent) -> void:
-	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed):
-		return
-	Global.micMuted = not Global.micMuted
-	_refresh_mic_tone()
-	Global.pushUpdate("Microphone muted." if Global.micMuted else "Microphone unmuted.")
-
-
 func _on_settings_pressed() -> void:
-	mic_select.visible = false
-	_toggle_popup(settings_menu, _settings_button, settings_menu.get_node("NinePatchRect").size)
+	settings_menu.visible = not settings_menu.visible
+	if settings_menu.visible:
+		settings_menu.setvalues()
+		menu_bar.anchor_popup(_settings_button, settings_menu, settings_menu.panel_size())
 
 
-func _toggle_popup(popup: Node2D, opener: Control, popup_size: Vector2) -> void:
-	popup.visible = not popup.visible
-	if popup.visible:
-		menu_bar.anchor_popup(opener, popup, popup_size)
-
-
-func _refresh_mic_tone() -> void:
-	if Global.micMuted:
-		menu_bar.set_button_tone(_mic_button, AppMenuBar.COLOR_DANGER, AppMenuBar.COLOR_DANGER_HOVER)
-	else:
-		menu_bar.set_button_tone(_mic_button, AppMenuBar.COLOR_NORMAL, AppMenuBar.COLOR_HOVER)

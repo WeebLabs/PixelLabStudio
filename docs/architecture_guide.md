@@ -332,6 +332,59 @@ redesign has one seam to work against rather than scattered literals.
 
 ---
 
+## Settings Panel
+
+> Rewritten: 2026-08-07 — `ui_scenes/settings/settings_menu.gd`.
+
+A fixed-size dropdown (420x380) from the menu bar's Settings button, built
+entirely from the shared vocabulary: `AppTabBar` for the strip, `FormUI` for the
+labelled rows, `SidebarUI` for the palette. It replaced a hand-placed panel whose
+children all carried literal coordinates, whose scene file held a 27 KB node tree
+including ten spelled-out hotkey rows, and which grew its own background and
+shifted its own position as code-built sections were appended to it.
+
+Five tabs, declared in `_TABS` and built by the matching `_build_*` method:
+
+| Tab | Contents |
+|---|---|
+| Audio | input device list, mute |
+| Display | background colour presets and picker, texture filtering, max FPS |
+| Motion | bounce force/gravity, bounce on costume change, blink speed/chance |
+| Hotkeys | the ten costume bindings |
+| Output | NDI (enable / width / mode / manual size / source name), recording (format, fps) |
+
+The tab strip is pinned at the top and the active body scrolls, matching the
+right sidebar. `setvalues()` re-reads every control from live state; it runs at
+startup and again on each open. To add a setting, add a row to a `_build_*`
+method; to add a category, add a tab.
+
+**Audio tab.** Microphone selection used to be a separate `MicInputSelect` popup
+of `mic_select_button.tscn` rows hanging off its own bar button. That scene, its
+script and the bar's `Mic` button are all gone; the Audio tab lists
+`AudioServer.get_input_device_list()` directly, marks the active device with an
+accent dot, and carries the mute toggle that used to be a right-click on the bar
+button.
+
+### Shared UI components
+
+`ui_scenes/common/` is the design system. Nothing in it knows about avatars:
+
+| File | Role |
+|---|---|
+| `sidebar_ui.gd` | palette, geometry constants, slider theme, chrome hit-testing |
+| `form_ui.gd` | labelled control rows: sections, sliders, checks, dropdowns, text fields |
+| `tab_bar.gd` (`AppTabBar`) | the tab strip, shared by both sidebars and the settings panel |
+| `menu_bar.gd` (`AppMenuBar`) | the top bar for both modes |
+| `modal_dialog.gd` (`ModalDialog`) | recovery prompt and every progress dialog |
+
+> Updated: 2026-08-07 — The tab strip moved from
+> `ui_scenes/spriteList/sidebar_tab_bar.gd` to `ui_scenes/common/tab_bar.gd` and
+> was renamed `SidebarTabBar` to `AppTabBar`, since the settings panel now uses
+> it too. It builds its children on demand rather than only in `_ready`, so a
+> caller may add tabs before the strip enters the tree.
+
+---
+
 ## Modal Dialogs
 
 > Added: 2026-08-07 — one modal component, `ui_scenes/common/modal_dialog.gd`.

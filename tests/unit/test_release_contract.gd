@@ -6,7 +6,6 @@ const COMPACT_SCENES := [
 	"ui_scenes/spriteEditMenu/sprite_viewer.tscn",
 	"ui_scenes/settings/settings_menu.tscn",
 	"ui_scenes/spriteList/sprite_list_object.tscn",
-	"ui_scenes/microphoneSelect/mic_select_button.tscn",
 ]
 const REQUIRED_EXPORT_PATTERNS := [
 	"autoload/persistence/*.gd",

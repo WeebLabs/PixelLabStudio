@@ -52,7 +52,7 @@ var _sections: Array = []
 
 # Sidebar tabs (below the sprite-sheet section): Animation (clip list + inspector,
 # absorbs the old wobble) and Reactive (drag / rotational drag + limits / squash).
-var _tab_bar: SidebarTabBar
+var _tab_bar: AppTabBar
 var _active_left_tab: int = 0
 var _anim_panel: AnimationClipPanel
 var _anim_section: Node2D       # Node2D wrapper so _place_section can lay it out
@@ -349,9 +349,9 @@ func _ready():
 	# --- Animation / Reactive tab strip (sits below the sprite-sheet section) ---
 	# Animation tab = the clip list + inspector (absorbs the old wobble); Reactive
 	# tab = drag, rotational drag + limits, squash. Reuses the right sidebar's
-	# SidebarTabBar. The clip panel is wrapped in a Node2D so _place_section lays
+	# AppTabBar. The clip panel is wrapped in a Node2D so _place_section lays
 	# it out like every other section.
-	_tab_bar = SidebarTabBar.new()
+	_tab_bar = AppTabBar.new()
 	add_child(_tab_bar)
 	_tab_bar.add_tab("Animation")
 	_tab_bar.add_tab("Reactive")
@@ -629,7 +629,7 @@ func _layout_panel():
 	y += Global.UI_DIVIDER_PAD
 	_tab_bar.position = Vector2(11, y)
 	_tab_bar.set_bar_size(max(0.0, panel_width - 22))
-	y += SidebarTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
+	y += AppTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
 
 	# Active tab content.
 	var tab_sections: Array

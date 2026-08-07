@@ -11,7 +11,6 @@
 [ext_resource type="Texture2D" uid="uid://hunniqiw3ss4" path="res://ui_scenes/spriteEditMenu/failed.png" id="21_6nw1o"]
 [ext_resource type="Texture2D" uid="uid://c43lmtk2g6dgg" path="res://ui_scenes/spriteEditMenu/arrows.png" id="24_joqmn"]
 [ext_resource type="PackedScene" uid="uid://kj528cw4xqwd" path="res://ui_scenes/settings/settings_menu.tscn" id="25_a76ao"]
-[ext_resource type="Script" uid="uid://dagk4u44a2lle" path="res://main_scenes/MicInputSelect.gd" id="26_17y2u"]
 [ext_resource type="Texture2D" uid="uid://23rqddatjku3" path="res://ui_scenes/mouse/tooltipBox.png" id="27_4n53v"]
 [ext_resource type="PackedScene" uid="uid://gaijtw7euy5g" path="res://ui_scenes/spriteList/viewer.tscn" id="27_614d2"]
 [ext_resource type="Script" uid="uid://brnuowyuu6c2f" path="res://main_scenes/Tutorial.gd" id="27_ivpmi"]
@@ -80,22 +79,6 @@ position = Vector2(-200, -28)
 [node name="ControlPanel" type="Node2D" parent="UILayer" unique_id=782465269]
 z_index = 4090
 script = ExtResource("4_5ygs2")
-
-[node name="MicInputSelect" type="Node2D" parent="UILayer/ControlPanel" unique_id=1136518653]
-visible = false
-z_index = 4096
-script = ExtResource("26_17y2u")
-
-[node name="ScrollContainer" type="ScrollContainer" parent="UILayer/ControlPanel/MicInputSelect" unique_id=70250809]
-offset_right = 301.0
-offset_bottom = 483.0
-horizontal_scroll_mode = 0
-
-[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/ControlPanel/MicInputSelect/ScrollContainer" unique_id=597189314]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-alignment = 2
 
 [node name="SettingsMenu" parent="UILayer/ControlPanel" unique_id=2016009802 instance=ExtResource("25_a76ao")]
 visible = false

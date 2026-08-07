@@ -13,6 +13,7 @@ func run(t) -> void:
 	_test_menu_bar_reveal_contract(t)
 	_test_menu_bar_crowding_contract(t)
 	_test_shared_menu_actions(t)
+	_test_settings_panel_contract(t)
 	_test_sidebar_call_sites(t)
 
 
@@ -134,6 +135,34 @@ func _test_shared_menu_actions(t) -> void:
 		t.assert_true(source.contains("MenuActions.add_avatar_file_actions"), "%s takes its file actions from the shared list" % relative_path)
 		for label in ["Save", "Load", "Clear", "Reset"]:
 			t.assert_false(source.contains('"%s"' % label), "%s does not redeclare the %s item" % [relative_path, label])
+
+
+# The settings panel is a constructed form, not a placed one, and it draws from
+# the same components as the sidebars and the menu bar.
+func _test_settings_panel_contract(t) -> void:
+	var source_root := _source_root()
+	var panel := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/settings_menu.gd"))
+	var scene := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/settings_menu.tscn"))
+
+	t.assert_true(panel.contains("AppTabBar.new()"), "the settings panel uses the shared tab strip")
+	t.assert_true(panel.contains("Form.section"), "the settings panel uses the shared form sections")
+	t.assert_true(panel.contains("SidebarUIFactory.DEFAULT_PANEL_COLOR"), "the settings panel uses the shared palette")
+	for tab in ["Audio", "Display", "Motion", "Hotkeys", "Output"]:
+		t.assert_true(panel.contains('"%s"' % tab), "the settings panel declares the %s tab" % tab)
+
+	# The whole point of the rewrite: no child is placed by coordinate any more,
+	# and the scene carries no hand-laid node tree.
+	t.assert_false(panel.contains(".position = Vector2("), "settings rows are laid out by containers, not coordinates")
+	t.assert_false(panel.contains("NinePatchRect"), "the settings panel no longer wears the old skin")
+	t.assert_true(scene.length() < 400, "the settings scene is a bare node, its content is constructed in code")
+
+	# Microphone selection moved into the Audio tab; its old popup is gone.
+	t.assert_true(panel.contains("AudioServer.get_input_device_list()"), "the Audio tab lists input devices")
+	t.assert_true(panel.contains("Global.selectMicrophone"), "the Audio tab selects the input device")
+	t.assert_false(
+		FileAccess.file_exists(source_root.path_join("main_scenes/MicInputSelect.gd")),
+		"the standalone microphone popup is gone",
+	)
 
 
 func _test_sidebar_call_sites(t) -> void:

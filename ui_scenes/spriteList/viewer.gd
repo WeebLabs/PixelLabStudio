@@ -58,7 +58,7 @@ var _eye_mode_tooltip_timer: Timer
 # so a tab's content can grow upward into freed space if the layer list above is
 # ever detached.
 const BOTTOM_MARGIN = 12
-var _tab_bar: SidebarTabBar
+var _tab_bar: AppTabBar
 var _tab_scroll: ScrollContainer
 var _tab_host: VBoxContainer
 var _details_content: VBoxContainer
@@ -271,7 +271,7 @@ func _create_blend_section():
 # Only the active content is visible; the scroll lets a tall tab (Physics) grow
 # into whatever vertical space is available below the costume row.
 func _create_tabs():
-	_tab_bar = SidebarTabBar.new()
+	_tab_bar = AppTabBar.new()
 	add_child(_tab_bar)
 	_tab_bar.add_tab("Details")
 	_tab_bar.add_tab("Tracking")
@@ -612,7 +612,7 @@ func _apply_size():
 	# grows and the active tab's content expands upward to use it.
 	_tab_bar.position = Vector2(section_x, y)
 	_tab_bar.set_bar_size(section_width)
-	y += SidebarTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
+	y += AppTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
 
 	var vis_h = _vis_toggle_section.get_combined_minimum_size().y
 	var vis_y = panel_height - vis_h - BOTTOM_MARGIN

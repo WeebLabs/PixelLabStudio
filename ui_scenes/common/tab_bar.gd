@@ -1,20 +1,24 @@
+class_name AppTabBar
 extends Control
-class_name SidebarTabBar
 
-# Reusable sidebar tab strip: a row of evenly-distributed flat buttons with a
-# pink underline marking the active tab. Emits tab_changed(index) when the user
-# picks a tab. Layout is rule-based — buttons share the width equally via
-# SIZE_EXPAND_FILL and the underline is positioned by (index / count), so the
-# strip reflows correctly at any sidebar width. Match the sidebar theme:
-# inactive flat-button grey, active brighter text, pink accent underline.
+# Reusable tab strip, shared by both sidebars and the settings panel: a row of
+# evenly distributed flat buttons with a pink underline marking the active tab.
+# Emits tab_changed(index) when the user picks a tab.
+#
+# Layout is rule-based. Buttons share the width equally via SIZE_EXPAND_FILL and
+# the underline is positioned by (index / count), so the strip reflows correctly
+# at any width. Palette comes from the shared UI factory: inactive flat-button
+# grey, active brighter text, pink accent underline.
 
-signal tab_changed(index: int)
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 
 const BAR_HEIGHT := 26.0
 const UNDERLINE_HEIGHT := 2.0
 const _INACTIVE := Color(0.7, 0.7, 0.75)
 const _ACTIVE := Color(1, 1, 1)
-const _ACCENT := Color(1.0, 0.7, 0.8)
+const _ACCENT := SidebarUIFactory.SLIDER_FILL_ENABLED
+
+signal tab_changed(index: int)
 
 var _row: HBoxContainer
 var _underline: ColorRect
@@ -22,6 +26,16 @@ var _buttons: Array[Button] = []
 var _active: int = 0
 
 func _ready() -> void:
+	_ensure_built()
+	# Owners that place the strip by hand call set_bar_size(); owners that put it
+	# in a container get the same reflow from the container's own sizing.
+	resized.connect(_layout)
+
+# Built on demand rather than in _ready alone, so a caller may add tabs before
+# the strip enters the tree without silently doing nothing.
+func _ensure_built() -> void:
+	if _row != null:
+		return
 	custom_minimum_size.y = BAR_HEIGHT
 
 	_row = HBoxContainer.new()
@@ -36,6 +50,7 @@ func _ready() -> void:
 
 # Add a tab button. Tabs are indexed in insertion order.
 func add_tab(title: String) -> void:
+	_ensure_built()
 	var btn := Button.new()
 	btn.text = title
 	btn.flat = true
