@@ -20,6 +20,7 @@ const REQUIRED_EXPORT_PATTERNS := [
 	"bin/*.gdextension",
 	"addons/godot-ndi/*.gdextension",
 	"addons/psd-native/*.gdextension",
+	"default_bus_layout.tres",
 ]
 
 
@@ -40,6 +41,13 @@ func _test_product_metadata(t, source_root: String) -> void:
 	t.assert_equal(project.get_value("application", "config/version"), "1.7.0a", "product version is explicit")
 	var features: PackedStringArray = project.get_value("application", "config/features", PackedStringArray())
 	t.assert_true(features.has("4.6"), "release metadata remains on the Godot 4.6 feature line")
+	# Project settings reference the bus layout by UID, which no export filter
+	# follows: without it the MIC bus is gone, the microphone falls through to
+	# Master, and the level meters read a spectrum analyzer that is not there.
+	t.assert_true(String(project.get_value("audio", "buses/default_bus_layout", "")) != "", "the project names an audio bus layout")
+	var bus_layout := FileAccess.get_file_as_string(source_root.path_join("default_bus_layout.tres"))
+	t.assert_true(bus_layout.contains("bus/1/name = &\"MIC\""), "the shipped bus layout declares the MIC bus the microphone routes to")
+	t.assert_true(bus_layout.contains("AudioEffectSpectrumAnalyzer"), "the MIC bus carries the spectrum analyzer the level meters read")
 
 
 func _test_export_presets(t, source_root: String) -> void:
