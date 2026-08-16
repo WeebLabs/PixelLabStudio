@@ -33,7 +33,7 @@ func _test_product_metadata(t, source_root: String) -> void:
 	var project := ConfigFile.new()
 	t.assert_equal(project.load(source_root.path_join("project.godot")), OK, "release project configuration loads")
 	t.assert_equal(project.get_value("application", "config/name"), "PixelLab Studio", "product name is explicit")
-	t.assert_equal(project.get_value("application", "config/version"), "1.6.1", "product version is explicit")
+	t.assert_equal(project.get_value("application", "config/version"), "1.7.0a", "product version is explicit")
 	var features: PackedStringArray = project.get_value("application", "config/features", PackedStringArray())
 	t.assert_true(features.has("4.6"), "release metadata remains on the Godot 4.6 feature line")
 
@@ -59,7 +59,7 @@ func _test_export_presets(t, source_root: String) -> void:
 		t.assert_false(include_filter.contains("ui_scenes/light"), "preset %d excludes dormant untracked light work" % index)
 		t.assert_equal(presets.get_value(section, "export_path"), expected[index][2], "preset %d writes below the ignored artifact directory" % index)
 
-	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), "1.6.1.0", "Windows product version matches the application")
+	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), "1.7.0.0", "Windows product version matches the application")
 	t.assert_equal(presets.get_value("preset.2.options", "application/bundle_identifier"), "com.weeblabs.pixellabstudio", "macOS bundle identifier is stable")
 	t.assert_true(String(presets.get_value("preset.2.options", "privacy/microphone_usage_description", "")).contains("animate the avatar"), "macOS microphone purpose is user-facing")
 	for script_path in ["scripts/run_export_smoke.sh", "scripts/run_release_checks.sh"]:
