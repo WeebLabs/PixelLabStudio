@@ -50,6 +50,14 @@ if [[ ! -s "$PACK_PATH" ]]; then
 	exit 1
 fi
 
+# The pack ships the GDExtension manifests, so the launch needs the native
+# libraries beside it exactly as a real export places them next to the binary.
+rm -rf "$ARTIFACT_DIR/bin" "$ARTIFACT_DIR/addons"
+mkdir -p "$ARTIFACT_DIR/bin" "$ARTIFACT_DIR/addons/godot-ndi" "$ARTIFACT_DIR/addons/psd-native"
+cp -R "$PROJECT_ROOT/bin/." "$ARTIFACT_DIR/bin/"
+cp -R "$PROJECT_ROOT/addons/godot-ndi/bin" "$ARTIFACT_DIR/addons/godot-ndi/"
+cp -R "$PROJECT_ROOT/addons/psd-native/bin" "$ARTIFACT_DIR/addons/psd-native/"
+
 set +e
 (
 	cd "$ARTIFACT_DIR"

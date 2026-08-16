@@ -14,6 +14,20 @@ PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with
 > script/scene resources, keeping developer saves and imported artwork out of
 > release packs. CI runs the export/launch smoke on all three desktop hosts.
 
+> Updated: 2026-08-17 — Export `include_filter` covers whole source directories
+> (`autoload/*`, `main_scenes/*`, `ui_scenes/*`, `effects/*`, `ndi/*`,
+> `shader/*`, `icons/*`, `font/*`, the Stream Deck addon) plus the three
+> `*.gdextension` manifests, with `exclude_filter="ui_scenes/light/*"` for the
+> dormant light work. Per-file patterns had silently dropped whatever a release
+> added later: v1.7.0a exports were missing `main_scenes/menu_actions.gd`, the
+> new `ui_scenes/settings/` assets, and — because a `.gdextension` manifest is
+> only exported when the filter names it — every native library (NDI, PSD,
+> background input). Godot copies a manifest's platform libraries beside the
+> binary only when the manifest itself is packed, so those patterns are the
+> switch that ships native features. `run_export_smoke.sh` now mirrors the
+> native libraries into the smoke directory before launching the pack; without
+> them the macOS loader aborts on the missing dylib.
+
 The app has two primary modes:
 
 - **View mode** — streaming/performing mode with mic input, bounce animation, costume switching

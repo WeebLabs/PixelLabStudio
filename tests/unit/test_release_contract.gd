@@ -8,14 +8,18 @@ const COMPACT_SCENES := [
 	"ui_scenes/spriteList/sprite_list_object.tscn",
 ]
 const REQUIRED_EXPORT_PATTERNS := [
-	"autoload/persistence/*.gd",
-	"autoload/runtime/*.gd",
-	"main_scenes/controllers/*.gd",
-	"ndi/*.gd",
-	"ui_scenes/microphoneSelect/*",
-	"ui_scenes/selectedSprite/*",
-	"ui_scenes/spriteList/*.svg",
-	"addons/godot-streamdeck-addon/*.gd",
+	"autoload/*",
+	"main_scenes/*",
+	"ui_scenes/*",
+	"effects/*",
+	"ndi/*",
+	"shader/*",
+	"icons/*",
+	"font/*",
+	"addons/godot-streamdeck-addon/*",
+	"bin/*.gdextension",
+	"addons/godot-ndi/*.gdextension",
+	"addons/psd-native/*.gdextension",
 ]
 
 
@@ -56,7 +60,8 @@ func _test_export_presets(t, source_root: String) -> void:
 		var include_filter: String = presets.get_value(section, "include_filter", "")
 		for pattern in REQUIRED_EXPORT_PATTERNS:
 			t.assert_true(include_filter.split(",").has(pattern), "preset %d explicitly includes indirect runtime dependency %s" % [index, pattern])
-		t.assert_false(include_filter.contains("ui_scenes/light"), "preset %d excludes dormant untracked light work" % index)
+		var exclude_filter: String = presets.get_value(section, "exclude_filter", "")
+		t.assert_true(exclude_filter.split(",").has("ui_scenes/light/*"), "preset %d excludes dormant untracked light work" % index)
 		t.assert_equal(presets.get_value(section, "export_path"), expected[index][2], "preset %d writes below the ignored artifact directory" % index)
 
 	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), "1.7.0.0", "Windows product version matches the application")
