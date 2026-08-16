@@ -27,6 +27,14 @@ PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with
 > switch that ships native features. `run_export_smoke.sh` now mirrors the
 > native libraries into the smoke directory before launching the pack; without
 > them the macOS loader aborts on the missing dylib.
+>
+> The filter must also name `default_bus_layout.tres`: project settings
+> reference it by UID and no export filter follows that, so the first v1.7.0a
+> build booted with a Master bus alone. `MicrophoneMonitor` sets
+> `player.bus = &"MIC"`, which then falls through to Master and plays the
+> microphone out of the speakers, and `get_bus_index(&"MIC")` returns -1, so
+> `_refresh_spectrum()` finds no analyzer and the level meters read zero. Any
+> resource reached only through project settings needs the same treatment.
 
 The app has two primary modes:
 
