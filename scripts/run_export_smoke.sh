@@ -66,7 +66,10 @@ set +e
 ) 2>&1 | tee "$RUNTIME_LOG"
 RUNTIME_STATUS=${PIPESTATUS[0]}
 set -e
-if [[ $RUNTIME_STATUS -ne 0 ]] || grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script|Cannot get class" "$RUNTIME_LOG" >/dev/null; then
+# The NDI runtime is an optional end-user install that build machines are not
+# required to carry; the app reports its absence and runs without NDI output.
+if [[ $RUNTIME_STATUS -ne 0 ]] || grep -v "Failed to load NDI" "$RUNTIME_LOG" \
+	| grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script|Cannot get class" >/dev/null; then
 	echo "The $PRESET exported-pack launch reported an error." >&2
 	exit 1
 fi
