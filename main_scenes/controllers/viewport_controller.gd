@@ -86,6 +86,13 @@ func swap_mode() -> void:
 	update_window_transparency()
 	_main.editControls.set_process(_main.editMode)
 	_main.editControls.visible = _main.editMode
+	# Hiding a node does not stop its _process. Both sidebars and every layer row
+	# live under EditControls, so on the player page they were re-syncing hidden
+	# UI 60 times a second. Disabling the branch stops the whole subtree at once.
+	_main.editControls.process_mode = (
+		Node.PROCESS_MODE_INHERIT if _main.editMode else Node.PROCESS_MODE_DISABLED
+	)
+	set_layer_collision(_main.editMode)
 	_main.tutorial.visible = _main.editMode
 	_main.controlPanel.set_active(not _main.editMode)
 	_main.lines.visible = _main.editMode
@@ -96,6 +103,18 @@ func swap_mode() -> void:
 	if _main._light_gizmo != null:
 		_main._light_gizmo.queue_redraw()
 	window_size_changed()
+
+
+# Click-to-select only runs in edit mode, so the layer grab shapes only need to
+# be in the physics space there. Applied to every layer on each mode switch;
+# layers built later pick the state up in spriteObject._build_collision.
+func set_layer_collision(active: bool) -> void:
+	if not is_instance_valid(_main) or _main.get_tree() == null:
+		return
+	for node in _main.get_tree().get_nodes_in_group("saved"):
+		if node.is_queued_for_deletion() or not node.has_method("setCollisionActive"):
+			continue
+		node.setCollisionActive(active)
 
 
 func scale_percent() -> int:

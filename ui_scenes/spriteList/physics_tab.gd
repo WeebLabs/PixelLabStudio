@@ -56,6 +56,8 @@ var _autofit_btn: Button
 var _edit_box_idle: StyleBoxFlat
 var _edit_box_hover: StyleBoxFlat
 var _edit_box_active: StyleBoxFlat
+# Null so the first sync() always writes, whichever state it finds.
+var _was_editing = null
 
 # prop name -> { slider, label, prefix, suffix, is_int }
 var _rows: Dictionary = {}
@@ -128,10 +130,16 @@ func sync() -> void:
 	_edit_btn.disabled = not active
 	_autofit_btn.disabled = not active
 	var editing = active and Global.wigglePathMode
-	_edit_btn.text = "✓  Done editing" if editing else "✎  Edit ribbon path"
-	_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
-	_edit_btn.add_theme_color_override("font_color",
-		Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
+	# sync() runs every frame. A stylebox override invalidates the button's
+	# minimum size, so writing it unconditionally re-measured the text and
+	# re-ran the container layout 60 times a second for a state that changes
+	# on a click. It showed up in a profile as Button::get_minimum_size.
+	if editing != _was_editing:
+		_was_editing = editing
+		_edit_btn.text = "✓  Done editing" if editing else "✎  Edit ribbon path"
+		_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
+		_edit_btn.add_theme_color_override("font_color",
+			Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
 	if has:
 		_cb_enabled.set_pressed_no_signal(spr.wiggleEnabled)
 		_cb_wag.set_pressed_no_signal(spr.wiggleWagEnabled)

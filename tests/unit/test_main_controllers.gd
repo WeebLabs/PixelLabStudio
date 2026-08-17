@@ -13,6 +13,7 @@ func run(t) -> void:
 	_test_session_recovery_contract(t)
 	_test_save_image_encoding_contract(t)
 	_test_main_decomposition_contract(t)
+	_test_idle_mode_contract(t)
 
 
 # A controller that fails to compile makes every later call in this suite error
@@ -79,6 +80,61 @@ func _test_save_image_encoding_contract(t) -> void:
 	var decode_error := decoded.load_png_from_buffer(Marshalls.base64_to_raw(entry["imageData"]))
 	t.assert_equal(decode_error, OK, "worker-encoded sprite images remain valid PNG data")
 	t.assert_equal(decoded.get_size(), Vector2i(2, 2), "worker-encoded sprite images preserve dimensions")
+
+
+# The player page pays for nothing it cannot use. Hiding a node does not stop its
+# _process, so the edit UI kept syncing behind the player page, and the layer grab
+# shapes kept costing the physics broadphase a moving decomposed polygon each tick
+# for a selection query that only runs in edit mode.
+func _test_idle_mode_contract(t) -> void:
+	var viewport_source := FileAccess.get_file_as_string("res://main_scenes/controllers/viewport_controller.gd")
+	var swap := _function_body(viewport_source, "func swap_mode")
+	t.assert_true(swap.contains("editControls.visible"), "the mode-switch body was located")
+	t.assert_true(swap.contains("PROCESS_MODE_DISABLED"), "the edit UI subtree stops processing off the edit page")
+	t.assert_true(swap.contains("set_layer_collision(_main.editMode)"), "layer collision follows the mode")
+
+	# set_layer_collision drives every layer, so it has to tolerate a rig whose
+	# members are mid-deletion or predate the method.
+	var apply := _function_body(viewport_source, "func set_layer_collision")
+	t.assert_true(apply.contains("get_nodes_in_group(\"saved\")"), "every layer in the rig is covered")
+	t.assert_true(apply.contains("is_queued_for_deletion"), "layers being deleted are skipped")
+	t.assert_true(apply.contains("has_method(\"setCollisionActive\")"), "the call is guarded for group members without it")
+
+	var sprite_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/selectedSprite/spriteObject.gd"))
+	t.assert_true(sprite_source.contains("func setCollisionActive"), "layers expose the collision toggle the switch calls")
+	t.assert_true(
+		_function_body(sprite_source, "func _build_collision").contains("CollisionBuilder.populate_polygons(grabArea"),
+		"the collision wrapper is the one place shapes are built",
+	)
+	t.assert_equal(
+		sprite_source.count("CollisionBuilder.populate_polygons(grabArea"),
+		1,
+		"every rebuild routes through that wrapper, so shapes built on the player page start disabled",
+	)
+
+	var cursor_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/mouse/mouse_cursor.gd"))
+	t.assert_true(cursor_source.contains("params.collision_mask = SELECT_MASK"), "the point query names the layer bit directly")
+	t.assert_false(cursor_source.contains("params.collision_mask = area.collision_mask"), "the query no longer forces a mask onto the cursor's own area")
+	var cursor_scene := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/mouse/mouse_cursor.tscn"))
+	t.assert_true(cursor_scene.contains("collision_mask = 0"), "the cursor area detects nothing, so it pairs with no layer")
+
+	# A stylebox override invalidates the control's minimum size, so writing one
+	# every frame re-measures the button text and re-runs the container layout.
+	var physics_tab := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/spriteList/physics_tab.gd"))
+	t.assert_true(physics_tab.contains("if editing != _was_editing:"), "the ribbon button restyles only when its state changes")
+
+
+# The body of a top-level function, for assertions about one call site.
+func _function_body(source: String, signature: String) -> String:
+	var start := source.find(signature)
+	if start < 0:
+		return ""
+	var body := ""
+	for line in source.substr(start).split("\n"):
+		if not body.is_empty() and not line.is_empty() and not line.begins_with("\t"):
+			break
+		body += line + "\n"
+	return body
 
 
 func _test_main_decomposition_contract(t) -> void:

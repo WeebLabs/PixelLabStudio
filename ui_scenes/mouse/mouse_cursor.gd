@@ -1,5 +1,11 @@
 extends Node2D
 
+# The layer the grab areas sit on. Taking it from the cursor's own Area2D meant
+# that node had to carry a matching mask, which made the physics server pair the
+# cursor with every layer in the rig, every tick, for a query that reads the
+# layer bit and nothing else. The constant lets that mask go to zero.
+const SELECT_MASK := 1
+
 var text = ""
 var _click_pending = false
 
@@ -107,7 +113,7 @@ func _query_areas_at_mouse() -> Array:
 	var params = PhysicsPointQueryParameters2D.new()
 	# Sprite Area2Ds live in world space, so query with world-mouse coords.
 	params.position = _world_mouse_position()
-	params.collision_mask = area.collision_mask
+	params.collision_mask = SELECT_MASK
 	params.collide_with_areas = true
 	params.collide_with_bodies = false
 	var results = space.intersect_point(params)
