@@ -74,20 +74,20 @@ func _build_mic_meters() -> void:
 		{
 			"caption": "Duration",
 			"fill": DURATION_COLOR,
-			"range": 1.0,
+			"range": SettingsSchema.MIC_DURATION_RANGE,
 			"step": 0.005,
 			"setting": "sense",
-			"default": 0.25,
+			"default": 0.75,
 			"source": func() -> float: return Global.volumeSensitivity,
 			"apply": func(limit: float) -> void: Global.senseLimit = limit,
 		},
 		{
 			"caption": "Level",
 			"fill": LEVEL_COLOR,
-			"range": 0.2,
+			"range": SettingsSchema.MIC_LEVEL_RANGE,
 			"step": 0.001,
 			"setting": "volume",
-			"default": 0.185,
+			"default": 0.015,
 			"source": func() -> float: return Global.volume,
 			"apply": func(limit: float) -> void: Global.volumeLimit = limit,
 		},
@@ -108,13 +108,16 @@ func _build_mic_meters() -> void:
 			spec["step"],
 		)
 		var slider: HSlider = control["slider"]
-		var limit_range: float = spec["range"]
 		var setting: String = spec["setting"]
 		var apply: Callable = spec["apply"]
 
-		# The slider reads as "sensitivity": dragging right lowers the limit.
+		# The thumb is a threshold marker sharing the meter's scale, so the limit
+		# IS the thumb position: the trigger holds while the bar behind it has
+		# reached the thumb. Level compares the live signal, Duration the decay
+		# that follows a trigger, so a thumb further left holds the mouth open
+		# longer.
 		slider.value_changed.connect(func(value: float) -> void:
-			apply.call(limit_range - value)
+			apply.call(value)
 			Saving.settings[setting] = value
 		)
 		# The cursor leaves the reveal band while dragging, so hold the bar open.
@@ -122,7 +125,7 @@ func _build_mic_meters() -> void:
 		slider.drag_ended.connect(func(_changed: bool) -> void: menu_bar.set_pin(&"drag", false))
 
 		slider.value = Saving.settings.get(setting, spec["default"])
-		apply.call(limit_range - slider.value)
+		apply.call(slider.value)
 		Global.make_slider_resettable(slider, spec["default"])
 
 		_meters.append({"meter": control["meter"], "source": spec["source"]})

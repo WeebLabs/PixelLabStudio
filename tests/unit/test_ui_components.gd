@@ -2,6 +2,7 @@ extends RefCounted
 
 const SidebarComponent = preload("res://ui_scenes/common/sidebar_ui.gd")
 const MenuBarComponent = preload("res://ui_scenes/common/menu_bar.gd")
+const MicMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 
 
 func run(t) -> void:
@@ -12,6 +13,8 @@ func run(t) -> void:
 	_test_slider_theme_contract(t)
 	_test_menu_bar_reveal_contract(t)
 	_test_menu_bar_crowding_contract(t)
+	_test_level_meter_alignment_contract(t)
+	_test_mic_threshold_wiring(t)
 	_test_shared_menu_actions(t)
 	_test_settings_panel_contract(t)
 	_test_sidebar_call_sites(t)
@@ -107,6 +110,36 @@ func _test_menu_bar_crowding_contract(t) -> void:
 
 	# The threshold leaves the edge margin and a visible gap on each side.
 	t.assert_false(MenuBarComponent.zones_fit(600, 200, 200, 200), "zones packed to the full width leave no room for margins")
+
+
+# A mic thumb is read against the bar behind it, so the two have to share one
+# coordinate space: the meter spans the grabber's travel, which center_grabber
+# makes the slider's whole rect. Verified in rendered pixels; this holds the
+# geometry that made them agree.
+func _test_level_meter_alignment_contract(t) -> void:
+	t.assert_equal(MenuBarComponent.METER_EDGE, float(MenuBarComponent.GRABBER_RADIUS), "the meter is inset by exactly the slider's own inset")
+	t.assert_equal(
+		MenuBarComponent.METER_WIDTH,
+		MenuBarComponent.METER_TRACK_WIDTH + MenuBarComponent.METER_EDGE * 2.0,
+		"the stack carries the track plus both insets, so the visible track keeps its length",
+	)
+
+
+# Both mic thumbs are thresholds read against their own meter, so the limit is
+# the thumb position itself. The earlier wiring stored the mirror, which made the
+# thumb behave as a sensitivity knob with no relationship to the bar behind it.
+func _test_mic_threshold_wiring(t) -> void:
+	var source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/ControlPanel.gd"))
+	t.assert_true(source.contains("apply.call(value)"), "a thumb applies its own position as the threshold")
+	t.assert_false(source.contains("limit_range - value"), "no mirrored sensitivity mapping remains")
+	t.assert_true(source.contains("SettingsSchema.MIC_LEVEL_RANGE"), "the level meter takes its scale from the persisted schema")
+	t.assert_true(source.contains("SettingsSchema.MIC_DURATION_RANGE"), "the duration meter takes its scale from the persisted schema")
+
+	# A trigger holds while the meter has reached the thumb, on both meters.
+	t.assert_equal(MicMonitor.next_sensitivity(0.0, 0.09, 0.05, 0.016), 1.0, "a level bar past the thumb fires")
+	t.assert_equal(MicMonitor.next_sensitivity(0.0, 0.03, 0.05, 0.016), 0.0, "a level bar short of the thumb does not")
+	var decaying := MicMonitor.next_sensitivity(1.0, 0.0, 0.05, 0.016)
+	t.assert_true(decaying < 1.0 and decaying > 0.75, "the duration bar shrinks from a trigger rather than dropping out")
 
 
 func _test_slider_theme_contract(t) -> void:

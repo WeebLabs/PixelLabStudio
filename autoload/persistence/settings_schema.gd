@@ -3,8 +3,17 @@ extends RefCounted
 
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 
-const CURRENT_VERSION := 1
+const CURRENT_VERSION := 2
 const COSTUME_SLOT_COUNT := 10
+
+# Full-scale value of each microphone meter. The stored "volume" and "sense"
+# settings are thumb positions on those meters, and since schema 2 a thumb is
+# the threshold the meter's own bar is compared against: the trigger fires while
+# the bar has reached the thumb. Schema 1 stored the mirror of that (the thumb
+# read as a sensitivity knob, limit = range - thumb), so v1 values are flipped
+# once on load. The viewer bar builds both meters from these ranges.
+const MIC_LEVEL_RANGE := 0.2
+const MIC_DURATION_RANGE := 1.0
 
 
 static func defaults() -> Dictionary:
@@ -12,8 +21,8 @@ static func defaults() -> Dictionary:
 		"_schemaVersion": CURRENT_VERSION,
 		"newUser": true,
 		"lastAvatar": "",
-		"volume": 0.185,
-		"sense": 0.25,
+		"volume": 0.015,
+		"sense": 0.75,
 		"windowSize": var_to_str(Vector2i(1280, 720)),
 		"useStreamDeck": false,
 		"audioDevice": "",
@@ -52,11 +61,14 @@ static func normalize(value: Variant) -> Dictionary:
 	# older one without losing extension preferences.
 	var result: Dictionary = source.duplicate(true)
 	var base := defaults()
+	# Read before it is stamped: the microphone thumbs need to know which meaning
+	# the stored values carry.
+	var source_version := ValueCodec.int_value(source.get("_schemaVersion"), 0, 0, 1 << 30)
 	result["_schemaVersion"] = CURRENT_VERSION
 	result["newUser"] = ValueCodec.bool_value(source.get("newUser"), base["newUser"])
 	result["lastAvatar"] = ValueCodec.string_value(source.get("lastAvatar"), base["lastAvatar"], 32768)
-	result["volume"] = ValueCodec.float_value(source.get("volume"), base["volume"], 0.0, 1.0)
-	result["sense"] = ValueCodec.float_value(source.get("sense"), base["sense"], 0.0, 1.0)
+	result["volume"] = _mic_thumb(source.get("volume"), base["volume"], MIC_LEVEL_RANGE, source_version)
+	result["sense"] = _mic_thumb(source.get("sense"), base["sense"], MIC_DURATION_RANGE, source_version)
 
 	var window_size := ValueCodec.vector2i_value(source.get("windowSize"), Vector2i(1280, 720))
 	window_size.x = clampi(window_size.x, 640, 16384)
@@ -101,6 +113,20 @@ static func normalize(value: Variant) -> Dictionary:
 	result["wigglePresets"] = source["wigglePresets"].duplicate(true) if source.get("wigglePresets") is Dictionary else {}
 
 	return {"ok": true, "value": result, "error": ""}
+
+
+# A microphone meter's thumb position, clamped to that meter's scale. Schema 1
+# and earlier stored the mirror (the slider read as a sensitivity knob), so those
+# values are flipped once. Clamping happens first: an out-of-range v1 value meant
+# a threshold pinned at one end, and it has to land on that same end afterwards.
+static func _mic_thumb(value: Variant, fallback: float, range_max: float, source_version: int) -> float:
+	var mirrored := source_version < 2
+	# The fallback is expressed in the current meaning, so a missing or unusable
+	# value on an old source has to enter the flip already mirrored to come back
+	# out as today's default.
+	var source_fallback := (range_max - fallback) if mirrored else fallback
+	var thumb := ValueCodec.float_value(value, source_fallback, 0.0, range_max)
+	return (range_max - thumb) if mirrored else thumb
 
 
 static func _costume_keys(value: Variant, fallback: Array) -> Array:

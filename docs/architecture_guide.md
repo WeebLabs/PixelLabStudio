@@ -275,6 +275,21 @@ left zone; the viewer bar uses all three.
 - **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
 - **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a gear icon for Settings, right.
 
+> Updated: 2026-08-17 — The two mic controls are **threshold markers, not
+> knobs**. Each is a meter with a slider riding on it, both on the same scale
+> (`SettingsSchema.MIC_LEVEL_RANGE` 0.2, `MIC_DURATION_RANGE` 1.0), and the limit
+> handed to `MicrophoneMonitor` IS the thumb position: a trigger holds while the
+> bar behind the thumb has reached it. `Level` compares the live signal, so the
+> avatar speaks once the bar arrives at the thumb; `Duration` compares the decay
+> that follows a trigger, so a thumb further left holds the mouth open longer.
+> Two things this depends on. The meter spans exactly the grabber's travel
+> (`METER_EDGE`), because with `center_grabber` the grabber's centre crosses the
+> slider's whole rect, so a full-width meter drifted up to 7 px from the thumb;
+> alignment was measured in rendered pixels, not by eye. And settings schema 2
+> mirrors the stored `volume` / `sense` once, since schema 1 stored
+> `range - thumb` (the slider read as a sensitivity knob). Defaults moved to the
+> mirrored values, so upgrades keep the thresholds they had.
+
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
 > (`main_scenes/menu_actions.gd`), declared once so the two modes cannot drift in

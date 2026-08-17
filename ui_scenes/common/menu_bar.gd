@@ -48,12 +48,21 @@ const COLOR_MUTED := Color(0.6, 0.6, 0.65)
 # --- Level meter widget ------------------------------------------------------
 # A live meter with a threshold marker riding on top of it, which is how the mic
 # controls read: the bar shows the signal, the disc shows where it triggers.
-const METER_WIDTH := 128.0
+# The thumb marks a threshold ON the meter behind it, so the fill edge and the
+# grabber centre have to land on the same pixel for the same value. With
+# center_grabber the grabber's CENTRE travels the slider's whole rect instead of
+# stopping half a grabber short of each end, so the meter spans exactly that rect
+# and the stack is widened to keep the visible track its full length. Measured
+# from rendered pixels at 0.25 / 0.5 / 0.75 / 1.0: 0 px apart at every step,
+# against 7 px at the top end when the meter spanned the stack.
+const GRABBER_DIAMETER := 16
+const GRABBER_RADIUS := 7
+const METER_TRACK_WIDTH := 128.0
+const METER_EDGE := float(GRABBER_RADIUS)
+const METER_WIDTH := METER_TRACK_WIDTH + METER_EDGE * 2.0
 const METER_HEIGHT := 8.0
 const METER_TRACK_COLOR := Color(0.2, 0.2, 0.22)
 const METER_CORNER_RADIUS := 3
-const GRABBER_DIAMETER := 16
-const GRABBER_RADIUS := 7
 
 # --- Popups ------------------------------------------------------------------
 const POPUP_GAP := 4.0
@@ -280,6 +289,9 @@ func add_level_meter(
 	meter.anchor_right = 1.0
 	meter.anchor_top = 0.5
 	meter.anchor_bottom = 0.5
+	# Span exactly the grabber's travel, so the fill edge and the thumb agree.
+	meter.offset_left = METER_EDGE
+	meter.offset_right = -METER_EDGE
 	meter.offset_top = -METER_HEIGHT * 0.5
 	meter.offset_bottom = METER_HEIGHT * 0.5
 	meter.add_theme_stylebox_override("background", _meter_box(METER_TRACK_COLOR))

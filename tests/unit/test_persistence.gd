@@ -33,8 +33,19 @@ func _test_settings_migration(t) -> void:
 	t.assert_true(normalized["ok"], "legacy settings normalize")
 	var settings: Dictionary = normalized["value"]
 	t.assert_equal(settings["_schemaVersion"], Settings.CURRENT_VERSION, "settings gain the current schema version")
-	t.assert_approx(settings["volume"], 1.0, 0.00001, "volume is clamped to its supported range")
-	t.assert_approx(settings["sense"], 0.4, 0.00001, "numeric setting strings migrate")
+	# Schema 1 stored the mirror of the thumb position, so v1 values flip once.
+	# 4.5 clamps to the level meter's 0.2 full scale (an old "maximum sensitivity"
+	# thumb), and mirrors to a threshold sitting at 0.
+	t.assert_approx(settings["volume"], 0.0, 0.00001, "an out-of-range v1 level thumb clamps, then mirrors to a zero threshold")
+	t.assert_approx(settings["sense"], 0.6, 0.00001, "numeric setting strings migrate, and v1 duration thumbs mirror")
+	var current: Dictionary = Settings.normalize({
+		"_schemaVersion": Settings.CURRENT_VERSION, "volume": 0.05, "sense": 0.8,
+	})["value"]
+	t.assert_approx(current["volume"], 0.05, 0.00001, "current-schema level thumbs are stored as-is")
+	t.assert_approx(current["sense"], 0.8, 0.00001, "current-schema duration thumbs are stored as-is")
+	var defaulted: Dictionary = Settings.normalize({"windowSize": "Vector2i(1280, 720)"})["value"]
+	t.assert_approx(defaulted["volume"], Settings.defaults()["volume"], 0.00001, "a legacy file with no level thumb still lands on today's default")
+	t.assert_approx(defaulted["sense"], Settings.defaults()["sense"], 0.00001, "a legacy file with no duration thumb still lands on today's default")
 	t.assert_equal(ValueCodec.vector2i_value(settings["windowSize"]), Vector2i(1440, 900), "legacy Vector2 window sizes become Vector2i strings")
 	t.assert_equal(settings["costumeKeys"].size(), 10, "short legacy costume arrays are expanded")
 	t.assert_equal(settings["costumeKeys"][0], "A", "existing costume bindings are preserved")
