@@ -15,6 +15,7 @@ func run(t) -> void:
 	_test_menu_bar_crowding_contract(t)
 	_test_level_meter_alignment_contract(t)
 	_test_mic_threshold_wiring(t)
+	_test_modal_selection_guard(t)
 	_test_shared_menu_actions(t)
 	_test_settings_panel_contract(t)
 	_test_sidebar_call_sites(t)
@@ -140,6 +141,45 @@ func _test_mic_threshold_wiring(t) -> void:
 	t.assert_equal(MicMonitor.next_sensitivity(0.0, 0.03, 0.05, 0.016), 0.0, "a level bar short of the thumb does not")
 	var decaying := MicMonitor.next_sensitivity(1.0, 0.0, 0.05, 0.016)
 	t.assert_true(decaying < 1.0 and decaying > 0.75, "the duration bar shrinks from a trigger rather than dropping out")
+
+
+# A prompt that acts on the held layer has two ways to lose it: the canvas, which
+# Global.select() gates on main.fileSystemOpen, and the layer list, whose rows are
+# Controls that never reach that path. The single-PNG replace prompt was outside
+# both, so a click during the prompt moved the replacement onto another layer.
+func _test_modal_selection_guard(t) -> void:
+	var source_root := _source_root()
+	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
+	var guard := _function_body(main_source, "func isFileSystemOpen")
+	# Without this the assert_false checks below would pass on an empty string.
+	t.assert_true(guard.contains("return true"), "the modal guard body was located")
+	t.assert_true(guard.contains("_single_replace_dialog != null"), "the single-replace prompt counts as an open modal")
+	t.assert_false(guard.contains("_single_replace_dialog != null:\n\t\tGlobal.heldSprite = null"), "the guard does not clear the layer the prompt is about to replace")
+
+	var confirm := _function_body(main_source, "func _on_single_replace_confirmed")
+	t.assert_true(confirm.contains("replaceSprite"), "the confirm body was located")
+	t.assert_true(confirm.contains("_single_replace_target"), "the confirm acts on the layer the prompt named")
+	t.assert_false(confirm.contains("Global.heldSprite.replaceSprite"), "the confirm no longer replaces whatever is selected when it is answered")
+	t.assert_true(
+		_function_body(main_source, "func _on_single_replace_cancelled").contains("_single_replace_target = null"),
+		"cancelling releases the captured layer",
+	)
+
+	var row := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/sprite_list_object.gd"))
+	t.assert_true(_function_body(row, "func _select").contains("Global.main.fileSystemOpen"), "layer rows honour the same modal guard as the canvas")
+
+
+# The body of a top-level function, for assertions about one call site.
+func _function_body(source: String, signature: String) -> String:
+	var start := source.find(signature)
+	if start < 0:
+		return ""
+	var body := ""
+	for line in source.substr(start).split("\n"):
+		if not body.is_empty() and not line.is_empty() and not line.begins_with("\t"):
+			break
+		body += line + "\n"
+	return body
 
 
 func _test_slider_theme_contract(t) -> void:

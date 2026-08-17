@@ -435,6 +435,20 @@ apart.
 
 - Constructed: a viewport-covering `Control`, a `MOUSE_FILTER_STOP` scrim, and a `CenterContainer` holding the panel. It stays centred at any window size with no per-frame repositioning; the old builders recentred from `_process` and still froze at the viewport size they were created with.
 - The scrim is the modal input guard. World-space dialogs needed a `canvas_input_blocker` Area2D because they had no scrim; `psd_import_dialog` and `replace_review_dialog` still use that mechanism.
+
+> Updated: 2026-08-17 — What actually stops canvas selection during a world-space
+> dialog is `main.isFileSystemOpen()`, cached each frame into
+> `main.fileSystemOpen` and checked at the top of `Global.select()`. Every such
+> dialog has to appear in that function; the single-PNG replace prompt did not,
+> so clicking the canvas during it moved the replacement onto another layer.
+> Dialogs that act on the held layer (both replace prompts) must return true
+> there **without** clearing `heldSprite`, and must capture their target when
+> they open rather than read the selection when they are answered. Layer rows are
+> Controls and never reach the canvas path, so `sprite_list_object._select()`
+> checks the same flag. Note the `canvas_input_blocker` guard inside
+> `Global.select()` cannot fire from the mouse path: `mouse_cursor` filters those
+> areas out of the array before calling it. The group is still what keeps blocker
+> areas from being treated as selectable layers.
 - `visibility_layer = 2` keeps dialogs out of NDI output, which the save progress dialog previously did not do.
 - Callers compose: `set_title`, `add_message`, `add_progress_bar` / `set_progress`, `add_actions`. `main._create_progress_dialog(text)` is the one-line helper for progress dialogs and attaches to `UILayer` itself.
 

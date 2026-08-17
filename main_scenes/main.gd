@@ -358,6 +358,11 @@ func isFileSystemOpen():
 		return true
 	if _replace_dialog != null and _replace_dialog.visible:
 		return true
+	# The single-PNG confirmation names one layer and replaces whatever is held
+	# when it is answered, so canvas selection has to stop while it is up. Like
+	# the review dialog it must NOT clear heldSprite: that is its target.
+	if _single_replace_dialog != null:
+		return true
 	if capture_controller != null and capture_controller.is_dialog_open():
 		return true
 	return false
@@ -1359,9 +1364,14 @@ func _handle_replace_single_png(path: String):
 
 var _single_replace_dialog: Node2D = null
 var _single_replace_path: String = ""
+# The prompt names one layer, so it has to act on that layer. Reading the live
+# selection when the button is pressed replaced whatever happened to be held by
+# then, which is not what the user was asked to confirm.
+var _single_replace_target = null
 
 func _show_single_replace_confirm(path: String, sprite_name: String, file_name: String):
 	_single_replace_path = path
+	_single_replace_target = Global.heldSprite
 
 	_single_replace_dialog = Node2D.new()
 	_single_replace_dialog.z_index = 4095
@@ -1419,13 +1429,16 @@ func _on_single_replace_confirmed():
 		_single_replace_dialog.queue_free()
 		_single_replace_dialog = null
 
-	if Global.heldSprite == null:
+	var target = _single_replace_target
+	_single_replace_target = null
+	if target == null or not is_instance_valid(target):
+		Global.pushUpdate("The layer to replace is no longer in the rig.")
 		return
 
 	var path = _single_replace_path
 	UndoManager.save_state()
-	Global.heldSprite.replaceSprite(path)
-	UndoManager.invalidate_image(Global.heldSprite.id)
+	target.replaceSprite(path)
+	UndoManager.invalidate_image(target.id)
 	Global.spriteList.updateData()
 	Global.pushUpdate("Replaced sprite with: " + path.get_file())
 
@@ -1433,6 +1446,7 @@ func _on_single_replace_cancelled():
 	if _single_replace_dialog != null:
 		_single_replace_dialog.queue_free()
 		_single_replace_dialog = null
+	_single_replace_target = null
 	Global.pushUpdate("Replace cancelled.")
 
 # --- Replace Review Dialog Handlers ---

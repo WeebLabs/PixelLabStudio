@@ -211,6 +211,12 @@ func _gui_input(event: InputEvent):
 		accept_event()
 
 func _select():
+	# A layer row is a Control, so it never reaches the canvas click path and its
+	# modal guard. A dialog that acts on the held layer (the replace prompts) must
+	# still be safe from the list changing that layer underneath it.
+	if Global.main != null and Global.main.fileSystemOpen:
+		return
+
 	# Eye-tracking pick mode: consume the click as a target assignment, don't
 	# change selection.
 	if Global.eyeTrackPickMode:
