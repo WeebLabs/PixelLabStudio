@@ -237,3 +237,25 @@ passed at 3.49 microseconds per active 100-layer animation frame, 0.25 idle,
 608.70 ms for 100 schema validations, and 4.83 ms for the indexed 250-layer
 eye-target workload. The 120-frame active NDI teardown smoke and standalone
 macOS pack export both pass.
+
+## Phase 12 sprite-runtime gate
+
+> Updated: 2026-08-17 — decomposed layer policies and runtime ownership
+
+The production application runner passes 410 assertions, including real
+appendage construction, static-sprite replacement, appendage teardown, and
+static-sprite restoration through the extracted wiggle runtime. The isolated
+suite passes 740 assertions. It directly covers talk/blink/edit-preview and
+costume visibility, cycle-safe hierarchy traversal, wiggle width interpolation,
+root orientation, arc projection/tangent, alpha silhouette reach, auto-fit path
+and coverage output, plus source contracts for visual/collision/wiggle ownership
+different-size replacement/collision synchronization, and the 1,000-line sprite
+facade ceiling (`spriteObject.gd` is 951 lines).
+
+The Phase 12 M1 Max run measured 3.48 microseconds per active 100-layer
+animation frame and 0.25 idle, 625.57 ms for 100 schema validations, and 4.89
+ms for indexed eye-target lookup. Complete loads measured 227.17 ms for 100
+layers and 475.51 ms for 250 layers. The new pure ribbon benchmark performs ten
+complete centerline/endpoint/coverage auto-fits in 220.28 ms and records its
+result under `wiggle_geometry` in `.artifacts/performance.json`. All budgets,
+the 120-frame active NDI teardown smoke, and standalone macOS pack export pass.

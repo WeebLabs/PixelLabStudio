@@ -8,9 +8,83 @@ save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–11 are complete. Phase 12 is next. Completed phases remain
+Progress: Phases 0–12 are complete. Phase 13 is next. Completed phases remain
 covered by the cumulative production-scene, isolated, native, performance, and
 standalone export gates.
+
+## Developer handoff
+
+> Updated: 2026-08-17 — standalone continuation guide after Phase 12
+
+This file is the canonical execution and handoff plan. A developer taking over
+should start on branch `refactor`, read `AGENTS.md`, then read
+`docs/architecture_guide.md`, `docs/quality_baseline.md`, and
+`docs/save_format.md`. The supported engine is Godot 4.6.3; do not validate a
+phase using a different minor release. The local phase sequence currently ends
+with commits titled `Phase 9: add production avatar regression harness`,
+`Phase 10: define application state boundaries`, `Phase 11: complete main scene
+decomposition`, and the Phase 12 sprite-runtime commit containing this update.
+Confirm with `git log --oneline` because the remote branch may lag local work.
+
+Before editing:
+
+1. Run `git status --short` and preserve unrelated or untracked user files.
+2. Run the full gate once to distinguish inherited failures from new ones.
+3. Inspect the production scene and all callers before moving a method. Keep the
+   existing public facade until every caller and real-scene test has migrated.
+4. Add behavior tests before or alongside each extraction. Source-string tests
+   are architectural guards, not substitutes for real instantiated scenes.
+5. Update the architecture guide with a dated, targeted note for every new
+   system or changed data flow. Complete each phase as one focused commit.
+
+Required local gates (set `GODOT_BIN` to an official Godot 4.6.3 executable):
+
+```bash
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_tests.sh
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_performance.sh
+GODOT_BIN=/absolute/path/to/godot ./scripts/run_export_smoke.sh
+git diff --check
+```
+
+`run_tests.sh` must pass both the production application runner and the isolated
+suite, then the active NDI teardown smoke. `run_performance.sh` must pass both
+microbenchmarks and complete 100/250-layer avatar loads. The export smoke must
+build and launch the standalone resource pack. Cross-platform CI remains the
+authority for Linux and Windows after a push.
+
+Current structural baseline:
+
+- `main_scenes/main.gd`: 597 lines; scene lifecycle/signal facade backed by five
+  injected controllers.
+- `ui_scenes/selectedSprite/spriteObject.gd`: 951 lines; scene-facing layer
+  facade backed by pure policies plus visual, collision, animation, and wiggle
+  services.
+- Phase 13 hotspots: `ui_scenes/spriteList/viewer.gd` (1,475 lines/67 methods),
+  `ui_scenes/spriteEditMenu/sprite_viewer.gd` (1,200/50), and
+  `ui_scenes/settings/settings_menu.gd` (575/43).
+- Latest Phase 12 gate: 410 real-scene assertions, 740 isolated assertions,
+  227.17 ms for 100-layer load, 475.51 ms for 250-layer load, and 220.28 ms for
+  ten complete wiggle auto-fits on the baseline M1 Max. All budgets, NDI
+  teardown, and macOS pack export pass.
+
+Non-negotiable compatibility rules:
+
+- Preserve the versioned save schema, unsigned 32-bit sprite IDs, ten-slot
+  costume arrays, legacy idle-wobble migration, and existing facade method
+  names until callers are deliberately migrated.
+- `Global` remains the canonical owner of `main`, `spriteEdit`, `spriteList`,
+  `mouse`, and `chain`; use its attach/detach and public state APIs.
+- Production enumeration uses `Global.sprite_nodes()`/`SpriteRegistry`; the
+  `"saved"` group remains only for scene/debugger compatibility.
+- Selection uses `Global.select_sprite()`/`clear_selection()`. Canvas picking
+  uses `intersect_point()` and the centralized three-parent hit resolver.
+- Programmatic decorative `ColorRect` nodes must ignore mouse input. Hidden edit
+  UI must remain process-disabled in player mode, and layer collision must
+  remain disabled there.
+- Set `_skip_ready_reparent` before inserting a duplicate into the scene tree.
+  `_ready()` runs synchronously during `add_child()`.
+- Optional native integrations must compile out or fail closed when absent, and
+  every worker/native lifecycle must join or disconnect during teardown.
 
 ## Phase 0 — Baseline and safety rails
 
@@ -200,10 +274,46 @@ standalone export gates.
   wiggle geometry, visual synchronization, and collision coordination.
 - Retain `spriteObject.gd` as the scene-facing facade while behavior migrates.
 
+> Completed: 2026-08-17 — `spriteObject.gd` fell from 1,573 to 951 lines.
+> `SpriteVisibilityPolicy` and `SpriteHierarchy` are pure deterministic rules;
+> `SpriteVisualRuntime` owns diffuse/normal/blend/depth synchronization;
+> `SpriteCollisionRuntime` owns shape replacement and active-state coordination;
+> and wiggle is split into pure geometry, live node/editor lifecycle, and the
+> existing appendage simulation. `LayerAnimator` remains the animation boundary.
+> Stable sprite methods continue as scene/UI/persistence facades. Replacement
+> now synchronizes new image dimensions before visual/wiggle/collision rebuild.
+> Pure tests
+> cover visibility, cycle-safe hierarchy, path tracing/projection/coverage, and
+> width interpolation; the production runner exercises actual appendage
+> enable/disable and different-size replacement. The cumulative gate passes 410 real-scene and 740 isolated
+> assertions, all performance budgets, NDI teardown, and macOS pack export.
+
 ## Phase 13 — UI componentization
 
 - Split the left sidebar, right sidebar, and settings form into focused panels.
 - Centralize binding and enabled-state rules and test panels as real scenes.
+
+Handoff execution order:
+
+1. Inventory every method, signal, and cross-panel call in the three hotspot
+   files before editing. Record the stable public surface used by main, Global,
+   sprite rows, physics/blend/animation panels, and tests.
+2. Extract the right sidebar first: layer-tree model/rebuild, costume strip,
+   details controls, tracking controls, and container resize/layout. Keep
+   `viewer.gd` as the scene facade and retain `Global.spriteList` there.
+3. Extract the left sidebar by property group: transform/motion, talk/blink,
+   animation, normal-map/file actions, and selection enabled-state. Keep
+   `Global.spriteEdit` on the facade.
+4. Split settings by tab while keeping persistence writes and input-capture
+   coordination explicit. Reuse `FormUI`, `SidebarUI`, `TabBar`, and `MenuBar`;
+   do not create a second style/bounds system.
+5. For each component, instantiate the actual scene in tests and exercise
+   selection/no-selection, edit/player, narrow-window, and callback behavior.
+
+Acceptance: no extracted panel resolves private state on another panel; facade
+files primarily construct/wire components; each hotspot is below 700 lines or
+has a documented reason; no hidden panel processes on the player page; all
+current UI and release gates remain green.
 
 ## Phase 14 — Mutation, undo, and input boundaries
 
@@ -212,11 +322,38 @@ standalone export gates.
 - Retain the project convention that scene references live on `Global`, while
   reducing direct cross-feature method calls to narrow coordination points.
 
+Handoff execution order:
+
+1. Enumerate every `UndoManager.save_state*()` call and every direct persistent
+   sprite-property assignment in UI/input code.
+2. Introduce narrow commands for single-property, continuous drag/slider,
+   structural hierarchy, image replacement, and bulk costume/import mutations.
+   A command owns the before/after snapshot boundary exactly once.
+3. Remove `UndoManager` calls into UI refresh methods; emit a state-restored
+   notification or let the scene coordinator refresh registered consumers.
+4. Route foreground and optional background key/device input through one command
+   decoder while preserving current focus guards and Stream Deck behavior.
+
+Acceptance: user mutations are undoable through one canonical path, continuous
+input produces one logical history entry, undo has no UI knowledge, save/load
+and all ten costumes round-trip, and production tests cover command undo/redo.
+
 ## Phase 15 — Performance and lifecycle qualification
 
 - Profile load, costume, hierarchy, sidebar, animation, undo-memory, import
   cancellation, and shutdown workloads in the decomposed architecture.
 - Optimize measured regressions and repeat native lifecycle smokes.
+
+Add repeatable measurements for costume switching, hierarchy rebuild, sidebar
+refresh while visible/hidden, command undo memory, wiggle frame cost, import
+cancellation, and repeated application shutdown. Compare exact artifacts to the
+Phase 12 numbers above; optimize only measured regressions. Run repeated active
+NDI teardown and missing-extension paths on every available host OS.
+
+Acceptance: every workload has a generous algorithmic smoke ceiling and a JSON
+trend value, 100/250-layer loads and active animation do not materially regress,
+no ObjectDB/thread/native leaks remain, and player mode performs no hidden edit
+work.
 
 ## Phase 16 — Completion audit
 
@@ -225,3 +362,15 @@ standalone export gates.
   matrix from a clean checkout.
 - Declare the refactor finished only when the quantitative and architectural
   acceptance criteria in this plan and the architecture guide remain green.
+
+Audit every production script for dead facades, duplicate policies, private
+cross-feature calls, unbounded file/thread work, stale comments, warnings, and
+unowned lifecycle resources. Remove a facade only after repository-wide caller
+search and real-scene coverage. Re-run save fixtures from every supported legacy
+shape, clean-checkout release gates, and Linux/macOS/Windows CI exports.
+
+The refactor is finished only when all phases are committed, the worktree is
+clean apart from known user files, the full local and cross-platform matrix is
+green, architecture/save/dependency/contributor docs match the code, every
+remaining oversized file has one coherent responsibility, and a fresh developer
+can make a typical feature change without editing unrelated subsystems.

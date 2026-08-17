@@ -6,6 +6,7 @@ const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
 const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 const ImportBudget = preload("res://autoload/import/import_limits.gd")
 const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
+const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
 
 class BenchmarkSprite extends RefCounted:
 	var id: int
@@ -24,6 +25,7 @@ class BenchmarkSprite extends RefCounted:
 const MAX_ANIMATION_US_PER_LAYER_FRAME := 15.0
 const MAX_SERIALIZATION_MS := 500.0
 const MAX_IMAGE_GEOMETRY_MS := 200.0
+const MAX_WIGGLE_GEOMETRY_MS := 2000.0
 const MAX_AVATAR_VALIDATION_MS := 3000.0
 const MAX_RUNTIME_SERVICES_MS := 1000.0
 const MAX_IMPORT_VALIDATION_MS := 2000.0
@@ -43,6 +45,7 @@ func _initialize() -> void:
 	results["avatar_validation"] = _benchmark_avatar_validation()
 	results["runtime_services"] = _benchmark_runtime_services()
 	results["image_geometry"] = _benchmark_image_geometry()
+	results["wiggle_geometry"] = _benchmark_wiggle_geometry()
 	results["import_validation"] = _benchmark_import_validation()
 	results["sprite_registry"] = _benchmark_sprite_registry()
 	results["eye_target_lookup"] = _benchmark_eye_target_lookup()
@@ -51,6 +54,7 @@ func _initialize() -> void:
 		"animation_us_per_layer_frame": MAX_ANIMATION_US_PER_LAYER_FRAME,
 		"serialization_ms": MAX_SERIALIZATION_MS,
 		"image_geometry_ms": MAX_IMAGE_GEOMETRY_MS,
+		"wiggle_geometry_ms": MAX_WIGGLE_GEOMETRY_MS,
 		"avatar_validation_ms": MAX_AVATAR_VALIDATION_MS,
 		"runtime_services_ms": MAX_RUNTIME_SERVICES_MS,
 		"import_validation_ms": MAX_IMPORT_VALIDATION_MS,
@@ -166,6 +170,27 @@ func _benchmark_image_geometry() -> Dictionary:
 	var elapsed := Time.get_ticks_usec() - started
 	return {"iterations": 25, "polygons": polygon_count, "total_ms": float(elapsed) / 1000.0}
 
+
+func _benchmark_wiggle_geometry() -> Dictionary:
+	var image := Image.load_from_file("res://test/testBody.png")
+	if image == null or image.is_empty():
+		return {"skipped": true}
+	const ITERATIONS := 10
+	var path_points := 0
+	var width_points := 0
+	var started := Time.get_ticks_usec()
+	for _iteration in ITERATIONS:
+		var fitted := WiggleGeometry.auto_fit(image, Vector2(image.get_size()), Vector2.ZERO, 12)
+		path_points = fitted["path"].size()
+		width_points = fitted["widths"].size()
+	var elapsed := Time.get_ticks_usec() - started
+	return {
+		"iterations": ITERATIONS,
+		"path_points": path_points,
+		"width_points": width_points,
+		"total_ms": float(elapsed) / 1000.0,
+	}
+
 func _benchmark_import_validation() -> Dictionary:
 	const ITERATIONS := 1000000
 	var accepted := 0
@@ -280,6 +305,12 @@ func _check_budgets() -> void:
 			"image geometry %.3f ms > %.3f" % [results["image_geometry"]["total_ms"], MAX_IMAGE_GEOMETRY_MS],
 			float(results["image_geometry"]["total_ms"]),
 			MAX_IMAGE_GEOMETRY_MS
+		)
+	if not results["wiggle_geometry"].has("skipped"):
+		_check_budget(
+			"wiggle geometry %.3f ms > %.3f" % [results["wiggle_geometry"]["total_ms"], MAX_WIGGLE_GEOMETRY_MS],
+			float(results["wiggle_geometry"]["total_ms"]),
+			MAX_WIGGLE_GEOMETRY_MS,
 		)
 
 func _check_budget(message: String, actual: float, maximum: float) -> void:

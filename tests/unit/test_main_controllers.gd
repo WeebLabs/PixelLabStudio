@@ -134,15 +134,13 @@ func _test_idle_mode_contract(t) -> void:
 	t.assert_true(apply.contains("has_method(\"setCollisionActive\")"), "the call is guarded for group members without it")
 
 	var sprite_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/selectedSprite/spriteObject.gd"))
+	var collision_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/selectedSprite/sprite_collision_runtime.gd"))
 	t.assert_true(sprite_source.contains("func setCollisionActive"), "layers expose the collision toggle the switch calls")
-	t.assert_true(
-		_function_body(sprite_source, "func _build_collision").contains("CollisionBuilder.populate_polygons(grabArea"),
-		"the collision wrapper is the one place shapes are built",
-	)
+	t.assert_true(_function_body(sprite_source, "func _build_collision").contains("_collisionRuntime.build"), "newly built collision delegates to the layer collision boundary")
 	t.assert_equal(
-		sprite_source.count("CollisionBuilder.populate_polygons(grabArea"),
+		collision_source.count("CollisionBuilder.populate_polygons"),
 		1,
-		"every rebuild routes through that wrapper, so shapes built on the player page start disabled",
+		"the collision boundary has one shape-population path",
 	)
 
 	var cursor_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/mouse/mouse_cursor.gd"))

@@ -144,13 +144,39 @@ func _test_edit_commands() -> void:
 	assert_equal(duplicate.parentId, source.parentId, "duplicate command preserves the parent identifier")
 	assert_true(duplicate.parentSprite == source.parentSprite, "duplicate command preserves the resolved parent")
 	assert_equal(duplicate.costumeLayers, source.costumeLayers, "duplicate command preserves costume membership")
-	var replacement: Image = duplicate.imageData.duplicate()
+	var replacement := Image.create(8, 6, false, Image.FORMAT_RGBA8)
+	replacement.fill(Color.WHITE)
 	_main._on_replace_confirmed(
 		[{"sprite": duplicate, "name": "Controller Replacement", "image": replacement}],
 		[], [], Vector2.ZERO, false,
 	)
 	assert_equal(duplicate.path, "psd://Controller Replacement", "replacement application runs through the avatar controller")
+	assert_equal(duplicate.size, Vector2i(8, 6), "replacement synchronizes the live image size before visual rebuild")
+	assert_equal(duplicate.imageSize, Vector2i(8, 6), "replacement synchronizes fallback collision dimensions")
+	var replacement_shape: CollisionShape2D = null
+	for collision_child in duplicate.grabArea.get_children():
+		if collision_child is CollisionShape2D:
+			replacement_shape = collision_child
+			break
+	assert_not_null(replacement_shape, "replacement rebuilds the broad-phase collision shape")
+	if replacement_shape != null:
+		var rectangle := replacement_shape.shape as RectangleShape2D
+		assert_not_null(rectangle, "replacement collision keeps the rectangular broad-phase contract")
+		if rectangle != null:
+			assert_equal(rectangle.size, Vector2(8, 6), "replacement collision matches the new image dimensions")
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES + 1, "replacement application does not alter layer membership")
+	var image_size := Vector2(duplicate.imageData.get_size())
+	var center := image_size * 0.5
+	duplicate.wigglePath = PackedVector2Array([
+		center - Vector2(1, 0), center, center + Vector2(1, 0),
+	])
+	duplicate.wigglePathWidths = PackedFloat32Array([2.0, 2.0, 2.0])
+	duplicate.setWiggle(true)
+	assert_true(duplicate._wiggleRuntime.has_appendage(), "wiggle enable builds the extracted runtime appendage")
+	assert_false(duplicate.sprite.visible, "active wiggle runtime replaces the static sprite")
+	duplicate.setWiggle(false)
+	assert_false(duplicate._wiggleRuntime.has_appendage(), "wiggle disable releases the runtime appendage")
+	assert_true(duplicate.sprite.visible, "wiggle disable restores the static sprite")
 	duplicate.queue_free()
 	Global.clear_selection()
 	await get_tree().process_frame

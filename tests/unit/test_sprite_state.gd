@@ -199,6 +199,9 @@ func _test_shared_call_sites(t) -> void:
 	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
 	var undo_source := FileAccess.get_file_as_string(source_root.path_join("autoload/undo_manager.gd"))
 	var sprite_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/selectedSprite/spriteObject.gd"))
+	var collision_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/selectedSprite/sprite_collision_runtime.gd"))
+	var visual_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/selectedSprite/sprite_visual_runtime.gd"))
+	var wiggle_source := FileAccess.get_file_as_string(source_root.path_join("effects/wiggle/wiggle_runtime.gd"))
 	t.assert_true(avatar_source.contains("SpriteState.capture_save"), "manual save uses the shared sprite-state map")
 	t.assert_true(avatar_source.contains("SpriteState.apply_before_ready"), "avatar load uses the shared sprite-state map")
 	t.assert_true(avatar_source.contains("sprite.reparent(parent_sprite.sprite, false)"), "avatar hierarchy reconstruction preserves registry membership")
@@ -215,7 +218,10 @@ func _test_shared_call_sites(t) -> void:
 	t.assert_true(sprite_source.contains("func _enter_tree() -> void:"), "sprites expose a hierarchy re-entry lifecycle hook")
 	t.assert_equal(sprite_source.count("Global.register_sprite(self)"), 1, "sprite registry enrollment has one lifecycle owner")
 	t.assert_false(sprite_source.contains("get_parent().remove_child(self)"), "deferred parenting does not unregister live sprites")
-	t.assert_equal(sprite_source.count("grabArea.monitorable = enable"), 1, "collision enablement performs one state write")
+	t.assert_equal(collision_source.count("grabArea.monitorable = enabled"), 1, "collision enablement performs one state write")
+	t.assert_true(sprite_source.count("\n") < 1000, "spriteObject remains a scene facade below the Phase 12 size ceiling")
+	t.assert_false(visual_source.contains("Global."), "visual synchronization does not resolve application state directly")
+	t.assert_false(wiggle_source.contains("Global."), "wiggle runtime receives edit state through its facade")
 
 
 func _source_root() -> String:

@@ -71,8 +71,12 @@ PNGTuberPlus/
 │   ├── mouse/
 │   │   └── mouse_cursor.gd       Click detection & tooltip in edit mode
 │   ├── selectedSprite/
-│   │   ├── spriteObject.gd       Core sprite runtime and scene integration
-│   │   └── sprite_collision_builder.gd Alpha/fallback hitbox construction
+│   │   ├── spriteObject.gd       Scene-facing layer lifecycle facade
+│   │   ├── sprite_collision_builder.gd Alpha/fallback hitbox construction
+│   │   ├── sprite_collision_runtime.gd Shape lifecycle and active-state coordination
+│   │   ├── sprite_hierarchy.gd   Pure child/descendant lookup policy
+│   │   ├── sprite_visibility_policy.gd Pure talk/blink/costume visibility
+│   │   └── sprite_visual_runtime.gd Texture, normal, blend, and depth synchronization
 │   ├── spriteEditMenu/
 │   │   ├── sprite_viewer.gd      Left sidebar — sprite property editor (265px)
 │   │   └── chain.gd              Visual line during reparenting
@@ -104,9 +108,12 @@ PNGTuberPlus/
 │   └── wobble.gdshader            Wave oscillation effect
 │
 ├── effects/
+│   ├── animation/layer_animator.gd Per-layer transform animation evaluator
 │   └── wiggle/                    Wiggly-appendage physics (per-layer)
 │       ├── wiggle_appendage.gd    Deformable textured mesh (Polygon2D) + verlet/angular-spring chain
-│       └── wiggle_path_editor.gd  On-canvas ribbon-path tracer (Global.wigglePathMode)
+│       ├── wiggle_geometry.gd     Pure path tracing, coverage, projection
+│       ├── wiggle_path_editor.gd  On-canvas ribbon-path tracer (Global.wigglePathMode)
+│       └── wiggle_runtime.gd      Live mesh, editor, and child-follow ownership
 │
 ├── ndi/                           NDI video output system
 │   ├── ndi_output_manager.gd      SubViewport + Camera + NDIOutput orchestrator
@@ -625,8 +632,34 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 > geometry. Animated fallback hitboxes use a single frame width (`sheet width /
 > frame count`) and preserve rectangular frame dimensions. Tests live in
 > `tests/unit/test_sprite_state.gd`. All sprite creation paths use one randomized,
-> collision-checked ID allocator on `main.gd`; creating a fresh default-seeded
+> collision-checked ID allocator in `AvatarController`; creating a fresh default-seeded
 > generator per layer is no longer allowed.
+
+> Updated: 2026-08-17 — `spriteObject.gd` is a 951-line scene-facing facade,
+> down from 1,573 lines at the Phase 12 boundary. Pure talk/blink/costume rules
+> live in `sprite_visibility_policy.gd`, and cycle-safe child/descendant lookup
+> lives in `sprite_hierarchy.gd`. `sprite_visual_runtime.gd` owns diffuse/normal
+> texture synchronization, blend materials/backbuffers, and depth propagation;
+> `sprite_collision_runtime.gd` owns shape replacement, monitoring, and edit-page
+> activation while `sprite_collision_builder.gd` remains the geometry builder.
+> Existing public sprite methods delegate to these boundaries so scene, UI,
+> persistence, and undo callers retain their contract.
+
+> Updated: 2026-08-17 — Diffuse replacement synchronizes both `size` and
+> `imageSize` before rebuilding textures, wiggle geometry, or collision. This
+> prevents an active wiggle mesh and transparent-image fallback collider from
+> retaining the previous artwork dimensions. The production runner replaces a
+> layer with a differently sized image and verifies the live and broad-phase
+> dimensions.
+
+> Updated: 2026-08-17 — Wiggle is split into three layers:
+> `wiggle_geometry.gd` is deterministic image/path analysis with no scene state;
+> `wiggle_runtime.gd` owns the live appendage, path editor, parameters, and linked
+> child attach/release lifecycle; `wiggle_appendage.gd` remains the mesh and
+> spring-chain implementation. `spriteObject.gd` supplies authored properties
+> and its stable editor facades. Production tests enable and disable a real
+> appendage, while pure tests cover width interpolation, root orientation, arc
+> projection, silhouette reach, auto-fit coverage, visibility, and hierarchy.
 
 > Updated: 2026-08-06 — Legacy saves without `animClips` migrate their x/y wobble fields into the runtime animation system during shared sprite-state application. Hierarchy changes use `Node.reparent()` consistently. Because reparenting emits `_exit_tree()` / `_enter_tree()` without running `_ready()` again, sprite registry enrollment is owned by `_enter_tree()` and removal by `_exit_tree()`; registration in `_ready()` would permanently lose parented layers from indexed ID lookup.
 

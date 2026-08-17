@@ -1,17 +1,12 @@
 extends Node2D
 
-# talkBlink() looks up whether a (showOnTalk + 3*blinkVal + 10*speaking + 20*blink)
-# combination should be visible. The values mirror the original literal
-# [0,10,20,30,1,21,12,32,3,13,4,15,26,36,27,38].has(int(value)) — moving them
-# to a class const Dictionary means we don't allocate an Array each frame for
-# each sprite (was Array literal in a tight per-frame loop).
-const VISIBLE_TALKBLINK_STATES := {
-	0: true, 1: true, 3: true, 4: true,
-	10: true, 12: true, 13: true, 15: true,
-	20: true, 21: true, 26: true, 27: true,
-	30: true, 32: true, 36: true, 38: true,
-}
 const CollisionBuilder = preload("res://ui_scenes/selectedSprite/sprite_collision_builder.gd")
+const SpriteCollisionRuntime = preload("res://ui_scenes/selectedSprite/sprite_collision_runtime.gd")
+const SpriteHierarchy = preload("res://ui_scenes/selectedSprite/sprite_hierarchy.gd")
+const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
+const SpriteVisualRuntime = preload("res://ui_scenes/selectedSprite/sprite_visual_runtime.gd")
+const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
+const WiggleRuntime = preload("res://effects/wiggle/wiggle_runtime.gd")
 
 var type = "sprite"
 
@@ -138,7 +133,8 @@ var _anim_had_clips := false
 # (effects/blend/). Persisted; backward-compatible (default Normal / fully opaque).
 var blendMode: int = 0
 var opacity: float = 1.0
-var _blendBackBuffer: BackBufferCopy = null
+var _visualRuntime = SpriteVisualRuntime.new()
+var _collisionRuntime = SpriteCollisionRuntime.new()
 
 # Wiggle (physics) — bends this layer with a deformable textured MESH driven by an
 # angular-spring chain whose REST shape is a user-traced path over the layer's
@@ -165,20 +161,11 @@ var wiggleReactivity = 1.0      # how snappily the base tracks the layer (higher
 var wiggleMotionIntensity = 1.0 # master scale on motion-imparted wiggle (1 = normal, 0 = ignores motion)
 var wiggleChildrenFollow = false
 
-const _WIGGLE_APPENDAGE = preload("res://effects/wiggle/wiggle_appendage.gd")
-const _WIGGLE_PATH_EDITOR = preload("res://effects/wiggle/wiggle_path_editor.gd")
-var _wiggleAppendage: WiggleAppendage2D = null
-var _wigglePathEditor = null     # on-canvas WigglePathEditor while editing this layer's path
-var _wigglePathEditPrevVisible = false
-var _wiggleSmooth: PackedVector2Array = PackedVector2Array()  # cached smooth rest centerline, texture-local
+var _wiggleRuntime = WiggleRuntime.new()
 # Set on this layer while a wiggle parent drives it (child-follow); stores rest transform.
 var _wiggleRestPos = Vector2.ZERO
 var _wiggleRestRot = 0.0
 var _wiggleFollowing = false
-
-const _WIGGLE_WIDTH_MIN := 4.0
-const _WIGGLE_WIDTH_MARGIN := 3.0
-const _WIGGLE_WIDTH_GROW := 1.08
 
 #Blink Animation
 var _blinkAnimPlaying = false
@@ -215,46 +202,25 @@ var _last_visual_has_wiggle := false
 var _last_visual_has_editor := false
 
 func _make_premultiplied_texture(img: Image) -> ImageTexture:
-	var pma = img.duplicate()
-	pma.premultiply_alpha()
-	return ImageTexture.create_from_image(pma)
+	return SpriteVisualRuntime.premultiplied_texture(img)
 
 func _rebuild_sprite_texture():
-	if normalTex != null:
-		var canvas_tex = CanvasTexture.new()
-		canvas_tex.diffuse_texture = tex
-		canvas_tex.normal_texture = normalTex
-		sprite.texture = canvas_tex
-	else:
-		sprite.texture = tex
-	# Refresh the wiggle mesh when the image/normal changes: it samples the layer's
-	# texture directly, so re-point it and rebuild the geometry/UVs.
-	if _wiggleAppendage != null:
-		_wiggleAppendage.texture = sprite.texture
-		_apply_wiggle_geometry()
+	_visualRuntime.rebuild_texture()
 
 func setNormalMap(img: Image, nrml_path: String):
-	if imageData != null and img.get_size() != imageData.get_size():
+	if not _visualRuntime.set_normal_map(img, nrml_path):
 		Global.notify_user("Normal map size mismatch. Must match diffuse dimensions.")
-		return
-	normalImageData = img
-	normalPath = nrml_path
-	normalTex = ImageTexture.create_from_image(img)
-	_rebuild_sprite_texture()
 
 func clearNormalMap():
-	normalImageData = null
-	normalTex = null
-	normalPath = ""
-	loadedNormalImage = null
-	loadedNormalData = ""
-	_rebuild_sprite_texture()
+	_visualRuntime.clear_normal_map()
 
 func hasNormalMap() -> bool:
-	return normalTex != null
+	return _visualRuntime.has_normal_map()
 
 func _ready():
-	
+	_wiggleRuntime.setup(self)
+	_visualRuntime.setup(self)
+	_collisionRuntime.setup(self)
 	Global.main.spriteVisToggles.connect(visToggle)
 	
 	var img = Image.new()
@@ -387,6 +353,8 @@ func replaceSprite(pathNew):
 	path = pathNew
 
 	imageData = img
+	imageSize = img.get_size()
+	size = imageSize
 	invalidate_used_rect_cache()
 	tex = _make_premultiplied_texture(img)
 
@@ -397,11 +365,8 @@ func replaceSprite(pathNew):
 	else:
 		_rebuild_sprite_texture()
 	
-	CollisionBuilder.clear(grabArea)
 	var polygons := CollisionBuilder.alpha_polygons(imageData)
-	var has_collision := _build_collision(polygons)
-	size = imageData.get_size()
-
+	var has_collision := _collisionRuntime.replace(polygons, _collision_should_be_active())
 	sprite.offset = offset
 	
 	grabArea.position = (size*-0.5) + offset
@@ -413,6 +378,8 @@ func replaceSprite(pathNew):
 func replaceSpriteFromData(img: Image, layer_name: String):
 	path = "psd://" + layer_name
 	imageData = img
+	imageSize = img.get_size()
+	size = imageSize
 	invalidate_used_rect_cache()
 	tex = _make_premultiplied_texture(img)
 
@@ -423,11 +390,9 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 	else:
 		_rebuild_sprite_texture()
 
-	CollisionBuilder.clear(grabArea)
 	var polygons := CollisionBuilder.alpha_polygons(imageData)
-	var has_collision := _build_collision(polygons)
+	var has_collision := _collisionRuntime.replace(polygons, _collision_should_be_active())
 
-	size = imageData.get_size()
 	sprite.offset = offset
 	grabArea.position = (size * -0.5) + offset
 
@@ -504,7 +469,7 @@ func _process(delta):
 	# the visible Sprite2D AND, for wiggle layers, the mesh + chain anchor — the
 	# twitch drives the verlet chain into secondary motion. Suppressed while tracing
 	# a wiggle path (the editor works over the static, un-rotated sprite).
-	dragOrigin.rotation = 0.0 if _wigglePathEditor != null else _animRot
+	dragOrigin.rotation = 0.0 if _wiggleRuntime.is_editing_path() else _animRot
 
 	if grabDelay > 0:
 		grabDelay -= 1
@@ -512,7 +477,7 @@ func _process(delta):
 	_update_path_editor()
 	# While the path is being traced the static Sprite2D stands in for tracing and
 	# the ribbon is hidden, so there's nothing to advance.
-	if wiggleEnabled and _wigglePathEditor == null:
+	if wiggleEnabled and not _wiggleRuntime.is_editing_path():
 		_update_wiggle(delta)
 
 	talkBlink()
@@ -541,88 +506,34 @@ func setZIndex():
 	sprite.z_index = z
 	# Keep the wiggle ribbon at the same depth as the sprite it stands in for, so
 	# reordering a wiggling layer re-depths the ribbon too (not just the sprite).
-	if _wiggleAppendage != null:
-		_wiggleAppendage.z_index = z
-	# The blend backbuffer copies at the layer's depth too, so it snapshots exactly the
-	# layers drawn below this one.
-	if _blendBackBuffer != null:
-		_blendBackBuffer.z_index = z
+	_wiggleRuntime.set_z_index(z)
+	_visualRuntime.set_z_index(z)
 
 # Apply the current blend mode to the Sprite2D's material + the optional backbuffer.
 # Native tier (Normal/Add/Subtract) uses a CanvasItemMaterial and needs no screen read;
 # every other mode uses the shared blend shader fed by a BackBufferCopy. Safe to re-call.
 func applyBlendMode():
-	if BlendMode.needs_backbuffer(blendMode):
-		var sm: ShaderMaterial
-		if sprite.material is ShaderMaterial:
-			sm = sprite.material
-		else:
-			sm = ShaderMaterial.new()
-			sm.shader = BlendMode.SHADER
-			sprite.material = sm
-		sm.set_shader_parameter("blend_mode", blendMode)
-		_ensure_blend_backbuffer(true)
-	else:
-		var cm: CanvasItemMaterial
-		if sprite.material is CanvasItemMaterial:
-			cm = sprite.material
-		else:
-			cm = CanvasItemMaterial.new()
-			sprite.material = cm
-		cm.blend_mode = BlendMode.native_blend(blendMode)
-		_ensure_blend_backbuffer(false)
-	# The wiggle ribbon stands in for the (hidden) Sprite2D, so keep it on the same material.
-	if _wiggleAppendage != null:
-		_wiggleAppendage.material = sprite.material
-
-# Create/remove the BackBufferCopy that feeds screen-reading blend modes. It sits as the
-# first child of DragOrigin — drawn before the Sprite/ribbon — at the layer's absolute z,
-# so its viewport snapshot contains exactly the layers below this one.
-func _ensure_blend_backbuffer(enabled: bool):
-	if enabled:
-		if _blendBackBuffer == null:
-			_blendBackBuffer = BackBufferCopy.new()
-			_blendBackBuffer.copy_mode = BackBufferCopy.COPY_MODE_VIEWPORT
-			_blendBackBuffer.z_as_relative = false
-			_blendBackBuffer.z_index = z
-			dragOrigin.add_child(_blendBackBuffer)
-			dragOrigin.move_child(_blendBackBuffer, 0)
-	elif _blendBackBuffer != null:
-		_blendBackBuffer.queue_free()
-		_blendBackBuffer = null
+	_visualRuntime.apply_blend_mode()
 
 func talkBlink():
-	var faded = 0.2 * int(Global.main.editMode)
-	var blinkVal = showOnBlink if showOnBlink != 3 else 0
-	var value = (showOnTalk + (blinkVal*3)) + (int(Global.speaking)*10) + (int(Global.blink)*20)
-	var yes = VISIBLE_TALKBLINK_STATES.has(int(value))
-	var a = max(int(yes),faded)
-	# Fold per-layer opacity into the same gray self_modulate: premultiplied content scales
-	# correctly when every channel is multiplied by o, and shader blend modes read it as COLOR.a.
-	var o = a * opacity
-	var visual_key := int(value) | (int(faded > 0) << 8)
-	var has_wiggle := _wiggleAppendage != null
-	var has_editor := _wigglePathEditor != null
-	if visual_key == _last_visual_key and is_equal_approx(o, _last_visual_opacity) \
+	var visual := SpriteVisibility.talk_blink_visual(
+		int(showOnTalk), int(showOnBlink), Global.speaking, Global.blink,
+		Global.main.editMode, opacity, _wiggleRuntime.is_editing_path(),
+	)
+	var visual_key: int = visual["cache_key"]
+	var visual_opacity: float = visual["opacity"]
+	var has_wiggle := _wiggleRuntime.has_appendage()
+	var has_editor := _wiggleRuntime.is_editing_path()
+	if visual_key == _last_visual_key and is_equal_approx(visual_opacity, _last_visual_opacity) \
 		and has_wiggle == _last_visual_has_wiggle and has_editor == _last_visual_has_editor:
 		return
 	_last_visual_key = visual_key
-	_last_visual_opacity = o
+	_last_visual_opacity = visual_opacity
 	_last_visual_has_wiggle = has_wiggle
 	_last_visual_has_editor = has_editor
-	sprite.self_modulate = Color(o, o, o, o)
-	# When the sprite is only showing because of the edit-mode faded preview, render
-	# it on layer 2 so the NDI camera (layer 1 only) doesn't pick up the preview frame.
-	sprite.visibility_layer = 2 if (!yes and faded > 0) else 1
-	# When wiggling, the ribbon stands in for the (hidden) sprite — fade it identically.
-	if _wiggleAppendage != null:
-		_wiggleAppendage.self_modulate = sprite.self_modulate
-		_wiggleAppendage.visibility_layer = sprite.visibility_layer
-	# While tracing the ribbon path, the Sprite2D is the tracing target: show it
-	# solid (overriding talk/blink fade) but on layer 2 so the NDI cam ignores it.
-	if _wigglePathEditor != null:
-		sprite.self_modulate = Color(1, 1, 1, 1)
-		sprite.visibility_layer = 2
+	sprite.self_modulate = visual["modulate"]
+	sprite.visibility_layer = visual["visibility_layer"]
+	_wiggleRuntime.set_visual(sprite.self_modulate, sprite.visibility_layer)
 
 func blinkAnimation():
 	if showOnBlink != 3 or frames <= 1:
@@ -922,43 +833,10 @@ func setWiggle(on: bool):
 func setWiggleChildrenFollow(on: bool):
 	wiggleChildrenFollow = on
 	if not on:
-		_release_wiggle_children()
+		_wiggleRuntime.release_children()
 
 func _set_wiggle_active(on: bool):
-	_last_visual_key = -1
-	if on:
-		if wigglePath.size() < 2:
-			_auto_fit_wiggle_path()
-		if _wiggleAppendage == null:
-			_wiggleAppendage = _WIGGLE_APPENDAGE.new()
-			# Match the Sprite2D's absolute z so the mesh sits at the layer's real
-			# depth (the Sprite is z_as_relative=false; a plain node defaults to
-			# relative, which mis-orders it once layers are reparented/linked).
-			_wiggleAppendage.z_as_relative = false
-			dragOrigin.add_child(_wiggleAppendage)
-		# The deformable mesh samples the layer's own texture directly (the same
-		# CanvasTexture the Sprite2D uses, so normals come along). Match the sprite's
-		# filter (Linear; the project default is Nearest → stair-stepped edges) AND
-		# its premultiplied-alpha blend material — the textures are premultiplied, so
-		# without it the mesh blends them as straight alpha and a dark fringe bleeds
-		# in along the edges.
-		_wiggleAppendage.texture = sprite.texture
-		_wiggleAppendage.texture_filter = sprite.texture_filter
-		_wiggleAppendage.material = sprite.material
-		_wiggleAppendage.z_index = z
-		_apply_wiggle_geometry()     # builds chain rest + the deformable mesh
-		_wiggleAppendage.configure(_wiggle_params())
-		_wiggleAppendage.reset()
-		sprite.visible = false
-	else:
-		# Return linked children under the Sprite2D before it becomes visible again.
-		_release_wiggle_children()
-		if _wiggleAppendage != null:
-			_wiggleAppendage.queue_free()
-			_wiggleAppendage = null
-		sprite.visible = true
-		sprite.rotation = 0.0
-		sprite.scale = Vector2.ONE
+	_wiggleRuntime.set_active(on)
 
 # --- Ribbon path editor (Phase 2) ---
 
@@ -966,79 +844,19 @@ func _set_wiggle_active(on: bool):
 # this layer. Polled each frame (state-driven, like the rest of the app).
 func _update_path_editor():
 	var want: bool = Global.wigglePathMode and Global.heldSprite == self
-	if want and _wigglePathEditor == null:
-		_enter_path_edit()
-	elif not want and _wigglePathEditor != null:
-		_exit_path_edit()
-
-func _enter_path_edit():
-	if wigglePath.size() < 2:
-		_auto_fit_wiggle_path()
-	_wigglePathEditor = _WIGGLE_PATH_EDITOR.new()
-	dragOrigin.add_child(_wigglePathEditor)
-	_wigglePathEditor.setup(self)
-	# Show the real artwork to trace over; hide the (now stale) ribbon stand-in.
-	_wigglePathEditPrevVisible = sprite.visible
-	sprite.visible = true
-	if _wiggleAppendage != null:
-		_wiggleAppendage.visible = false
-
-func _exit_path_edit():
-	if _wigglePathEditor != null:
-		_wigglePathEditor.queue_free()
-		_wigglePathEditor = null
-	# Rebuild the ribbon from the edited path and restore the wiggle/idle look.
-	if _wiggleAppendage != null:
-		_apply_wiggle_geometry()
-		_wiggleAppendage.reset()
-		_wiggleAppendage.visible = true
-		sprite.visible = false
-	else:
-		sprite.visible = _wigglePathEditPrevVisible
+	_wiggleRuntime.update_path_editor(want)
 
 # Rebuild geometry after an external path/width/coverage change (editor commit,
 # auto-fit, coverage slider). No-op when the mesh isn't built yet — the path is
 # simply stored until wiggle is enabled.
 func apply_wiggle_path_changed():
-	if _wiggleAppendage != null:
-		_apply_wiggle_geometry()
-		_wiggleAppendage.reset()
+	_wiggleRuntime.apply_path_changed()
 
 # The "Auto-fit" button: re-detect the spine (centerline trace) AND the band
 # (silhouette fit) from the content — a full auto from scratch. Undoable (the
 # Physics tab saves undo state first), so it's safe to use as a reset.
 func wiggle_auto_fit_path():
-	_auto_fit_wiggle_path()
-	apply_wiggle_path_changed()
-	if _wigglePathEditor != null:
-		_wigglePathEditor.queue_redraw()
-
-# Rebuild the chain rest shape + the deformable mesh from the current path. Call on
-# enable and whenever the path, widths, segment count, or image change. Cheap
-# enough to be event-driven (NOT per frame).
-func _apply_wiggle_geometry():
-	if _wiggleAppendage == null or imageData == null or wigglePath.size() < 2:
-		return
-	_wiggleSmooth = WiggleAppendage2D.smooth_path(wigglePath, 10)   # texture-local px
-	if _wiggleSmooth.size() < 2:
-		_wiggleSmooth = wigglePath
-	_rebuild_wiggle_chain()
-	# Build the deformable mesh: per-along widths (incl thickness) + the UV offset
-	# (the path root in texture pixels) so each vertex maps to the real artwork.
-	_wiggleAppendage.build_mesh(_smooth_widths(_wiggleSmooth), _wiggleSmooth[0])
-
-# Chain-only rebuild from the cached smooth path: anchor the ribbon at the path
-# root and pass the rest path relative to it, so the chain pivots where the user
-# said the base is (not the layer origin). Cheap — also used on resolution change.
-func _rebuild_wiggle_chain():
-	if _wiggleAppendage == null or _wiggleSmooth.size() < 2:
-		return
-	var root_local := _tex_to_local(_wiggleSmooth[0])
-	_wiggleAppendage.position = root_local
-	var rest_rel := PackedVector2Array()
-	for p in _wiggleSmooth:
-		rest_rel.append(_tex_to_local(p) - root_local)
-	_wiggleAppendage.set_geometry(rest_rel, clampi(int(wiggleSegments), 2, 48))
+	_wiggleRuntime.auto_fit_and_refresh()
 
 # Texture-pixel -> appendage/dragOrigin local. The Sprite2D is centered, shifted
 # by `offset`, so texture (px) maps to local (px - size/2 + offset).
@@ -1055,434 +873,20 @@ func _local_to_tex(local: Vector2) -> Vector2:
 # are offset-independent (the offset cancels in `_tex_to_local(p) - root`), so only the
 # anchor position needs updating — no rebuild, no chain reset.
 func _sync_wiggle_to_offset():
-	if _wiggleAppendage != null and not _wiggleSmooth.is_empty():
-		_wiggleAppendage.position = _tex_to_local(_wiggleSmooth[0])
+	_wiggleRuntime.sync_to_offset()
 
 # Per-smooth-point half-widths (px): the per-control-point widths interpolated
 # along the smooth path, scaled by the global thickness knob. This sets how far the
 # mesh band reaches perpendicular to the path (how much of the layer it covers);
 # thickness widens/trims that band. Changing thickness rebuilds the mesh.
 func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
-	var out := PackedFloat32Array()
-	var n := smooth.size()
-	var m := wigglePathWidths.size()
-	var k := maxf(wiggleThickness, 0.01)
-	for i in n:
-		if m == 0:
-			out.append(16.0 * k)
-		elif m == 1:
-			out.append(wigglePathWidths[0] * k)
-		else:
-			var f := float(i) / float(n - 1) * float(m - 1)
-			var a := int(f)
-			var b := mini(a + 1, m - 1)
-			out.append(lerp(wigglePathWidths[a], wigglePathWidths[b], f - float(a)) * k)
-	return out
-
-# Approximate the rest centerline that WiggleAppendage2D will actually render.
-# Width fitting uses this path instead of the raw controls, so coverage accounts
-# for chain resampling / smoothing instead of only measuring at sparse handles.
-func _wiggle_mesh_rest_path() -> PackedVector2Array:
-	var smooth := WiggleAppendage2D.smooth_path(wigglePath, 10) if wigglePath.size() >= 3 else wigglePath
-	if smooth.size() < 2:
-		return smooth
-	var joints := WiggleAppendage2D.resample_equal_arc(smooth, clampi(int(wiggleSegments), 2, 48) + 1)
-	if joints.size() < 3:
-		return joints
-	var seg := maxi(joints.size() - 1, 1)
-	var per := clampi(int(ceil(float(WiggleAppendage2D.RENDER_POINTS) / float(seg))), 4, 48)
-	return WiggleAppendage2D.smooth_path(joints, per)
-
-
-# Auto path: trace the artwork's centerline (medial spine) so it follows the
-# content's curve, adding as many points as the curve needs. Falls back to a
-# straight principal-axis path if the shape can't be traced. Endpoints are pushed
-# out to the true tip so the band's end-cap doesn't clip pointed ends, then the band
-# is sized to the actual silhouette.
-func _auto_fit_wiggle_path():
-	var traced := _trace_centerline()
-	if traced.size() >= 2:
-		wigglePath = traced
-	else:
-		var r := get_image_used_rect()
-		if r.size.x <= 0 or r.size.y <= 0:
-			r = Rect2i(0, 0, int(Vector2(size).x), int(Vector2(size).y))
-		var center := Vector2(r.position) + Vector2(r.size) * 0.5
-		var horizontal := r.size.x >= r.size.y
-		var half_len := (float(r.size.x) if horizontal else float(r.size.y)) * 0.5
-		var axis := Vector2.RIGHT if horizontal else Vector2.DOWN
-		wigglePath = PackedVector2Array([center - axis * half_len, center, center + axis * half_len])
-	wigglePath = _extend_ends(wigglePath)
-	wigglePath = _orient_path_to_origin(wigglePath)
-	_fit_widths_to_content()
-
-# Orient the path so its root (index 0 — the wiggle pivot) is the end nearest the layer
-# origin. The trace's endpoint order is otherwise arbitrary (it follows the PCA axis
-# sign), which can root a tail/ear at its tip and wiggle it from the wrong end. The
-# origin gizmo sits at texture-px `size/2 - offset` (inverse of _tex_to_local at local
-# 0,0), so the user picks the base simply by placing the origin near it.
-func _orient_path_to_origin(path: PackedVector2Array) -> PackedVector2Array:
-	if path.size() < 2:
-		return path
-	var origin_tex: Vector2 = Vector2(size) * 0.5 - offset
-	if path[path.size() - 1].distance_squared_to(origin_tex) < path[0].distance_squared_to(origin_tex):
-		var rev := PackedVector2Array()
-		for i in range(path.size() - 1, -1, -1):
-			rev.append(path[i])
-		return rev
-	return path
-
-# Push each endpoint outward along the path tangent by however far the opaque content
-# overhangs it, so the band's flat end-cap reaches past a pointed/rounded tip instead
-# of clipping it. A flat attachment (no overhang along the tangent) is left in place,
-# so it doesn't push the base out into empty space.
-func _extend_ends(path: PackedVector2Array) -> PackedVector2Array:
-	if imageData == null or path.size() < 2:
-		return path
-	var img: Image = imageData
-	var reach := maxf(float(img.get_width()), float(img.get_height()))
-	var out := path.duplicate()
-	var n := out.size()
-	var d0 := out[0] - out[1]
-	if d0.length() > 0.001:
-		d0 = d0.normalized()
-		var over0 := _content_reach(img, out[0], d0, reach, 0.05)
-		if over0 > 0.5:
-			out[0] = out[0] + d0 * (over0 + 1.0)
-	var d1 := out[n - 1] - out[n - 2]
-	if d1.length() > 0.001:
-		d1 = d1.normalized()
-		var over1 := _content_reach(img, out[n - 1], d1, reach, 0.05)
-		if over1 > 0.5:
-			out[n - 1] = out[n - 1] + d1 * (over1 + 1.0)
-	return out
-
-# Trace the centerline of the opaque content: PCA for the main axis, start from an
-# interior spine point, walk both ways re-centering on each perpendicular
-# cross-section (so it follows curves), then simplify (Douglas-Peucker) to control
-# points. Texture-px. Empty if the content is too small.
-func _trace_centerline() -> PackedVector2Array:
-	if imageData == null:
-		return PackedVector2Array()
-	var img: Image = imageData
-	var w := img.get_width()
-	var h := img.get_height()
-	var reach := float(maxi(w, h))
-	var stride := maxi(1, int(reach / 200.0))
-	var sum := Vector2.ZERO
-	var cnt := 0
-	var samples: Array = []
-	for y in range(0, h, stride):
-		for x in range(0, w, stride):
-			if _alpha_at(img, x, y) > 0.5:
-				var p := Vector2(x, y)
-				samples.append(p)
-				sum += p
-				cnt += 1
-	if cnt < 6:
-		return PackedVector2Array()
-	var centroid: Vector2 = sum / float(cnt)
-	var cxx := 0.0
-	var cxy := 0.0
-	var cyy := 0.0
-	for p in samples:
-		var dp: Vector2 = p - centroid
-		cxx += dp.x * dp.x
-		cxy += dp.x * dp.y
-		cyy += dp.y * dp.y
-	var axis := Vector2(cos(0.5 * atan2(2.0 * cxy, cxx - cyy)), sin(0.5 * atan2(2.0 * cxy, cxx - cyy)))
-	var trace_step := maxf(reach * 0.02, 4.0)
-	var start := centroid
-	var best := INF
-	for p in samples:
-		var dd: float = p.distance_to(centroid)
-		if dd < best:
-			best = dd
-			start = p
-	start = _spine_center(img, start, axis, reach)[0]
-	var fwd := _spine_walk(img, start, axis, trace_step, reach)
-	var bwd := _spine_walk(img, start, -axis, trace_step, reach)
-	var raw := PackedVector2Array()
-	for i in range(bwd.size() - 1, -1, -1):
-		raw.append(bwd[i])
-	raw.append(start)
-	for p in fwd:
-		raw.append(p)
-	return _simplify_path(raw, clampf(reach * 0.025, 5.0, 14.0))
-
-func _spine_walk(img: Image, start: Vector2, d0: Vector2, trace_step: float, reach: float) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	var P := start
-	var d := d0.normalized()
-	for s in 500:
-		var Pn: Vector2 = P + d * trace_step
-		var res := _spine_center(img, Pn, d, reach)
-		if not res[1]:
-			break
-		Pn = res[0]
-		var nd: Vector2 = Pn - P
-		# End-of-ribbon: a normal step advances ~trace_step; if re-centering snapped
-		# the point far across a gap, we walked off a tip and it grabbed distant
-		# content (a U-turn back along the shape). Stop instead of following the jump.
-		if nd.length() > trace_step * 3.0:
-			break
-		if nd.length() > 0.001:
-			d = nd.normalized()
-		out.append(Pn)
-		P = Pn
-	return out
-
-# Perpendicular-span center at P, and whether P is on/near content.
-func _spine_center(img: Image, P: Vector2, d: Vector2, reach: float) -> Array:
-	var perp := d.orthogonal()
-	var ep := _content_reach(img, P, perp, reach)
-	var en := _content_reach(img, P, -perp, reach)
-	var on := _alpha_at(img, int(round(P.x)), int(round(P.y))) > 0.25 or ep > 0.0 or en > 0.0
-	return [P + perp * (ep - en) * 0.5, on]
-
-func _alpha_at(img: Image, x: int, y: int) -> float:
-	if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
-		return 0.0
-	return img.get_pixel(x, y).a
-
-# Douglas-Peucker polyline simplification.
-func _simplify_path(pts: PackedVector2Array, eps: float) -> PackedVector2Array:
-	if pts.size() < 3:
-		return pts
-	var keep: Dictionary = {0: true, pts.size() - 1: true}
-	_dp(pts, 0, pts.size() - 1, eps, keep)
-	var idx := keep.keys()
-	idx.sort()
-	var out := PackedVector2Array()
-	for i in idx:
-		out.append(pts[i])
-	return out
-
-func _dp(pts: PackedVector2Array, lo: int, hi: int, eps: float, keep: Dictionary) -> void:
-	if hi <= lo + 1:
-		return
-	var a: Vector2 = pts[lo]
-	var b: Vector2 = pts[hi]
-	var ab := b - a
-	var len2 := ab.length_squared()
-	var dmax := 0.0
-	var idx := -1
-	for i in range(lo + 1, hi):
-		var t := 0.0 if len2 < 0.001 else clampf((pts[i] - a).dot(ab) / len2, 0.0, 1.0)
-		var dist: float = pts[i].distance_to(a + ab * t)
-		if dist > dmax:
-			dmax = dist
-			idx = i
-	if dmax > eps and idx > 0:
-		keep[idx] = true
-		_dp(pts, lo, idx, eps, keep)
-		_dp(pts, idx, hi, eps, keep)
-
-# Size the band to the artwork's actual silhouette: sample the rendered rest path,
-# march perpendicular until the opaque content ends, then pool the sample widths
-# back to the user-visible control points. Keeps the band hugging the art without
-# clipping bulges between sparse handles.
-func _fit_widths_to_content():
-	if imageData == null or wigglePath.size() < 1:
-		return
-	var img: Image = imageData
-	var reach := maxf(float(img.get_width()), float(img.get_height()))
-	# Measure coverage along the same smoothed / resampled rest centerline that the
-	# mesh will render. Then pool each sample's required width back to the adjacent
-	# control widths. This is intentionally an envelope: if a bulge falls between two
-	# handles, both handles learn about it instead of letting the interpolated band
-	# cut a straight chord through the art.
-	var smooth := _wiggle_mesh_rest_path()
-	if smooth.size() < 2:
-		smooth = wigglePath
-	var ns := smooth.size()
-	var sample_widths := PackedFloat32Array()
-	sample_widths.resize(ns)
-	for i in ns:
-		var a: Vector2 = smooth[maxi(i - 1, 0)]
-		var b: Vector2 = smooth[mini(i + 1, ns - 1)]
-		var t := b - a
-		if t.length() < 0.001:
-			t = Vector2.RIGHT
-		var perp := t.normalized().orthogonal()
-		var c: Vector2 = smooth[i]
-		var ext := maxf(
-			_content_reach(img, c, perp, reach, 0.08),
-			_content_reach(img, c, -perp, reach, 0.08)
-		)
-		sample_widths[i] = maxf((ext + _WIGGLE_WIDTH_MARGIN) * _WIGGLE_WIDTH_GROW, _WIGGLE_WIDTH_MIN)
-
-	var out := PackedFloat32Array()
-	var m := wigglePath.size()
-	out.resize(m)
-	for i in m:
-		out[i] = _WIGGLE_WIDTH_MIN
-	if m == 1:
-		for w in sample_widths:
-			out[0] = maxf(out[0], w)
-		wigglePathWidths = out
-		return
-	for i in ns:
-		var f := float(i) / float(ns - 1) * float(m - 1)
-		var a := int(f)
-		var b := mini(a + 1, m - 1)
-		out[a] = maxf(out[a], sample_widths[i])
-		out[b] = maxf(out[b], sample_widths[i])
-	wigglePathWidths = out
-
-# Distance from `start` to the furthest opaque pixel along `dir`, stopping after a
-# sustained transparent gap (the content edge).
-func _content_reach(img: Image, start: Vector2, dir: Vector2, reach: float, threshold := 0.25) -> float:
-	var last := 0.0
-	var gap := 0.0
-	var w := img.get_width()
-	var h := img.get_height()
-	var d := 1.0
-	while d <= reach:
-		var p := start + dir * d
-		var x := int(round(p.x))
-		var y := int(round(p.y))
-		var alpha := 0.0
-		if x >= 0 and y >= 0 and x < w and y < h:
-			alpha = img.get_pixel(x, y).a
-		if alpha > threshold:
-			last = d
-			gap = 0.0
-		else:
-			gap += 1.0
-			if gap >= 8.0 and last > 0.0:
-				break
-		d += 1.0
-	return last
+	return WiggleGeometry.smooth_widths(smooth.size(), wigglePathWidths, wiggleThickness)
 
 func _update_wiggle(delta: float):
-	if _wiggleAppendage == null:
-		_set_wiggle_active(true)
-		return
-	sprite.rotation = 0.0
-	sprite.scale = Vector2.ONE
-	# Resolution change → rebuild chain AND mesh (the mesh vertex count tracks it).
-	if _wiggleAppendage.segment_count != clampi(int(wiggleSegments), 2, 48):
-		_apply_wiggle_geometry()
-	_wiggleAppendage.configure(_wiggle_params())
-	_wiggleAppendage.tick(delta, tick)
-	# Linked children sit under this layer's Sprite2D, which wiggle hides — reparent
-	# them onto DragOrigin (visible) so they stay on screen, then ride the bend.
-	_attach_wiggle_children()
-	_apply_wiggle_to_children()
-
-func _wiggle_params() -> Dictionary:
-	return {
-		"stiffness": wiggleStiffness,
-		"damping": wiggleDamping,
-		# Cap per-joint rotation speed and soften joints toward the tip so a root
-		# rotation travels down the appendage with lag (a smooth wave). Both scale
-		# with stiffness, so Stiffness is the single "snappy vs smooth" knob.
-		"max_angular_momentum": clampf(wiggleStiffness * 0.45, 2.0, 30.0),
-		"stiffness_decay": wiggleStiffness * 0.05,
-		"stiffness_decay_exponent": 1.3,
-		"max_angle": deg_to_rad(wiggleMaxBend),
-		"comeback_speed": wiggleBendFocus,
-		"rest_return": wiggleShapeReturn,
-		"gravity": Vector2(0.0, wiggleWeight),
-		"subdivision": 4,
-		# Base tracks the layer tightly so the wiggle reacts immediately — the whip
-		# comes from the chain trailing the base, NOT from delaying the base. Higher
-		# reactivity = snappier (toward instant); lower = a floatier, laggier base.
-		"root_follow_smoothness": clampf(0.6 + wiggleReactivity * 0.3, 0.5, 1.0),
-		"motion_intensity": wiggleMotionIntensity,
-		"auto_wag": wiggleWagEnabled,
-		"wag_speed": wiggleWagSpeed,
-		"wag_amount": deg_to_rad(wiggleWagAmount),
-	}
-
-# Make directly-linked children ride the ribbon: project each child's rest spot
-# onto the path to get its position along the appendage, then place it at the
-# matching (bent) chain point. Deeper descendants follow via the scene tree.
-func _apply_wiggle_to_children():
-	if _wiggleAppendage == null or _wiggleSmooth.size() < 2:
-		return
-	for child in getAllLinkedSprites():
-		if not child._wiggleFollowing:
-			child._wiggleRestPos = child.position
-			child._wiggleRestRot = child.rotation
-			child._wiggleFollowing = true
-		var tex: Vector2 = _local_to_tex(child._wiggleRestPos)
-		var t := _project_on_smooth(tex)
-		var p: Vector2 = _wiggleAppendage.sample_local(t) + _wiggleAppendage.position
-		var p2: Vector2 = _wiggleAppendage.sample_local(minf(t + 0.04, 1.0)) + _wiggleAppendage.position
-		child.position = p
-		var cur_tan := p2 - p
-		var rest_tan := _smooth_tangent(t)
-		if cur_tan.length() > 0.001 and rest_tan.length() > 0.001:
-			child.rotation = child._wiggleRestRot + (cur_tan.angle() - rest_tan.angle())
-
-# Nearest arc-fraction [0,1] of a texture-space point onto the cached smooth path.
-func _project_on_smooth(tex: Vector2) -> float:
-	var n := _wiggleSmooth.size()
-	if n < 2:
-		return 0.0
-	var lens := PackedFloat32Array()
-	var total := 0.0
-	for i in n - 1:
-		var l := _wiggleSmooth[i].distance_to(_wiggleSmooth[i + 1])
-		lens.append(l)
-		total += l
-	if total < 0.0001:
-		return 0.0
-	var best := 0.0
-	var best_d := INF
-	var acc := 0.0
-	for i in n - 1:
-		var a: Vector2 = _wiggleSmooth[i]
-		var b: Vector2 = _wiggleSmooth[i + 1]
-		var ab := b - a
-		var seg := maxf(ab.length(), 0.0001)
-		var u := clampf((tex - a).dot(ab) / (seg * seg), 0.0, 1.0)
-		var proj := a + ab * u
-		var d := tex.distance_squared_to(proj)
-		if d < best_d:
-			best_d = d
-			best = (acc + u * seg) / total
-		acc += lens[i]
-	return best
-
-# Local-space tangent of the smooth path at arc-fraction t (texture deltas equal
-# local deltas — the mapping is a translation).
-func _smooth_tangent(t: float) -> Vector2:
-	var n := _wiggleSmooth.size()
-	if n < 2:
-		return Vector2.RIGHT
-	var i := clampi(int(t * float(n - 1)), 0, n - 2)
-	return _wiggleSmooth[i + 1] - _wiggleSmooth[i]
-
-# Reparent linked children off the (wiggle-hidden) Sprite2D onto DragOrigin so they
-# stay visible and ride the bend. Capture each child's authored rest offset BEFORE
-# reparenting so _release can restore it exactly (no drift across on/off cycles).
-# keep_global_transform on the move avoids a visual pop; the follow pass repositions
-# them next. NOTE: a child that was clip-masked by this layer (setClip) loses that
-# mask while the parent wiggles — clipping to a deforming mesh isn't supported; it
-# re-clips when wiggle turns off and the child returns under the Sprite2D.
-func _attach_wiggle_children():
-	for child in getAllLinkedSprites():
-		if child.get_parent() == sprite:
-			child._wiggleRestPos = child.position
-			child._wiggleRestRot = child.rotation
-			child._wiggleFollowing = true
-			child.reparent(dragOrigin, true)
-
-# Return any children we were driving back under the Sprite2D at their captured rest.
-func _release_wiggle_children():
-	for child in getAllLinkedSprites():
-		if child._wiggleFollowing:
-			if child.get_parent() == dragOrigin:
-				child.reparent(sprite, false)
-			child.position = child._wiggleRestPos
-			child.rotation = child._wiggleRestRot
-			child._wiggleFollowing = false
+	_wiggleRuntime.update(delta)
 
 func changeCollision(enable):
-	grabArea.monitorable = enable
+	_collisionRuntime.set_monitorable(enable)
 
 
 # The grab shapes exist for click-to-select, which mouse_cursor gates on edit
@@ -1491,32 +895,23 @@ func changeCollision(enable):
 # query that never comes. Measured on 25 layers: 23.8 ms/tick with the shapes
 # live against 2.2 ms with them disabled.
 func setCollisionActive(active: bool) -> void:
-	for child in grabArea.get_children():
-		if child is CollisionPolygon2D or child is CollisionShape2D:
-			child.disabled = not active
+	_collisionRuntime.set_active(active)
 
 
 # Every collision rebuild goes through here, so shapes built while the player
 # page is up (loading an avatar, for one) start in the right state.
 func _build_collision(polygons: Array) -> bool:
-	# The traced polygons are in image-pixel space, so the whole image is the
-	# bound that is guaranteed to contain every opaque pixel the alpha test can
-	# accept. Sheets replace this with a per-frame rect in remakePolygon().
-	var bounds := Rect2(Vector2.ZERO, Vector2(imageData.get_size()))
-	var has_collision: bool = CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons, bounds)
-	setCollisionActive(Global.main == null or Global.main.editMode)
-	return has_collision
+	return _collisionRuntime.build(polygons, _collision_should_be_active())
+
+func _collision_should_be_active() -> bool:
+	return Global.main == null or Global.main.editMode
 
 func changeFrames():
 	sprite.hframes = frames
 	sprite.frame = 0
 
 func remakePolygon():
-	if remadePolygon:
-		return
-	CollisionBuilder.replace_with_fallback(grabArea, outlineScene, imageSize, frames)
-	setCollisionActive(Global.main == null or Global.main.editMode)
-	remadePolygon = true
+	_collisionRuntime.remake_sheet(_collision_should_be_active())
 	
 func setClip(toggle):
 	if toggle:
@@ -1532,27 +927,10 @@ func setClip(toggle):
 	clipped = toggle
 
 func getAllLinkedSprites():
-	var linkedSprites = []
-	for node in Global.sprite_nodes():
-		if node.parentId == id:
-			linkedSprites.append(node)
-	return linkedSprites
+	return SpriteHierarchy.direct_children(Global.sprite_nodes(), id)
 
 func getAllDescendants() -> Array:
-	var children_by_parent := {}
-	for node in Global.sprite_nodes():
-		if node.parentId == null:
-			continue
-		if not children_by_parent.has(node.parentId):
-			children_by_parent[node.parentId] = []
-		children_by_parent[node.parentId].append(node)
-	var result := []
-	var stack: Array = children_by_parent.get(id, []).duplicate()
-	while stack.size() > 0:
-		var current = stack.pop_back()
-		result.append(current)
-		stack.append_array(children_by_parent.get(current.id, []))
-	return result
+	return SpriteHierarchy.descendants(Global.sprite_nodes(), id)
 
 func visToggle(keys):
 	if Global.awaitingToggleBind: return
@@ -1568,6 +946,6 @@ func makeVis():
 func applyCostumeVisibility():
 	if Global.main == null:
 		return
-	var on = costumeLayers[Global.main.costume - 1] == 1 and not userHidden
+	var on := SpriteVisibility.costume_visible(costumeLayers, Global.main.costume, userHidden)
 	visible = on
 	changeCollision(on)
