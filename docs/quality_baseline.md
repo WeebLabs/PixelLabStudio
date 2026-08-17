@@ -337,3 +337,70 @@ auto-fits. Complete avatar loads measured 284.70 ms for 100 layers and 536.17 ms
 for 250 layers. All smoke budgets, the 120-frame active NDI teardown test, and
 the standalone macOS pack export pass, and the production runner now exits with
 no leaked ObjectDB instances.
+
+## Phase 15 performance and lifecycle gate
+
+> Updated: 2026-08-17 — seven qualified workloads with ceilings and trend values
+
+`scripts/run_performance.sh` now also runs
+`tests/performance/lifecycle_runner.tscn`, which measures seven production-scene
+workloads against a 100-layer rig and writes
+`.artifacts/performance-lifecycle.json`. Baseline on an M1 Max with Godot 4.6.3:
+
+| Workload | Measurement | Ceiling |
+|---|---|---|
+| Costume switching | 5.49 ms per switch (200 switches) | 8000 ms total |
+| Hierarchy rebuild | 82.21 ms per full rebuild of 100 rows; 4.80 ms per refresh-only pass | 12000 ms total |
+| Sidebar refresh | 6.88 ms per frame on the edit page, 6.87 ms on the player page | 6000 ms total |
+| Command undo memory | 50 entries at 561 KB each, 28.05 MB total, 2.18 ms per command | 600 MB |
+| Wiggle tick | 153.36 us per layer per tick across 25 simulating ribbons | 500 us |
+| Cancelled-load teardown | 38.86 ms worker drain, 40.61 ms unwind, 21.00 ms teardown | 8000 ms |
+| Repeated shutdown | 5 cycles, 80.73 ms slowest, 1 object of drift | 8000 ms per cycle |
+
+No workload regressed against the Phase 12/13 baselines. Animation improved from
+3.66 to 3.36 microseconds per active 100-layer frame, schema validation from
+637.18 to 531.45 ms, indexed eye-target lookup from 3.88 to 3.77 ms, and ribbon
+auto-fit from 220.58 to 207.41 ms. Complete avatar loads measured 233.62 ms for
+100 layers and 371.14 ms for 250 layers, against 271.15 ms and 465.60 ms at
+Phase 13. Load timings vary by roughly 15% run to run, so treat the direction as
+unchanged rather than as an improvement.
+
+Two measurement bugs were found and fixed while building the gate, both of which
+had been silently reporting success:
+
+- Wall-clock frame timing measured the `Engine.max_fps` pacing interval rather
+  than the work, so every page and every configuration returned the same number.
+  The runner now uncaps the frame rate for its whole run.
+- `updateData()` yields a frame and then abandons stale generations, so an
+  un-awaited loop of 50 rebuilds coalesced into one and reported 0.04 ms per
+  rebuild instead of 82 ms. Both sidebar refresh calls are now awaited.
+
+Two acceptance claims are established structurally rather than by timing,
+because per-frame cost at 100 layers is dominated by the layers themselves and
+the signal cannot be separated from noise. "Player mode performs no hidden edit
+work" is proved by `can_process()` returning false for both sidebars on the
+player page and true for both on the edit page. Wiggle cost is measured by
+driving `_update_wiggle` directly, after asserting that all 25 ribbons built
+their meshes and that the chain advances across frames.
+
+One real defect was surfaced and fixed: tearing the scene down during an avatar
+load stranded the load coroutine, which resumed against a dead scene and leaked
+a `GDScriptFunctionState` at exit. `avatar_controller.shutdown()` now sets a
+cancellation flag, every suspension point in `load_avatar()` re-checks it, and a
+cancelled load calls `_abandon_load()` to release its decode buffers and dismiss
+its progress dialog. The production runner and the lifecycle gate both exit with
+no leaked ObjectDB instances.
+
+The active NDI teardown smoke was run three additional times on macOS and passed
+each time. Windows and Linux hosts were not available in this session, so the
+cross-platform half of the native lifecycle check remains outstanding for CI.
+
+The production application runner passes 476 assertions and the isolated suite
+passes 900, including a new contract that each of the seven workloads keeps both
+a measurement and a ceiling, that the performance gate invokes the lifecycle
+runner, and that avatar loads carry explicit cancellation.
+
+Hierarchy rebuild at 82 ms for a 100-layer rig is the slowest user-facing
+workload measured. It is a first baseline rather than a regression, so it was
+recorded and left alone under this phase's rule of optimizing only measured
+regressions.

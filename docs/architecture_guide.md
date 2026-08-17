@@ -144,7 +144,7 @@ PNGTuberPlus/
 │   └── save_format.md             Versioned avatar/settings compatibility contract
 ├── tests/
 │   ├── integration/               Isolated production-scene behavioral runner
-│   ├── performance/               Pure and full avatar-load benchmarks
+│   ├── performance/               Pure, avatar-load, and lifecycle benchmarks
 │   ├── native/                    Native extension lifecycle smokes
 │   └── unit/                      Headless unit and source-contract suites
 ├── scripts/                       Local quality-gate entry points
@@ -779,6 +779,14 @@ before/after snapshot boundary exactly once.
 > enforces that no production file outside this module opens a history
 > transaction, so the canonical path cannot quietly regrow a second entrance.
 
+> Updated: 2026-08-17 — **Avatar loads are cancellable.** `load_avatar()` runs
+> across frames (worker-pool image decode, then sprite construction), so
+> `shutdown()` sets `_load_cancelled` and every suspension point re-checks
+> `_load_aborted()`. A cancelled load calls `_abandon_load()`, which releases the
+> decode buffers and dismisses the progress dialog, instead of resuming to build
+> sprites against a scene that is being torn down. `is_loading()` exposes the
+> in-flight state for shutdown paths and the lifecycle gate.
+
 ### Save/Load (`saving.gd`, `main.gd`)
 
 - Format: JSON with base64-encoded PNG image data per sprite
@@ -806,6 +814,29 @@ atomic round-trip/recovery cases are fixture-tested in
 > root, instances, and registry untouched. `scripts/run_performance.sh` also
 > records full 100- and 250-layer load timings and static-memory observations in
 > `.artifacts/performance-avatar-load.json`.
+
+> Updated: 2026-08-17 — **Lifecycle qualification gate.**
+> `tests/performance/lifecycle_runner.tscn` measures seven production-scene
+> workloads against a 100-layer rig and writes
+> `.artifacts/performance-lifecycle.json`: costume switching, hierarchy rebuild
+> (full versus refresh-only), sidebar refresh on both pages, command undo memory,
+> wiggle tick cost, cancelled-load teardown, and repeated startup/shutdown. Each
+> carries a broad smoke ceiling; the JSON numbers are the trend line.
+>
+> Two measurement rules matter for anyone extending it. First, the runner
+> uncaps `Engine.max_fps` for its whole run: headless frames are otherwise paced,
+> so a paced wall clock reports the frame interval no matter what the frame did.
+> Second, `updateData()` and `refreshHierarchy()` must be awaited. `update_data()`
+> yields a frame and then abandons stale generations, so an un-awaited loop
+> coalesces into a single rebuild and reports a cost unrelated to rebuilding.
+>
+> Two claims are established structurally rather than by timing, because per-frame
+> cost at this layer count is dominated by the layers themselves. "No hidden edit
+> work on the player page" is proved by `can_process()` on both sidebars, not by
+> the millisecond difference. Wiggle cost is measured by driving `_update_wiggle`
+> directly, after asserting the ribbons built their meshes and advance across
+> frames, because a chain's cost could not be separated from frame noise by
+> differencing.
 
 > Updated: 2026-08-06 — Save execution is coordinated by
 > `main_scenes/controllers/save_controller.gd`. It serializes the scene snapshot

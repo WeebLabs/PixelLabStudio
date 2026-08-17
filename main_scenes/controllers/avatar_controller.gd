@@ -20,6 +20,9 @@ var _load_keys: Array = []
 var _load_data_ref: Variant = null
 var _load_results: Array = []
 var _load_group_id := -1
+# Set by shutdown() so an avatar load already in flight unwinds at its next
+# suspension point instead of resuming against a scene that is being torn down.
+var _load_cancelled := false
 
 
 func setup(main: Node2D, global: Node, saving: Node, undo: Node, sprite_scene: PackedScene) -> void:
@@ -56,12 +59,24 @@ func on_state_restored(scope: Dictionary) -> void:
 
 
 func shutdown() -> void:
+	_load_cancelled = true
 	if _load_group_id >= 0:
 		WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
 		_load_group_id = -1
 	_load_keys.clear()
 	_load_data_ref = null
 	_load_results.clear()
+
+
+# True while an avatar load is decoding images on the worker pool.
+func is_loading() -> bool:
+	return _load_group_id >= 0
+
+
+# A cancelled load must not keep building sprites against a scene that is going
+# away, so every suspension point in load_avatar re-checks this.
+func _load_aborted() -> bool:
+	return _load_cancelled or not is_instance_valid(_main)
 
 
 func next_z_index() -> int:
@@ -198,6 +213,7 @@ func load_avatar(path: String) -> bool:
 		_global.notify_user(_saving.last_error)
 		return false
 	MutationCommands.capture_bulk()
+	_load_cancelled = false
 
 	_global.clear_selection()
 	_main.origin.visible = false
@@ -228,8 +244,10 @@ func load_avatar(path: String) -> bool:
 				_load_worker_decode(index)
 		var load_started := Time.get_ticks_msec()
 		var last_bar_update := load_started
-		while _load_group_id >= 0 and not WorkerThreadPool.is_group_task_completed(_load_group_id):
+		while not _load_aborted() and _load_group_id >= 0 and not WorkerThreadPool.is_group_task_completed(_load_group_id):
 			await get_tree().process_frame
+			if _load_aborted():
+				return _abandon_load(load_dialog)
 			var now := Time.get_ticks_msec()
 			if load_dialog == null and now - load_started >= 200:
 				load_dialog = _create_progress_dialog("Loading avatar...")
@@ -240,6 +258,8 @@ func load_avatar(path: String) -> bool:
 		if _load_group_id >= 0:
 			WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
 			_load_group_id = -1
+		if _load_aborted():
+			return _abandon_load(load_dialog)
 		if load_dialog != null:
 			load_dialog.set_progress(1.0)
 
@@ -293,6 +313,8 @@ func load_avatar(path: String) -> bool:
 		_saving.settings["lastAvatar"] = path
 		_saving.write_settings(_saving.settingsPath)
 	await _global.spriteList.updateData()
+	if _load_aborted():
+		return _abandon_load(load_dialog)
 	_main.onWindowSizeChange()
 	_assign_default_ndi_reference()
 	if _main.ndi_manager != null:
@@ -304,6 +326,17 @@ func load_avatar(path: String) -> bool:
 	var fade := _main.create_tween()
 	fade.tween_property(_main.origin, "modulate", Color(1, 1, 1, 1), 0.3)
 	return true
+
+
+# Release everything a cancelled load was holding and report that it did not
+# complete. The worker group is already drained by shutdown().
+func _abandon_load(load_dialog) -> bool:
+	_load_keys.clear()
+	_load_data_ref = null
+	_load_results.clear()
+	if load_dialog != null and is_instance_valid(load_dialog):
+		load_dialog.queue_free()
+	return false
 
 
 func build_save_data() -> Dictionary:

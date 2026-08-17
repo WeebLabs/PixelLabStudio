@@ -33,6 +33,7 @@ func run(t) -> void:
 	_test_terminology_and_optional_native_input(t, source_root)
 	_test_maintainer_documentation(t, source_root)
 	_test_mutation_boundary_contract(t, source_root)
+	_test_lifecycle_gate_contract(t, source_root)
 
 
 func _test_product_metadata(t, source_root: String) -> void:
@@ -70,13 +71,13 @@ func _test_export_presets(t, source_root: String) -> void:
 		for pattern in REQUIRED_EXPORT_PATTERNS:
 			t.assert_true(include_filter.split(",").has(pattern), "preset %d explicitly includes indirect runtime dependency %s" % [index, pattern])
 		var exclude_filter: String = presets.get_value(section, "exclude_filter", "")
-		t.assert_true(exclude_filter.split(",").has("ui_scenes/light/*"), "preset %d excludes dormant untracked light work" % index)
+		t.assert_true(exclude_filter.split(",").has("ui_scenes/light/*"), "preset %d excludes the dormant light work" % index)
 		t.assert_equal(presets.get_value(section, "export_path"), expected[index][2], "preset %d writes below the ignored artifact directory" % index)
 
 	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), "1.7.0.0", "Windows product version matches the application")
 	t.assert_equal(presets.get_value("preset.2.options", "application/bundle_identifier"), "com.weeblabs.pixellabstudio", "macOS bundle identifier is stable")
 	t.assert_true(String(presets.get_value("preset.2.options", "privacy/microphone_usage_description", "")).contains("animate the avatar"), "macOS microphone purpose is user-facing")
-	for script_path in ["scripts/run_export_smoke.sh", "scripts/run_release_checks.sh"]:
+	for script_path in ["scripts/run_export_smoke.sh", "scripts/run_performance.sh", "scripts/run_release_checks.sh"]:
 		t.assert_true(FileAccess.file_exists(source_root.path_join(script_path)), "release gate exists: %s" % script_path)
 
 
@@ -202,6 +203,45 @@ func _test_mutation_boundary_contract(t, source_root: String) -> void:
 	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
 	t.assert_true(main_source.contains("InputCommands.decode_background"), "background key commands route through the decoder")
 	t.assert_true(main_source.contains("InputCommands.decode_device_costume"), "Stream Deck costume keys route through the decoder")
+
+
+# Phase 15: every qualified workload keeps a repeatable measurement with a
+# ceiling and a JSON trend value, so a later change cannot quietly drop one.
+func _test_lifecycle_gate_contract(t, source_root: String) -> void:
+	for relative_path in ["tests/performance/lifecycle_runner.gd", "tests/performance/lifecycle_runner.tscn"]:
+		t.assert_true(FileAccess.file_exists(source_root.path_join(relative_path)), "lifecycle gate exists: %s" % relative_path)
+	var script := FileAccess.get_file_as_string(source_root.path_join("tests/performance/lifecycle_runner.gd"))
+	for workload in [
+		"costume_switching",
+		"hierarchy_rebuild",
+		"sidebar_refresh",
+		"undo_memory",
+		"wiggle_frame_cost",
+		"cancelled_load_teardown",
+		"repeated_shutdown",
+	]:
+		t.assert_true(script.contains("\"%s\"" % workload), "lifecycle gate measures %s" % workload)
+	for ceiling in [
+		"MAX_COSTUME_SWITCH_MS",
+		"MAX_HIERARCHY_REBUILD_MS",
+		"MAX_SIDEBAR_REFRESH_MS",
+		"MAX_UNDO_MEMORY_BYTES",
+		"MAX_WIGGLE_US_PER_LAYER_TICK",
+		"MAX_CANCELLED_TEARDOWN_MS",
+		"MAX_SHUTDOWN_CYCLE_MS",
+	]:
+		t.assert_true(script.contains(ceiling), "lifecycle workload keeps a smoke ceiling: %s" % ceiling)
+
+	var performance_gate := FileAccess.get_file_as_string(source_root.path_join("scripts/run_performance.sh"))
+	t.assert_true(performance_gate.contains("lifecycle_runner.tscn"), "the performance gate runs the lifecycle workloads")
+	t.assert_true(performance_gate.contains("LIFECYCLE_OUTPUT"), "the lifecycle gate writes its own trend artifact")
+
+	# An avatar load that is torn down mid-flight must be told to stop; without
+	# this the coroutine resumes against a dead scene and strands its state.
+	var controller := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/avatar_controller.gd"))
+	t.assert_true(controller.contains("_load_cancelled"), "avatar load carries an explicit cancellation flag")
+	t.assert_true(controller.contains("func _load_aborted"), "avatar load re-checks cancellation at its suspension points")
+	t.assert_true(controller.contains("func is_loading"), "in-flight loads are observable for shutdown and tests")
 
 
 func _collect_files(root: String, extensions: Array[String]) -> Array[String]:

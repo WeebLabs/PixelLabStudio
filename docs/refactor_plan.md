@@ -396,6 +396,25 @@ trend value, 100/250-layer loads and active animation do not materially regress,
 no ObjectDB/thread/native leaks remain, and player mode performs no hidden edit
 work.
 
+> Completed: 2026-08-17 — `tests/performance/lifecycle_runner.tscn` measures all
+> seven workloads against a 100-layer production rig, each with a smoke ceiling
+> and a trend value in `.artifacts/performance-lifecycle.json`, and the release
+> contract fails if a workload loses either. No workload regressed: animation,
+> validation, lookup, ribbon auto-fit, and 100/250-layer loads all improved or
+> held against Phase 12/13, within a run-to-run variance of roughly 15%.
+> Building the gate exposed two measurement bugs that had been reporting
+> success (paced wall-clock frames measuring the frame interval rather than the
+> work, and un-awaited `updateData()` loops coalescing 50 rebuilds into one) and
+> one real defect: a scene torn down during an avatar load stranded the load
+> coroutine and leaked a `GDScriptFunctionState`. Loads are now explicitly
+> cancellable through `shutdown()`, and both the production runner and the
+> lifecycle gate exit with no leaked ObjectDB instances. Player mode is proved
+> free of hidden edit work structurally, by `can_process()` on both sidebars,
+> because timing at this layer count cannot separate the signal from noise.
+> Active NDI teardown passed three additional macOS runs; Windows and Linux
+> hosts were unavailable, so that half of the native check remains for CI.
+> Stop here before Phase 16 unless explicitly authorized to continue.
+
 ## Phase 16 — Completion audit
 
 - Remove compatibility facades and dead paths, resolve or document warnings,

@@ -7,6 +7,7 @@ GODOT_EXECUTABLE="${GODOT_BIN:-godot}"
 ARTIFACT_DIR="$PROJECT_ROOT/.artifacts"
 OUTPUT_PATH="${1:-$ARTIFACT_DIR/performance.json}"
 AVATAR_LOAD_OUTPUT="${OUTPUT_PATH%.json}-avatar-load.json"
+LIFECYCLE_OUTPUT="${OUTPUT_PATH%.json}-lifecycle.json"
 PERF_WORKSPACE="$(mktemp -d -t pngtuberplus-performance.XXXXXX)"
 
 cleanup() {
@@ -40,3 +41,7 @@ cp "$PROJECT_ROOT/test/testBody.png" "$PERF_WORKSPACE/test/testBody.png"
 "$GODOT_EXECUTABLE" --headless --audio-driver Dummy --path "$PROJECT_ROOT" \
 	res://tests/performance/avatar_load_runner.tscn -- \
 	--avatar-integration-test --output="$AVATAR_LOAD_OUTPUT"
+
+"$GODOT_EXECUTABLE" --headless --audio-driver Dummy --path "$PROJECT_ROOT" \
+	res://tests/performance/lifecycle_runner.tscn -- \
+	--avatar-integration-test --output="$LIFECYCLE_OUTPUT"
