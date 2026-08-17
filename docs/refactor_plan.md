@@ -434,3 +434,27 @@ clean apart from known user files, the full local and cross-platform matrix is
 green, architecture/save/dependency/contributor docs match the code, every
 remaining oversized file has one coherent responsibility, and a fresh developer
 can make a typical feature change without editing unrelated subsystems.
+
+> Completed: 2026-08-17 — The audit removed nineteen unreferenced functions, the
+> browser `localStorage` persistence path, and the `Global.pushUpdate()` facade
+> with its thirteen call sites; extracted the z-index overlay into
+> `ui_scenes/zIndex/z_index_editor.gd` (`global.gd` 1042 to 929 lines); renamed
+> `main.gd`'s menu commands out of signal-handler spelling; deduplicated the
+> light snapshot; and routed undo's last raw `str_to_var()` through `ValueCodec`.
+> A contract meant to forbid the legacy notification facade was found passing
+> against thirteen violations because it matched one spelling of the receiver,
+> and now matches the call. Documentation was corrected where it described code
+> that no longer exists (web persistence, a folder-selecting Replace dialog), and
+> `docs/evaluation.md` is marked as the pre-refactor baseline with a verified
+> outcome section.
+>
+> **The full gate passes from a clean checkout**: 488 real-scene assertions, 901
+> isolated assertions, performance budgets, active NDI teardown, and the
+> standalone pack export. All three export presets build a pack that boots the
+> production scene on this host.
+>
+> Two acceptance items are **not** met locally and remain for CI: Windows and
+> Linux runtime and native lifecycle smokes cannot run from a macOS host. Four
+> items are knowingly retained rather than removed, each recorded with a reason
+> in `docs/evaluation.md`: dormant lighting, unreachable folder replace, the
+> persisted-but-unread `eyeTrackForward`, and the 82 ms hierarchy rebuild.

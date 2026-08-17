@@ -404,3 +404,63 @@ Hierarchy rebuild at 82 ms for a 100-layer rig is the slowest user-facing
 workload measured. It is a first baseline rather than a regression, so it was
 recorded and left alone under this phase's rule of optimizing only measured
 regressions.
+
+## Phase 16 completion audit
+
+> Updated: 2026-08-17 — dead paths removed, clean-checkout gate green
+
+The audit removed nineteen unreferenced functions, the browser `localStorage`
+persistence path (the project has no web export preset), and the
+`Global.pushUpdate()` notification facade with its thirteen call sites. It also
+extracted the z-index overlay out of the state singleton into
+`ui_scenes/zIndex/z_index_editor.gd`, taking `global.gd` from 1042 to 929 lines,
+and renamed the menu command surface on `main.gd` out of signal-handler spelling.
+
+One contract was found passing against thirteen violations. The check for the
+legacy notification facade matched the literal `"Global.pushUpdate("`, while
+every caller reached the singleton through an injected `_global` reference. It
+now matches the call rather than one spelling of the receiver. A contract that
+pins a spelling instead of a shape is worth re-reading whenever it has never
+failed.
+
+### Oversized files and their responsibilities
+
+| File | Lines | Responsibility |
+|---|---|---|
+| `spriteObject.gd` | 954 | One layer's scene-facing facade over its visual, collision, wiggle, and animation runtimes |
+| `global.gd` | 929 | Application state and input routing: selection, modes, microphone, key command dispatch |
+| `import_controller.gd` | 714 | The import and replace lifecycle: dialogs, parser threads, worker-pool preparation, review flow |
+| `viewer.gd` | 690 | Right sidebar scene facade; wires the layer tree, tracking, details, physics, and blend components |
+| `sprite_viewer.gd` | 686 | Left sidebar scene facade; wires selection presentation, normal maps, rotation preview, and animation |
+| `main.gd` | 608 | Main scene coordinator over five controllers, plus the public menu command surface |
+
+Each remaining large file is one facade or one lifecycle. None is a grab bag.
+
+### Release matrix
+
+The full gate passes from a **clean checkout** of the branch (a fresh clone into
+a temporary directory), which is what proves nothing depends on untracked files
+in a working tree: 488 real-scene assertions, 901 isolated assertions,
+performance budgets, active NDI teardown, and the standalone pack export.
+
+All three export presets produce a resource pack and each exported pack boots the
+full production scene on this host. The platform-native half remains for CI: the
+Windows D3D12 and Agility SDK path and the Linux NDI extension cannot be
+exercised from a macOS host, so Windows and Linux runtime and native lifecycle
+smokes are unverified locally.
+
+### Legacy save shapes
+
+The schema supports exactly two shapes, unversioned (v0) and `_schemaVersion: 1`.
+Both are fixture-tested in `tests/unit/test_persistence.gd`
+(`avatar_v0.json`, `settings_v0.json`), alongside schema rejections, the bundled
+default avatar, unsigned identifier preservation, costume membership round-trip,
+and atomic write recovery. The production runner adds a live save/load round trip
+across all ten costumes.
+
+### Knowingly retained
+
+Dormant lighting (`_create_light_gizmo()` returns before loading its script, so
+`_light_gizmo` is always null and `"_light"` never reaches a save), unreachable
+folder replace, the persisted-but-unread `eyeTrackForward`, and the 82 ms
+hierarchy rebuild. Each is recorded in `docs/evaluation.md` with the reason.
