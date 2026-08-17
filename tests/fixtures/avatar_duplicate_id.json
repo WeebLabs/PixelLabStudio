@@ -1,0 +1,14 @@
+{
+	"0": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 17,
+		"parentId": null
+	},
+	"1": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 17,
+		"parentId": null
+	}
+}

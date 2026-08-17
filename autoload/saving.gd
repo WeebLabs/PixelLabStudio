@@ -7,6 +7,7 @@ const Settings = preload("res://autoload/persistence/settings_schema.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 
 const SETTINGS_MAX_BYTES := 4 * 1024 * 1024
+const ISOLATED_SESSION_FLAGS := ["--release-smoke", "--avatar-integration-test"]
 
 var key := "creature"
 var data: Dictionary = {}
@@ -17,7 +18,7 @@ var _persist_settings_on_exit := true
 
 
 func _ready() -> void:
-	if OS.get_cmdline_user_args().has("--release-smoke"):
+	if is_isolated_session():
 		begin_isolated_session()
 	else:
 		load_settings(settingsPath)
@@ -29,12 +30,20 @@ func _exit_tree() -> void:
 
 
 func begin_isolated_session() -> void:
-	## Release-smoke launches must not read from or write to the developer's real
-	## settings. Saving is the first stateful autoload, so this runs before Global
-	## or any scene controller can consume persisted feature configuration.
+	## Automated production-scene launches must not read from or write to the
+	## developer's real settings. Saving is the first stateful autoload, so this
+	## runs before Global or any scene controller can consume persisted state.
 	settings = Settings.defaults()
 	last_error = ""
 	_persist_settings_on_exit = false
+
+
+func is_isolated_session() -> bool:
+	var arguments := OS.get_cmdline_user_args()
+	for flag in ISOLATED_SESSION_FLAGS:
+		if arguments.has(flag):
+			return true
+	return false
 
 
 func load_settings(path: String = settingsPath) -> bool:

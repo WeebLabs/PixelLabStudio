@@ -142,8 +142,9 @@ func _test_terminology_and_optional_native_input(t, source_root: String) -> void
 	t.assert_true(save_controller.count("*.save;PNGTuberPlus Avatar") >= 2, "native save and load dialogs use the documented avatar extension")
 	var saving_source := FileAccess.get_file_as_string(source_root.path_join("autoload/saving.gd"))
 	t.assert_true(saving_source.contains("--release-smoke") and saving_source.contains("begin_isolated_session()"), "release smoke isolates settings before other autoloads start")
+	t.assert_true(saving_source.contains("--avatar-integration-test"), "production-scene regression runs share the isolated settings boundary")
 	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
-	t.assert_true(global_source.contains("not OS.get_cmdline_user_args().has(\"--release-smoke\")"), "release smoke does not open the host microphone")
+	t.assert_true(global_source.contains("not Saving.is_isolated_session()"), "automated production-scene runs do not open the host microphone")
 
 
 func _test_maintainer_documentation(t, source_root: String) -> void:

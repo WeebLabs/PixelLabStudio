@@ -132,9 +132,9 @@ func _ready():
 	add_child(_microphone_monitor)
 	_microphone_monitor.speaking_started.connect(_on_microphone_speaking_started)
 	_microphone_monitor.speaking_stopped.connect(_on_microphone_speaking_stopped)
-	# A standalone release smoke verifies resource completeness and scene
-	# lifecycles; it must not open the host's real capture device.
-	if not OS.get_cmdline_user_args().has("--release-smoke"):
+	# Automated production-scene checks verify real scene lifecycles without
+	# opening the host's capture device or consuming persisted configuration.
+	if not Saving.is_isolated_session():
 		_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
 	spectrum = _microphone_monitor.spectrum
 

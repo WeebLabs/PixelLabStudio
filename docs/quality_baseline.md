@@ -32,10 +32,11 @@ GODOT_BIN=/absolute/path/to/godot ./scripts/run_release_checks.sh
 ```
 
 `run_tests.sh` performs a Godot 4.6 recovery-mode import to compile production
-scripts, then runs isolated unit and contract tests in a minimal project. This
-separation prevents user settings, microphones, Stream Deck devices, and native
-output integrations from affecting deterministic tests or requiring optional
-native runtimes on CI. When a macOS NDI runtime is installed, the same gate also
+scripts, runs an isolated production-scene avatar lifecycle test, then runs unit
+and contract tests in a minimal project. `Saving.is_isolated_session()` prevents
+user settings, recovery state, microphones, and external devices from affecting
+the production-scene run; the smaller project keeps pure tests independent of
+optional native runtimes. When a macOS NDI runtime is installed, the same gate also
 loads the bundled extension in a clean project and requires clean idle and
 rendered active-output shutdown, directly covering both native teardown paths.
 
@@ -48,7 +49,7 @@ tests and export smoke on Linux, macOS, and Windows and records performance on
 Linux; native integrations still require a full exported-build check on each
 affected platform.
 
-`run_performance.sh` benchmarks eight repeatable CPU paths: animation
+`run_performance.sh` benchmarks repeatable CPU paths: animation
 evaluation at 1/10/50/100 layers, 100-layer avatar JSON serialization,
 100-layer schema validation/migration, runtime blink/microphone state updates,
 alpha-to-polygon image geometry, one million binary import-boundary checks,
@@ -57,7 +58,9 @@ resolution. It stores exact results and enforces broad smoke ceilings of 15 micr
 100-layer animation layer-frame, 500 ms for serialization, 3,000 ms for schema
 validation, 1,000 ms per 100,000 runtime-service updates, and 200 ms for image
 geometry, 2,000 ms each for one million import and sprite-registry validations,
-and 100 ms for 15,000 indexed eye-target lookups. Phase work should compare
+and 100 ms for 15,000 indexed eye-target lookups. A second production-scene
+artifact measures complete 100- and 250-layer avatar loads with broad 5,000 ms
+and 12,000 ms smoke ceilings. Phase work should compare
 the same CI-runner artifact before and after changes; a ceiling is not a
 performance target.
 
@@ -187,3 +190,18 @@ budgets. The cumulative run measured 3.58 µs/layer-frame active and 0.25 idle a
 100 layers, 595.96 ms validation, 41.96 ms runtime services, 58.19 ms
 serialization, 20.40 ms image geometry, 399.93 ms import validation, 649.67 ms
 for one million registry queries, and 3.81 ms for indexed eye-target lookup.
+
+## Phase 9 measurement
+
+> Updated: 2026-08-17 — real application lifecycle coverage
+
+The production-scene runner passes 378 behavioral assertions across startup,
+load, unsigned identifiers, hierarchy, migrated idle motion, costumes 1–10,
+ancestor visibility, manual hiding, rejected input, and persisted round trips.
+The complementary isolated suite passes 652 assertions. On the baseline M1 Max
+with Godot 4.6.3, a complete 100-layer load took 221.40 ms and a 250-layer load
+took 475.82 ms; exact time and static-memory observations are stored in
+`.artifacts/performance-avatar-load.json`. Existing budgets also passed (3.60
+microseconds per active 100-layer animation frame, 0.25 idle, 1,219.65 ms for
+100 schema validations, and 3.85 ms for the indexed 250-layer eye-target
+workload). Five consecutive 120-frame active NDI teardown repetitions passed.

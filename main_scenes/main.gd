@@ -136,7 +136,8 @@ func _ready():
 
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 
-	save_controller.startup_restore()
+	if not Saving.is_isolated_session():
+		save_controller.startup_restore()
 	Saving.settings["newUser"] = false
 
 	if Saving.settings.has("windowSize"):
@@ -1082,7 +1083,7 @@ func _on_load_dialog_file_selected(path):
 	# The session-recovery file is ephemeral — never promote it to lastAvatar,
 	# otherwise startup auto-load and Reset would pull from it instead of the
 	# user's actual saved avatar.
-	if path != AvatarSaveController.SESSION_SAVE_PATH:
+	if path != AvatarSaveController.SESSION_SAVE_PATH and not Saving.is_isolated_session():
 		Saving.settings["lastAvatar"] = path
 		# Persist immediately — _exit_tree isn't reliable across all shutdown paths
 		Saving.write_settings(Saving.settingsPath)

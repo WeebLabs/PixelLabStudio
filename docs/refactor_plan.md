@@ -1,14 +1,16 @@
 # Refactor Execution Plan
 
-> Updated: 2026-08-06 — all planned refactor phases complete
+> Updated: 2026-08-17 — Phases 0–8 established the safety baseline; the
+> maintainability completion program continues through Phases 9–16.
 
 The refactor proceeds in small, auditable commits. Each phase must preserve
 save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–8 are complete. Completed phases remain covered by the
-cumulative test, performance, and standalone export gates.
+Progress: Phases 0–9 are complete. Phase 10 is next. Completed phases remain
+covered by the cumulative production-scene, isolated, native, performance, and
+standalone export gates.
 
 ## Phase 0 — Baseline and safety rails
 
@@ -135,3 +137,69 @@ cumulative test, performance, and standalone export gates.
 > complete and enforced by release tests. The final local audit passed 504
 > assertions, all performance budgets, and a production pack export/launch;
 > CI owns the same resource-pack smoke across Linux, macOS, and Windows.
+
+## Phase 9 — Real-application regression harness
+
+- Exercise the production main and sprite scenes with isolated persisted and
+  device state rather than relying only on source contracts and pure helpers.
+- Fixture-test unsigned IDs, hierarchy reconstruction, legacy idle motion,
+  every costume, ancestor visibility, rejected loads, and save/load round trips.
+- Benchmark complete 100- and 250-layer loads, including decode, collision,
+  scene assembly, hierarchy, costume application, and layer-list refresh.
+
+> Completed: 2026-08-17 — `tests/integration/avatar_scene_runner.tscn`
+> launches the real application graph under `--avatar-integration-test` while
+> `Saving.is_isolated_session()` prevents host settings, recovery files,
+> microphones, and external devices from influencing the run. Two versioned
+> fixtures reproduce the ID/hierarchy/sway/costume regressions and schema
+> rejection. The runner passes 378 behavioral assertions; the isolated suite
+> passes 652. Production load budgets and exact artifacts now cover 100 and 250
+> layers. The macOS NDI smoke also allows 120 rendered frames before teardown so
+> Godot 4.6.3 finishes its asynchronous Metal pipeline callback before the test
+> audits the extension lifecycle.
+
+## Phase 10 — Explicit application boundaries
+
+- Separate selection, sprite lookup, input state, avatar session state, and UI
+  notification responsibilities behind narrow Godot-native APIs.
+- Keep `Global` as the canonical owner of shared scene-node references while
+  moving feature behavior behind focused methods and services.
+- Centralize the required three-level Area2D-to-sprite traversal in one helper.
+
+## Phase 11 — Main-scene completion
+
+- Extract transactional avatar assembly, import-result application, edit
+  commands, costume orchestration, and dialog presentation from `main.gd`.
+- Leave the scene script responsible for lifecycle wiring and delegation.
+
+## Phase 12 — Sprite runtime decomposition
+
+- Separate visibility policy, hierarchy state, animation, wiggle runtime,
+  wiggle geometry, visual synchronization, and collision coordination.
+- Retain `spriteObject.gd` as the scene-facing facade while behavior migrates.
+
+## Phase 13 — UI componentization
+
+- Split the left sidebar, right sidebar, and settings form into focused panels.
+- Centralize binding and enabled-state rules and test panels as real scenes.
+
+## Phase 14 — Mutation, undo, and input boundaries
+
+- Route sprite mutations through canonical commands with undo capture.
+- Remove UI knowledge from `UndoManager` and consolidate device/key commands.
+- Retain the project convention that scene references live on `Global`, while
+  reducing direct cross-feature method calls to narrow coordination points.
+
+## Phase 15 — Performance and lifecycle qualification
+
+- Profile load, costume, hierarchy, sidebar, animation, undo-memory, import
+  cancellation, and shutdown workloads in the decomposed architecture.
+- Optimize measured regressions and repeat native lifecycle smokes.
+
+## Phase 16 — Completion audit
+
+- Remove compatibility facades and dead paths, resolve or document warnings,
+  refresh the codebase evaluation, and run the full cross-platform release
+  matrix from a clean checkout.
+- Declare the refactor finished only when the quantitative and architectural
+  acceptance criteria in this plan and the architecture guide remain green.

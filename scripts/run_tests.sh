@@ -16,10 +16,11 @@ esac
 
 IMPORT_LOG="$(mktemp -t pngtuberplus-import.XXXXXX)"
 TEST_LOG="$(mktemp -t pngtuberplus-test.XXXXXX)"
+INTEGRATION_LOG="$(mktemp -t pngtuberplus-integration.XXXXXX)"
 TEST_WORKSPACE="$(mktemp -d -t pngtuberplus-tests.XXXXXX)"
 
 cleanup() {
-	rm -f "$IMPORT_LOG" "$TEST_LOG"
+	rm -f "$IMPORT_LOG" "$TEST_LOG" "$INTEGRATION_LOG"
 	if [[ -n "$TEST_WORKSPACE" && -d "$TEST_WORKSPACE" ]]; then
 		rm -rf "$TEST_WORKSPACE"
 	fi
@@ -32,7 +33,13 @@ if grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script
 	exit 1
 fi
 
-"$SCRIPT_DIR/run_ndi_teardown_smoke.sh"
+"$GODOT_EXECUTABLE" --headless --audio-driver Dummy --path "$PROJECT_ROOT" \
+	res://tests/integration/avatar_scene_runner.tscn -- --avatar-integration-test \
+	2>&1 | tee "$INTEGRATION_LOG"
+if grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script" "$INTEGRATION_LOG" >/dev/null; then
+	echo "Godot reported an error during the production-scene integration run." >&2
+	exit 1
+fi
 
 cp "$PROJECT_ROOT/tests/test_project.godot" "$TEST_WORKSPACE/project.godot"
 cp -R "$PROJECT_ROOT/tests" "$TEST_WORKSPACE/tests"
@@ -57,3 +64,5 @@ if grep -E "(^|[[:space:]])ERROR:|SCRIPT ERROR|Parse Error|Failed to load script
 	echo "Godot reported an error during the isolated test run." >&2
 	exit 1
 fi
+
+"$SCRIPT_DIR/run_ndi_teardown_smoke.sh"

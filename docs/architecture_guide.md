@@ -56,12 +56,15 @@ PNGTuberPlus/
 │   ├── EditControls.gd            Top menu bar (edit mode)
 │   ├── ControlPanel.gd            Right-side streaming panel (view mode)
 │   ├── Tutorial.gd                First-run tutorial overlay
-│   ├── MicInputSelect.gd          Microphone dropdown
 │   └── originLineDrawing.gd       Origin crosshair lines
 │
 ├── ui_scenes/
 │   ├── common/
-│   │   └── sidebar_ui.gd         Shared styles, bounds, and chrome hit tests
+│   │   ├── menu_bar.gd           Shared edit/player menu bar and meters
+│   │   ├── form_ui.gd            Constructed settings-form primitives
+│   │   ├── modal_dialog.gd        Shared modal layout and input guard
+│   │   ├── tab_bar.gd             Shared sidebar/settings tabs
+│   │   └── sidebar_ui.gd          Shared styles, bounds, and chrome hit tests
 │   ├── mouse/
 │   │   └── mouse_cursor.gd       Click detection & tooltip in edit mode
 │   ├── selectedSprite/
@@ -72,17 +75,15 @@ PNGTuberPlus/
 │   │   └── chain.gd              Visual line during reparenting
 │   ├── spriteList/
 │   │   ├── viewer.gd             Right sidebar — layer tree + tabbed controls (310px, resizable)
-│   │   ├── sidebar_tab_bar.gd    Reusable Details/Tracking/Physics tab strip
 │   │   ├── physics_tab.gd        Physics tab — wiggle controls
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
 │   │   ├── psd_import_dialog.gd     PSD layer selection dialog (import flow)
 │   │   └── replace_review_dialog.gd Unified replace review dialog (PSD/folder/PNG)
 │   ├── settings/
-│   │   └── settings_menu.gd      Settings panel
+│   │   └── settings_menu.gd      Constructed, tabbed settings panel
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
-│   └── volume/                    Audio level sliders & visualization
 │
 ├── autoload/                      Global singletons (autoloaded)
 │   ├── global.gd                  Central state: mic, selection, input, modes
@@ -121,11 +122,18 @@ PNGTuberPlus/
 │   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
 │   ├── refactor_plan.md           Phased execution and acceptance gates
 │   └── save_format.md             Versioned avatar/settings compatibility contract
-├── tests/                         Headless unit, contract, smoke, and performance tests
+├── tests/
+│   ├── integration/               Isolated production-scene behavioral runner
+│   ├── performance/               Pure and full avatar-load benchmarks
+│   ├── native/                    Native extension lifecycle smokes
+│   └── unit/                      Headless unit and source-contract suites
 ├── scripts/                       Local quality-gate entry points
 ├── CONTRIBUTING.md                Setup, acceptance gates, and change contracts
 └── project.godot                  Godot project configuration
 ```
+
+> Updated: 2026-08-17 — The directory map reflects the constructed menu and
+> settings rebuild and the production-scene integration/performance harness.
 
 ---
 
@@ -472,6 +480,18 @@ bare `class_name`. A bare name compiles in the editor but fails there, and the
 failure silently drops the rest of that suite; `test_main_controllers` now opens
 with a compile guard that turns this into a visible failure.
 
+> Updated: 2026-08-17 — `scripts/run_tests.sh` now runs two complementary
+> layers. The isolated project keeps pure/unit/source contracts deterministic;
+> `tests/integration/avatar_scene_runner.tscn` boots `main.tscn` with the real
+> autoload and UI graph and exercises the complete avatar loader. The
+> `--avatar-integration-test` argument is handled centrally by
+> `Saving.is_isolated_session()`: it uses schema defaults, suppresses settings
+> persistence and startup recovery, and prevents microphone/device startup, but
+> does not replace the production load, worker, sprite, hierarchy, costume, or
+> animation paths. Fixtures cover all ten costumes, effective ancestor
+> visibility, unsigned IDs/references, nested hierarchy, legacy idle sway,
+> rejected duplicate IDs, and a persisted save/load round trip.
+
 ---
 
 ## Click-to-Select Architecture
@@ -617,6 +637,14 @@ for avatar-level metadata. A root entry is treated as a layer only when it is a
 validated dictionary with `type == "sprite"`. Current schema migration and
 atomic round-trip/recovery cases are fixture-tested in
 `tests/unit/test_persistence.gd`.
+
+> Updated: 2026-08-17 — Production-scene regression tests supplement the schema
+> suite at `tests/integration/avatar_scene_runner.tscn`. A valid 12-layer fixture
+> reproduces the previously missed runtime interactions after normalization,
+> while a duplicate-ID fixture proves a rejected document leaves the live avatar
+> root, instances, and registry untouched. `scripts/run_performance.sh` also
+> records full 100- and 250-layer load timings and static-memory observations in
+> `.artifacts/performance-avatar-load.json`.
 
 > Updated: 2026-08-06 — Save execution is coordinated by
 > `main_scenes/controllers/save_controller.gd`. It serializes the scene snapshot
@@ -840,6 +868,14 @@ Requires the godot-ndi GDExtension plugin (by unvermuthet, MPL-2.0) in `addons/g
 > to absorb queued texture callbacks, then is deleted at core deinitialization.
 > `scripts/run_ndi_teardown_smoke.sh` covers idle extension and rendered active
 > output shutdown on macOS hosts with the NDI runtime installed.
+
+> Updated: 2026-08-17 — The active-output smoke renders 120 frames before
+> requesting shutdown. Three frames intermittently quit Godot 4.6.3 while its
+> Metal `compiler reply queue` still owned a shader-cache callback; macOS crash
+> reports faulted in `RenderingDeviceDriverMetal::shader_cache_free_entry`, not
+> the extension. Allowing pipeline initialization to settle keeps the smoke
+> focused on the NDI scene/core teardown it is designed to validate; five
+> consecutive idle/active repetitions pass on the pinned engine.
 
 ---
 

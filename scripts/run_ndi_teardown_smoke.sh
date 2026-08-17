@@ -58,7 +58,12 @@ if [[ $SMOKE_STATUS -ne 0 ]] || grep -E "mutex lock failed|uncaught exception|SI
 fi
 
 set +e
-"$GODOT_EXECUTABLE" --audio-driver Dummy --path "$TEST_WORKSPACE" --quit-after 3 res://active_output.tscn 2>&1 | tee "$SMOKE_LOG"
+# Give the rendered output enough frames to finish Metal pipeline compilation
+# before requesting shutdown. Quitting after three frames races Godot 4.6.3's
+# asynchronous shader-cache callback itself (the macOS crash report points at
+# RenderingDeviceDriverMetal::shader_cache_free_entry), obscuring the NDI
+# lifecycle this smoke is intended to exercise.
+"$GODOT_EXECUTABLE" --audio-driver Dummy --path "$TEST_WORKSPACE" --quit-after 120 res://active_output.tscn 2>&1 | tee "$SMOKE_LOG"
 SMOKE_STATUS=${PIPESTATUS[0]}
 set -e
 
