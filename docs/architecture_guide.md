@@ -350,6 +350,7 @@ pinned. Tunables are constants at the top of `menu_bar.gd`:
 | `HIDE_BAND_RATIO` (0.180) | fraction the cursor must leave to dismiss it |
 | `BAND_MIN_PX` / `BAND_MAX_PX` | clamp, so the band works on both a tall desktop window and a small avatar window |
 | `SLIDE_SPEED` | reveal/conceal rate |
+| `LINGER_SECONDS` (2.0) | how long the bar stays up after the cursor leaves |
 
 The hide band is the larger of the two, so the bar cannot flicker on the
 boundary. The slide is a `_reveal` float advanced per frame (not a `Tween`), so
@@ -357,6 +358,18 @@ re-entering mid-conceal reverses smoothly. `set_pin(key, bool)` holds the bar
 open while a popup is open or a slider is being dragged, when the cursor is
 legitimately outside the band. Pure helpers `reveal_band()` and `should_reveal()`
 are unit tested in `tests/unit/test_ui_components.gd`.
+
+> Updated: 2026-08-17 — Leaving the band no longer dismisses the bar straight
+> away. `_linger` carries the seconds the bar is still owed: `next_linger()`
+> recharges it to `LINGER_SECONDS` on **any** frame the bar is wanted and drains
+> it otherwise, and `_process` holds the bar while it is above zero. Re-entering
+> mid-window therefore restarts the count from full rather than resuming it, and
+> because a pin counts as "wanted", closing a popup leaves the same reprieve.
+> `snap_hidden()` clears it, so returning focus to the window cannot pop a
+> deliberately concealed bar back open. Tested through the real `_process`,
+> stepped by hand: outside a tree `_wants_reveal()` is false and pins
+> short-circuit ahead of it, so a pin stands in for the cursor with no window and
+> no mouse involved.
 
 `revealed_height()` feeds canvas hit-testing, so a concealed bar never steals
 clicks from the avatar (see Click-to-Select → Panel click-through guard).

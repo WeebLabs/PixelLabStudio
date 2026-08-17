@@ -79,6 +79,11 @@ const HIDE_BAND_RATIO := 0.180
 const BAND_MIN_PX := 48.0
 const BAND_MAX_PX := 160.0
 const SLIDE_SPEED := 8.0
+# Leaving the band does not dismiss the bar straight away: it stays up for this
+# long, and coming back within the window restarts the count from full. Reaching
+# for an item is not a steady journey, and the bar sliding out from under a
+# cursor that paused halfway is worse than a bar that waits.
+const LINGER_SECONDS := 2.0
 
 var left: HBoxContainer = null
 var center: HBoxContainer = null
@@ -92,6 +97,9 @@ var _row: HBoxContainer = null
 var _center_holder: CenterContainer = null
 var _auto_reveal := false
 var _reveal := 1.0
+# Seconds still owed to the bar after the cursor left. Starts empty so a bar that
+# was never summoned still slides away on its own at startup.
+var _linger := 0.0
 var _pins := {}
 var _grabber_texture: ImageTexture = null
 
@@ -393,11 +401,16 @@ func snap_hidden() -> void:
 	if not _auto_reveal:
 		return
 	_reveal = 0.0
+	# Deliberate concealment outranks anything the bar was still owed, or coming
+	# back to the window would pop the bar open for no reason.
+	_linger = 0.0
 	_apply_reveal()
 
 
 func _process(delta: float) -> void:
-	_reveal = move_toward(_reveal, 1.0 if _wants_reveal() else 0.0, SLIDE_SPEED * delta)
+	var wants := _wants_reveal()
+	_linger = next_linger(_linger, wants, delta)
+	_reveal = move_toward(_reveal, 1.0 if wants or _linger > 0.0 else 0.0, SLIDE_SPEED * delta)
 	_apply_reveal()
 
 
@@ -450,6 +463,16 @@ static func should_reveal(
 		return false
 	var ratio := HIDE_BAND_RATIO if revealed else REVEAL_BAND_RATIO
 	return pointer_y <= reveal_band(viewport_height, ratio)
+
+
+# Seconds the bar is still owed. Any frame the cursor wants the bar restarts the
+# full window, so re-entering resets rather than resumes; otherwise it drains.
+# The bar holds while this is above zero, which is what makes leaving the band a
+# LINGER_SECONDS reprieve instead of an immediate dismissal.
+static func next_linger(previous: float, wants_reveal: bool, delta: float) -> float:
+	if wants_reveal:
+		return LINGER_SECONDS
+	return maxf(previous - delta, 0.0)
 
 
 # --- Construction helpers ------------------------------------------------------

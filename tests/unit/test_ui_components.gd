@@ -96,6 +96,75 @@ func _test_menu_bar_reveal_contract(t) -> void:
 	t.assert_false(MenuBarComponent.should_reveal(true, true, height - 10.0, height), "the far edge always dismisses the bar")
 	t.assert_false(MenuBarComponent.should_reveal(true, false, 4.0, height), "a cursor outside the window dismisses the bar")
 
+	# Leaving the band buys LINGER_SECONDS, and coming back restarts the window
+	# from full rather than resuming it.
+	var linger := MenuBarComponent.LINGER_SECONDS
+	t.assert_approx(MenuBarComponent.next_linger(0.0, true, 0.016), linger, 0.0001, "wanting the bar charges the full window")
+	t.assert_approx(MenuBarComponent.next_linger(linger, false, 0.5), linger - 0.5, 0.0001, "leaving the band drains the window")
+	t.assert_approx(MenuBarComponent.next_linger(0.3, true, 0.016), linger, 0.0001, "re-entering restarts the window rather than resuming it")
+	t.assert_approx(MenuBarComponent.next_linger(0.2, false, 0.5), 0.0, 0.0001, "the window never goes negative")
+
+	# The bar holds for LINGER_SECONDS of frames after the cursor leaves, then
+	# releases. Stepped at 60 fps, the way _process runs it.
+	var held := MenuBarComponent.LINGER_SECONDS
+	var frames := 0
+	while held > 0.0:
+		held = MenuBarComponent.next_linger(held, false, 1.0 / 60.0)
+		frames += 1
+	t.assert_approx(float(frames) / 60.0, MenuBarComponent.LINGER_SECONDS, 0.02, "the hold lasts its stated duration")
+
+	# A pin holds the bar open, so releasing one leaves the same reprieve behind.
+	t.assert_approx(MenuBarComponent.next_linger(0.0, true, 1.0), linger, 0.0001, "a held-open bar keeps its window charged")
+
+	_test_menu_bar_hold(t)
+
+
+# The real _process, stepped by hand. Outside a tree _wants_reveal() is false, so
+# a pin stands in for "the cursor wants the bar" and releasing it stands in for
+# the cursor leaving the band. This covers what the pure helper cannot: that the
+# bar actually stays on screen for the whole window and only then slides away.
+func _test_menu_bar_hold(t) -> void:
+	var step := 1.0 / 60.0
+	var bar = MenuBarComponent.new()
+	bar.configure_auto_reveal(true)
+	bar.set_pin(&"test", true)
+	for i in 30:
+		bar._process(step)
+	t.assert_approx(bar.revealed_height(), MenuBarComponent.BAR_HEIGHT, 0.001, "the bar comes fully on screen while it is wanted")
+
+	# Cursor leaves. It must still be fully up a second later.
+	bar.set_pin(&"test", false)
+	for i in 60:
+		bar._process(step)
+	t.assert_approx(bar.revealed_height(), MenuBarComponent.BAR_HEIGHT, 0.001, "one second after leaving, the bar has not moved")
+
+	# Coming back mid-window restarts the count: another second, still up.
+	bar.set_pin(&"test", true)
+	bar._process(step)
+	bar.set_pin(&"test", false)
+	for i in 60:
+		bar._process(step)
+	t.assert_approx(bar.revealed_height(), MenuBarComponent.BAR_HEIGHT, 0.001, "re-entering restarts the window rather than resuming it")
+
+	var frames := 0
+	while bar.revealed_height() > 0.0 and frames < 600:
+		bar._process(step)
+		frames += 1
+	var slide := 1.0 / MenuBarComponent.SLIDE_SPEED
+	t.assert_approx(float(frames) * step, MenuBarComponent.LINGER_SECONDS - 1.0 + slide, 0.05, "the bar leaves once the window runs out, then slides")
+
+	# A concealment request outranks whatever the bar was still owed. The pin has
+	# to be released first: a bar still held open by a popup SHOULD come back.
+	bar.set_pin(&"test", true)
+	for i in 30:
+		bar._process(step)
+	bar.set_pin(&"test", false)
+	bar.snap_hidden()
+	for i in 30:
+		bar._process(step)
+	t.assert_equal(bar.revealed_height(), 0.0, "snap_hidden discards the window the bar was still owed")
+	bar.free()
+
 
 func _test_menu_bar_crowding_contract(t) -> void:
 	# When the zones cannot clear each other, the bar's nominated collapsible item
