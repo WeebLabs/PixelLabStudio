@@ -1,6 +1,9 @@
 extends Node2D
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_controller.gd")
+const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
+const LayerDetailsPanel = preload("res://ui_scenes/spriteList/layer_details_panel.gd")
 
 @onready var container = $ScrollContainer/VBoxContainer
 var SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
@@ -20,9 +23,6 @@ const MAX_WIDTH_RATIO = 0.25
 const GRAB_MARGIN = 6
 const CONTROLS_ROW_HEIGHT = 32
 
-# Spacing constants live on Global so both sidebars share one source of truth.
-# Tune Global.UI_ROW_GAP / UI_DIVIDER_PAD to reflow every panel that uses them.
-
 var _bg: ColorRect
 var _divider1: ColorRect
 var _divider2: ColorRect
@@ -39,24 +39,8 @@ var _costume_btn_widgets: Array = []  # Buttons holding each costume sprite, for
 var _costume_btns: Array = []
 var _costume_select: Sprite2D
 
-var _eye_section: VBoxContainer
-var _eye_toggle: CheckBox
-var _eye_dist_label: Label
-var _eye_dist_slider: HSlider
-var _eye_speed_label: Label
-var _eye_speed_slider: HSlider
-var _eye_invert: CheckBox
-var _eye_type_option: OptionButton   # Mode: Position / Rotation
-var _eye_mode_option: OptionButton   # Target: Cursor / Layer
-var _eye_pick_btn: Button
-var _eye_whip_line: Line2D
-var _eye_mode_tooltip_label: Label
-var _eye_mode_tooltip_timer: Timer
+var _eye_tracking = EyeTrackingPanel.new()
 
-# Tabs (below costume row): Details / Eye Tracking / Physics. The tab bar selects
-# which content VBox is visible; all three live in _tab_host inside a scroll area
-# so a tab's content can grow upward into freed space if the layer list above is
-# ever detached.
 const BOTTOM_MARGIN = 12
 var _tab_bar: AppTabBar
 var _tab_scroll: ScrollContainer
@@ -66,21 +50,13 @@ var _eye_content: VBoxContainer
 var _physics_content: VBoxContainer
 var _physics_tab: WigglePhysicsTab
 
-# Details tab — layer toggles relocated here from the left sidebar.
-var _cb_ignore_bounce: CheckBox
-var _cb_clip_linked: CheckBox
-var _cb_static: CheckBox
-var _cb_ndi_ref: CheckBox
+var _details_panel = LayerDetailsPanel.new()
 
 var _slider_fill_enabled: StyleBoxFlat
 var _slider_fill_disabled: StyleBoxFlat
 var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
 var _slider_theme: Dictionary
-var _slider_enabled_state: bool = true
-# Tracks the previous _eye_scope() result so we only reset values to neutral
-# on transitions into a scope, not on every per-frame refresh.
-var _prev_eye_scope: String = ""
 
 var _vis_toggle_section: VBoxContainer
 var _vis_toggle_btn: Button
@@ -95,8 +71,7 @@ var _filter_field: LineEdit
 var _blend_section_helper: BlendOpacitySection
 var _blend_section: VBoxContainer
 
-var _saved_collapse_states: Dictionary = {}
-var _update_generation: int = 0
+var _layer_tree = LayerTreeController.new()
 var _pending_scroll_target = null
 var _dragging = false
 var _drag_start = Vector2.ZERO
@@ -113,6 +88,7 @@ func _exit_tree() -> void:
 
 func _ready():
 	Global.attach_sprite_list(self)
+	_layer_tree.setup(self, container, $ScrollContainer, Global, SpriteListObject)
 	container.add_theme_constant_override("separation", 2)
 	$Area2D2/CollisionShape2D.disabled = false
 	$NinePatchRect.visible = false
@@ -315,22 +291,7 @@ func _on_tab_changed(index: int):
 
 # Details tab — layer toggles relocated from the left sidebar (same behaviour).
 func _create_details_tab():
-	var c = Color(0.75, 0.75, 0.8)
-	_cb_ignore_bounce = _make_details_checkbox("Ignore bounce velocity", _on_details_ignore_bounce_toggled, c)
-	_cb_clip_linked = _make_details_checkbox("Clip linked sprites", _on_details_clip_linked_toggled, c)
-	_cb_static = _make_details_checkbox("Static element", _on_details_static_toggled, c)
-	_cb_ndi_ref = _make_details_checkbox("NDI reference layer", _on_details_ndi_ref_toggled, c)
-
-func _make_details_checkbox(text: String, on_toggled: Callable, color: Color) -> CheckBox:
-	var cb = CheckBox.new()
-	cb.text = text
-	cb.add_theme_font_size_override("font_size", 12)
-	cb.add_theme_color_override("font_color", color)
-	cb.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cb.toggled.connect(on_toggled)
-	_details_content.add_child(cb)
-	return cb
+	_details_panel.build(_details_content, Global, UndoManager)
 
 # Physics tab — wiggle controls (effects/wiggle). Built by a dedicated module so
 # this file stays focused on sidebar structure.
@@ -340,169 +301,7 @@ func _create_physics_tab():
 		_slider_grabber_enabled, _slider_grabber_disabled)
 
 func _create_eye_tracking():
-	# Section is a VBoxContainer; rows are HBoxContainers. No manual `y += ...`
-	# accumulators — VBox handles vertical stacking, HBox handles horizontal.
-	# Width is set in _apply_size; height is auto-fit from children.
-	_eye_section = VBoxContainer.new()
-	_eye_section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
-	_eye_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_eye_content.add_child(_eye_section)
-
-	var label_color = Color(0.75, 0.75, 0.8)
-
-	# Row: eye-track toggle + invert direction
-	var toggle_row = HBoxContainer.new()
-	toggle_row.add_theme_constant_override("separation", 4)
-	_eye_section.add_child(toggle_row)
-
-	_eye_toggle = CheckBox.new()
-	_eye_toggle.text = "Enable (Global)"
-	_eye_toggle.add_theme_font_size_override("font_size", 12)
-	_eye_toggle.add_theme_color_override("font_color", label_color)
-	_eye_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_eye_toggle.toggled.connect(_on_eye_track_toggled)
-	toggle_row.add_child(_eye_toggle)
-
-	_eye_invert = CheckBox.new()
-	_eye_invert.text = "Invert direction"
-	_eye_invert.add_theme_font_size_override("font_size", 12)
-	_eye_invert.add_theme_color_override("font_color", label_color)
-	_eye_invert.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_eye_invert.toggled.connect(_on_eye_track_invert_toggled)
-	toggle_row.add_child(_eye_invert)
-
-	# Row: Mode (Position = translate toward target / Rotation = swivel toward it)
-	var type_row = HBoxContainer.new()
-	type_row.add_theme_constant_override("separation", 6)
-	_eye_section.add_child(type_row)
-
-	var type_label = Label.new()
-	type_label.text = "Mode:"
-	type_label.add_theme_font_size_override("font_size", 12)
-	type_label.add_theme_color_override("font_color", label_color)
-	type_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	type_row.add_child(type_label)
-
-	_eye_type_option = OptionButton.new()
-	_eye_type_option.add_item("Position", 0)
-	_eye_type_option.add_item("Rotation", 1)
-	_eye_type_option.add_theme_font_size_override("font_size", 12)
-	_eye_type_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_eye_type_option.custom_minimum_size = Vector2(0, 22)
-	_eye_type_option.item_selected.connect(_on_eye_track_type_selected)
-	type_row.add_child(_eye_type_option)
-
-	# Row: target label + dropdown (Cursor / Layer) + pick button
-	var mode_row = HBoxContainer.new()
-	mode_row.add_theme_constant_override("separation", 6)
-	_eye_section.add_child(mode_row)
-
-	var mode_label = Label.new()
-	mode_label.text = "Target:"
-	mode_label.add_theme_font_size_override("font_size", 12)
-	mode_label.add_theme_color_override("font_color", label_color)
-	mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	mode_row.add_child(mode_label)
-
-	_eye_mode_option = OptionButton.new()
-	_eye_mode_option.add_item("Cursor", 0)
-	_eye_mode_option.add_item("Layer", 1)
-	_eye_mode_option.add_theme_font_size_override("font_size", 12)
-	# Width auto-fits the longest item text (recomputed dynamically when the
-	# Layer item is renamed to a target's truncated name)
-	_eye_mode_option.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_eye_mode_option.custom_minimum_size = Vector2(0, 22)
-	_eye_mode_option.item_selected.connect(_on_eye_track_mode_selected)
-	_eye_mode_option.mouse_entered.connect(_on_eye_mode_option_hover)
-	_eye_mode_option.mouse_exited.connect(_on_eye_mode_option_unhover)
-	# Right-click while in Layer mode clears the target; Cursor mode no-op so
-	# accidental right-clicks don't trash unrelated state.
-	_eye_mode_option.gui_input.connect(_on_eye_mode_option_gui_input)
-	mode_row.add_child(_eye_mode_option)
-
-	_eye_pick_btn = Button.new()
-	_eye_pick_btn.text = "Pick"
-	_eye_pick_btn.flat = true
-	_eye_pick_btn.add_theme_font_size_override("font_size", 12)
-	_eye_pick_btn.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_eye_pick_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	_eye_pick_btn.custom_minimum_size = Vector2(50, 22)
-	_eye_pick_btn.pressed.connect(_on_eye_track_pick_pressed)
-	_eye_pick_btn.visible = false
-	mode_row.add_child(_eye_pick_btn)
-
-	# Custom hover tooltip — shows the full target name after a 2s dwell. Free-
-	# floating; not part of the section's vertical layout.
-	_eye_mode_tooltip_label = Label.new()
-	_eye_mode_tooltip_label.add_theme_font_size_override("font_size", 12)
-	_eye_mode_tooltip_label.add_theme_color_override("font_color", Color(0.95, 0.95, 1))
-	var tip_bg = StyleBoxFlat.new()
-	tip_bg.bg_color = Color(0.1, 0.1, 0.12, 0.95)
-	tip_bg.content_margin_left = 6
-	tip_bg.content_margin_right = 6
-	tip_bg.content_margin_top = 3
-	tip_bg.content_margin_bottom = 3
-	tip_bg.set_corner_radius_all(3)
-	_eye_mode_tooltip_label.add_theme_stylebox_override("normal", tip_bg)
-	_eye_mode_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_eye_mode_tooltip_label.visible = false
-	_eye_mode_tooltip_label.z_index = 4095
-	add_child(_eye_mode_tooltip_label)
-
-	_eye_mode_tooltip_timer = Timer.new()
-	_eye_mode_tooltip_timer.one_shot = true
-	_eye_mode_tooltip_timer.wait_time = 2.0
-	_eye_mode_tooltip_timer.timeout.connect(_on_eye_mode_tooltip_show)
-	add_child(_eye_mode_tooltip_timer)
-
-	# Whip line — invisible until pick mode is active; free-floating
-	_eye_whip_line = Line2D.new()
-	_eye_whip_line.width = 2.0
-	_eye_whip_line.default_color = Color(1.0, 0.85, 0.35, 0.9)
-	_eye_whip_line.visible = false
-	_eye_whip_line.z_index = 4090
-	add_child(_eye_whip_line)
-
-	# Distance label + slider
-	_eye_dist_label = Label.new()
-	_eye_dist_label.text = "tracking distance: 20.0"
-	_eye_dist_label.add_theme_font_size_override("font_size", 12)
-	_eye_dist_label.add_theme_color_override("font_color", label_color)
-	_eye_section.add_child(_eye_dist_label)
-
-	_eye_dist_slider = HSlider.new()
-	# Plain scroll scrolls the section; only Ctrl+scroll adjusts (global.gd:_input).
-	_eye_dist_slider.scrollable = false
-	_eye_dist_slider.min_value = 1.0
-	_eye_dist_slider.max_value = 200.0
-	_eye_dist_slider.step = 1.0
-	_eye_dist_slider.value = 20.0
-	_eye_dist_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_eye_dist_slider.custom_minimum_size = Vector2(0, 16)
-	_eye_dist_slider.value_changed.connect(_on_eye_track_dist_changed)
-	SidebarUIFactory.apply_slider_theme(_eye_dist_slider, _slider_theme)
-	_eye_section.add_child(_eye_dist_slider)
-	Global.make_slider_resettable(_eye_dist_slider, 20.0)
-
-	# Speed label + slider
-	_eye_speed_label = Label.new()
-	_eye_speed_label.text = "tracking speed: 0.15"
-	_eye_speed_label.add_theme_font_size_override("font_size", 12)
-	_eye_speed_label.add_theme_color_override("font_color", label_color)
-	_eye_section.add_child(_eye_speed_label)
-
-	_eye_speed_slider = HSlider.new()
-	_eye_speed_slider.scrollable = false
-	_eye_speed_slider.min_value = 0.01
-	_eye_speed_slider.max_value = 1.0
-	_eye_speed_slider.step = 0.01
-	_eye_speed_slider.value = 0.15
-	_eye_speed_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_eye_speed_slider.custom_minimum_size = Vector2(0, 16)
-	_eye_speed_slider.value_changed.connect(_on_eye_track_speed_changed)
-	SidebarUIFactory.apply_slider_theme(_eye_speed_slider, _slider_theme)
-	_eye_section.add_child(_eye_speed_slider)
-	Global.make_slider_resettable(_eye_speed_slider, 0.15)
+	_eye_tracking.build(self, _eye_content, Global, UndoManager, SidebarUIFactory, _slider_theme)
 
 func _create_vis_toggle():
 	# Divider above the vis-toggle section — kept as a ColorRect for now since
@@ -644,7 +443,7 @@ func _process(_delta):
 	# Keep eye-tracking section in sync with the current scope. Cheap: a single
 	# group iteration when no sprite is selected, no-op otherwise.
 	refreshEyeUI()
-	_sync_details_tab()
+	_details_panel.sync()
 	_physics_tab.sync()
 	_blend_section_helper.sync()
 
@@ -679,14 +478,6 @@ func _process(_delta):
 	elif not Global.awaitingToggleBind:
 		_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 
-	# Swap slider styles to "enabled" appearance whenever the eye-tracking
-	# scope is interactive (per_layer or global), "disabled" only in dead scope.
-	var slider_should_enable = _prev_eye_scope != "dead"
-	if slider_should_enable != _slider_enabled_state:
-		_slider_enabled_state = slider_should_enable
-		for s in [_eye_dist_slider, _eye_speed_slider]:
-			SidebarUIFactory.apply_slider_theme(s, _slider_theme, slider_should_enable)
-
 	if !no_sprite:
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
 		_blinking_spr.frame = Global.heldSprite.showOnBlink
@@ -707,36 +498,18 @@ func _process(_delta):
 			_costume_select.position = to_local(btn.global_position + btn.size * 0.5)
 
 func scroll_to_selected():
-	if Global.heldSprite == null:
-		return
-	for child in container.get_children():
-		if child.sprite == Global.heldSprite:
-			$ScrollContainer.ensure_control_visible(child)
-			return
+	_layer_tree.scroll_to_selected()
 
 func scroll_to_sprite(target_sprite):
-	if target_sprite == null:
-		return
-	for child in container.get_children():
-		if child.sprite == target_sprite:
-			$ScrollContainer.scroll_vertical = int(child.position.y)
-			return
+	_layer_tree.scroll_to_sprite(target_sprite)
 
 func updateControls():
-	_sync_details_tab()
+	_details_panel.sync()
 	_physics_tab.sync()
 	_blend_section_helper.sync()
-	if Global.heldSprite == null:
-		refreshEyeUI()
-		return
-	_eye_toggle.set_pressed_no_signal(Global.heldSprite.eyeTrack)
-	_eye_dist_label.text = "tracking distance: " + str(Global.heldSprite.eyeTrackDistance)
-	_eye_dist_slider.set_value_no_signal(Global.heldSprite.eyeTrackDistance)
-	_eye_speed_label.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
-	_eye_speed_slider.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
-	_eye_invert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
-	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 	refreshEyeUI()
+	if Global.heldSprite != null:
+		_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 
 # --- Top control handlers ---
 
@@ -793,405 +566,12 @@ func _on_costume_btn_pressed(index: int):
 		Global.heldSprite.costumeLayers[index] = 0
 	Global.spriteEdit.setLayerButtons()
 
-# --- Details tab handlers (relocated from the left sidebar) ---
+# Keep the established sidebar API while the panel owns eye-tracking behavior.
+func refreshEyeUI() -> void:
+	_eye_tracking.refresh_ui()
 
-func _on_details_ignore_bounce_toggled(pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.ignoreBounce = pressed
-
-func _on_details_clip_linked_toggled(pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.setClip(pressed)
-
-func _on_details_static_toggled(pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.staticElement = pressed
-	# Re-snap the dragger when toggling off so physics resumes from the rest pose
-	if not pressed:
-		Global.heldSprite._force_drag_snap = true
-
-func _on_details_ndi_ref_toggled(pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	if pressed:
-		for spr in Global.sprite_nodes():
-			if spr != Global.heldSprite:
-				spr.ndiRefLayer = false
-	Global.heldSprite.ndiRefLayer = pressed
-	Global.main.ndi_mark_dirty()
-
-# Sync the Details checkboxes to the selected sprite; disabled when none.
-func _sync_details_tab():
-	var spr = Global.heldSprite
-	var has = spr != null
-	for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
-		cb.disabled = not has
-	if has:
-		_cb_ignore_bounce.set_pressed_no_signal(spr.ignoreBounce)
-		_cb_clip_linked.set_pressed_no_signal(spr.clipped)
-		_cb_static.set_pressed_no_signal(spr.staticElement)
-		_cb_ndi_ref.set_pressed_no_signal(spr.ndiRefLayer)
-	else:
-		for cb in [_cb_ignore_bounce, _cb_clip_linked, _cb_static, _cb_ndi_ref]:
-			cb.set_pressed_no_signal(false)
-
-# --- Eye tracking handlers ---
-
-func _on_eye_track_toggled(pressed):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state()
-		Global.heldSprite.eyeTrack = pressed
-	elif scope == "global":
-		# Global scope: this is the kill switch, NOT a per-sprite toggle.
-		# Per-sprite eyeTrack flags stay exactly as they are.
-		UndoManager.save_state()
-		Global.eyeTrackingGloballyEnabled = pressed
-
-func _on_eye_track_dist_changed(value):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state_continuous()
-		_update_eye_amount_label()
-		Global.heldSprite.eyeTrackDistance = value
-	elif scope == "global":
-		UndoManager.save_state_continuous()
-		_update_eye_amount_label()
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackDistance = value
-
-func _on_eye_track_speed_changed(value):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state_continuous()
-		_eye_speed_label.text = "tracking speed: " + str(value)
-		Global.heldSprite.eyeTrackSpeed = value
-	elif scope == "global":
-		UndoManager.save_state_continuous()
-		_eye_speed_label.text = "tracking speed: " + str(value)
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackSpeed = value
-
-# --- Scope helpers ---
-# Eye-tracking controls operate in one of three scopes:
-#   "per_layer" — a sprite is selected; everything edits that sprite
-#   "global"    — no selection but ≥1 sprite has eyeTrack on; controls broadcast
-#                 to every eyeTrack-on sprite; enable checkbox toggles the global
-#                 kill switch (Global.eyeTrackingGloballyEnabled) without
-#                 touching per-sprite eyeTrack flags
-#   "dead"      — no selection and no sprite has eyeTrack on; all disabled
-
-func _eye_scope() -> String:
-	if Global.heldSprite != null:
-		return "per_layer"
-	for spr in Global.sprite_nodes():
-		if spr.eyeTrack:
-			return "global"
-	return "dead"
-
-func _eye_tracked_sprites() -> Array:
-	var out = []
-	for spr in Global.sprite_nodes():
-		if spr.eyeTrack:
-			out.append(spr)
-	return out
-
-# --- Eye tracking handlers (scope-aware) ---
-
-func _on_eye_track_invert_toggled(pressed):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state()
-		Global.heldSprite.eyeTrackInvert = pressed
-	elif scope == "global":
-		UndoManager.save_state()
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackInvert = pressed
-
-# Mode: 0 = Position (translate toward target), 1 = Rotation (swivel toward it).
-func _on_eye_track_type_selected(idx):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state()
-		Global.heldSprite.eyeTrackType = idx
-	elif scope == "global":
-		UndoManager.save_state()
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackType = idx
-	refreshEyeUI()
-
-# The amount slider is shared: tracking distance (px) in Position, max tilt (°) in Rotation.
-func _update_eye_amount_label():
-	if _eye_type_option.selected == 1:
-		_eye_dist_label.text = "max tilt: " + str(_eye_dist_slider.value) + "°"
-	else:
-		_eye_dist_label.text = "tracking distance: " + str(_eye_dist_slider.value)
-
-# The amount label/slider shows in both modes (its text differs per mode).
-func _eye_apply_mode_visibility(_is_rot: bool):
-	_eye_dist_label.visible = true
-	_eye_dist_slider.visible = true
-
-func _on_eye_track_mode_selected(idx):
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state()
-		Global.heldSprite.eyeTrackMode = idx
-	elif scope == "global":
-		UndoManager.save_state()
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackMode = idx
-	# Switching mode while a pick is in progress cancels the pick
-	if Global.eyeTrackPickMode:
-		Global.cancel_eye_track_pick()
-	refreshEyeUI()
-
-func _on_eye_track_pick_pressed():
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		Global.begin_eye_track_pick(Global.heldSprite)
-		Global.notify_user("Click a layer to track (right-click to cancel).")
-	elif scope == "global":
-		Global.begin_eye_track_pick(null, true)
-		Global.notify_user("Click a layer to broadcast as target (right-click to cancel).")
-	refreshEyePickWhip()
-
-func _on_eye_track_target_clear():
-	# No-op if there's nothing to clear (avoids spurious undo snapshots)
-	if _full_eye_target_name() == "":
-		return
-	var scope = _eye_scope()
-	if scope == "per_layer":
-		UndoManager.save_state()
-		Global.heldSprite.eyeTrackTargetId = null
-	elif scope == "global":
-		UndoManager.save_state()
-		for spr in _eye_tracked_sprites():
-			spr.eyeTrackTargetId = null
-	refreshEyeUI()
-
-# Right-click on the mode dropdown: in Layer mode, clear the picked target.
-# In Cursor mode, do nothing so a stray right-click doesn't lose state the
-# user can't see while Cursor is selected.
-func _on_eye_mode_option_gui_input(event: InputEvent):
-	if not (event is InputEventMouseButton):
-		return
-	if event.button_index != MOUSE_BUTTON_RIGHT or not event.pressed:
-		return
-	if _eye_mode_option.selected != 1:
-		return
-	_eye_mode_option.accept_event()
-	_on_eye_track_target_clear()
-
-# Sync the eye-track UI state to the current scope. Called from _process so the
-# scope re-evaluates as the user toggles things, plus from updateControls() on
-# selection change for an immediate refresh. Tracks scope transitions so
-# global-scope values reset to neutral only on first entry, not every frame.
-func refreshEyeUI():
-	var scope = _eye_scope()
-	var transitioned = scope != _prev_eye_scope
-	_prev_eye_scope = scope
-	# The enable checkbox is the per-layer toggle when a layer is selected, and the global
-	# kill switch otherwise — label it so the active scope is obvious.
-	_eye_toggle.text = "Enable (Layer)" if Global.heldSprite != null else "Enable (Global)"
-	if scope == "per_layer":
-		_refresh_eye_ui_per_layer()
-	elif scope == "global":
-		_refresh_eye_ui_global(transitioned)
-	else:
-		_refresh_eye_ui_dead()
-
-func _refresh_eye_ui_per_layer():
-	var spr = Global.heldSprite
-	_eye_toggle.disabled = false
-	_eye_toggle.set_pressed_no_signal(spr.eyeTrack)
-	_eye_type_option.disabled = false
-	_eye_type_option.selected = spr.eyeTrackType
-	_eye_apply_mode_visibility(spr.eyeTrackType == 1)
-	_eye_mode_option.disabled = false
-	_eye_mode_option.selected = spr.eyeTrackMode
-	_eye_invert.disabled = false
-	_eye_invert.set_pressed_no_signal(spr.eyeTrackInvert)
-	_eye_dist_slider.editable = true
-	_eye_speed_slider.editable = true
-	_eye_dist_slider.set_value_no_signal(spr.eyeTrackDistance)
-	_eye_speed_slider.set_value_no_signal(spr.eyeTrackSpeed)
-	_update_eye_amount_label()
-	_eye_speed_label.text = "tracking speed: " + str(spr.eyeTrackSpeed)
-	var layer_mode = spr.eyeTrackMode == 1
-	_eye_pick_btn.visible = layer_mode
-	_eye_pick_btn.disabled = false
-	# Layer-item text shows the target name (truncated) when one is picked.
-	# Right-clicking the dropdown in Layer mode clears the target.
-	_update_layer_item_label()
-
-func _refresh_eye_ui_global(_reset_values: bool):
-	# Enable checkbox reflects the global kill switch (interactable, NOT per-sprite)
-	_eye_toggle.disabled = false
-	_eye_toggle.set_pressed_no_signal(Global.eyeTrackingGloballyEnabled)
-	_eye_type_option.disabled = false
-	_eye_mode_option.disabled = false
-	_eye_invert.disabled = false
-	_eye_dist_slider.editable = true
-	_eye_speed_slider.editable = true
-
-	# Always sync the UI to the agreed state across eye-tracking sprites. This
-	# avoids drift where the dropdown lies about the actual per-sprite mode
-	# (e.g. sprites at Layer but UI stuck on Cursor from an old "reset on
-	# transition" code path). When sprites disagree, fall back to neutral.
-	var agreed_type = _agreed_eye_value("eyeTrackType")
-	var agreed_mode = _agreed_eye_value("eyeTrackMode")
-	var agreed_invert = _agreed_eye_value("eyeTrackInvert")
-	var agreed_dist = _agreed_eye_value("eyeTrackDistance")
-	var agreed_speed = _agreed_eye_value("eyeTrackSpeed")
-	_eye_type_option.selected = (agreed_type if agreed_type != null else 0)
-	_eye_apply_mode_visibility(agreed_type == 1)
-	_eye_mode_option.selected = (agreed_mode if agreed_mode != null else 0)
-	_eye_invert.set_pressed_no_signal(agreed_invert if agreed_invert != null else false)
-	_eye_dist_slider.set_value_no_signal(agreed_dist if agreed_dist != null else _eye_dist_slider.min_value)
-	_eye_speed_slider.set_value_no_signal(agreed_speed if agreed_speed != null else _eye_speed_slider.min_value)
-
-	_update_eye_amount_label()
-	_eye_speed_label.text = "tracking speed: " + str(_eye_speed_slider.value)
-	# Pick button only relevant when mode is Layer
-	_eye_pick_btn.visible = _eye_mode_option.selected == 1
-	_eye_pick_btn.disabled = false
-	# Right-clicking the dropdown in Layer mode broadcasts a clear, which restores
-	# the dropdown's "Layer" label.
-	_update_layer_item_label()
-
-# Return the value of `prop` if every eye-tracking sprite has the same value,
-# null when mixed or there are no eye-tracking sprites.
-func _agreed_eye_value(prop: String):
-	var first = true
-	var agreed = null
-	for s in Global.sprite_nodes():
-		if not s.eyeTrack:
-			continue
-		if first:
-			agreed = s.get(prop)
-			first = false
-		elif s.get(prop) != agreed:
-			return null
-	return agreed
-
-func _refresh_eye_ui_dead():
-	_eye_toggle.disabled = true
-	_eye_toggle.set_pressed_no_signal(false)
-	_eye_type_option.disabled = true
-	_eye_type_option.selected = 0
-	_eye_apply_mode_visibility(false)
-	_eye_mode_option.disabled = true
-	_eye_mode_option.selected = 0
-	_eye_invert.disabled = true
-	_eye_invert.set_pressed_no_signal(false)
-	_eye_dist_slider.editable = false
-	_eye_speed_slider.editable = false
-	_eye_dist_slider.set_value_no_signal(_eye_dist_slider.min_value)
-	_eye_speed_slider.set_value_no_signal(_eye_speed_slider.min_value)
-	_eye_dist_label.text = "tracking distance: —"
-	_eye_speed_label.text = "tracking speed: —"
-	_eye_pick_btn.visible = false
-	_eye_mode_option.set_item_text(1, "Layer")
-
-# Resolve the eye-track target name for the current scope/state. Returns "" when
-# there's nothing single to display:
-#   per-layer scope — sprite's target if in Layer mode, else ""
-#   global scope    — broadcast target if every eyeTrack sprite shares the same
-#                     non-null targetId (the state right after a global Pick),
-#                     else ""
-func _full_eye_target_name() -> String:
-	if Global.heldSprite != null:
-		var spr = Global.heldSprite
-		if spr.eyeTrackMode != 1 or spr.eyeTrackTargetId == null:
-			return ""
-		var nodes = get_tree().get_nodes_in_group(str(spr.eyeTrackTargetId))
-		if nodes.size() == 0:
-			return ""
-		return _display_target_name(nodes[0])
-
-	# Global scope: only show a name if every eye-tracking sprite points at the
-	# same target. Mixed targets or any null target → no unambiguous label.
-	var target_id = null
-	var initialized = false
-	for s in Global.sprite_nodes():
-		if not s.eyeTrack:
-			continue
-		if not initialized:
-			target_id = s.eyeTrackTargetId
-			initialized = true
-		elif s.eyeTrackTargetId != target_id:
-			return ""
-	if not initialized or target_id == null:
-		return ""
-	var t_nodes = get_tree().get_nodes_in_group(str(target_id))
-	if t_nodes.size() == 0:
-		return ""
-	return _display_target_name(t_nodes[0])
-
-# Update the dropdown's "Layer" item text to show the target name (truncated to
-# 8 chars + ellipsis) when one is set in per-layer scope. Reverts to "Layer"
-# in all other cases.
-func _update_layer_item_label():
-	var full = _full_eye_target_name()
-	if full == "":
-		_eye_mode_option.set_item_text(1, "Layer")
-		return
-	var truncated = full if full.length() <= 8 else full.substr(0, 8) + "…"
-	_eye_mode_option.set_item_text(1, truncated)
-
-func _on_eye_mode_option_hover():
-	if _full_eye_target_name() == "":
-		return
-	_eye_mode_tooltip_timer.start()
-
-func _on_eye_mode_option_unhover():
-	_eye_mode_tooltip_timer.stop()
-	if _eye_mode_tooltip_label != null:
-		_eye_mode_tooltip_label.visible = false
-
-func _on_eye_mode_tooltip_show():
-	var full = _full_eye_target_name()
-	if full == "":
-		return
-	_eye_mode_tooltip_label.text = full
-	# Position just below the dropdown — use global_position because the
-	# dropdown lives inside nested containers now, not directly in _eye_section.
-	var anchor_global = _eye_mode_option.global_position + Vector2(0, _eye_mode_option.size.y + 4)
-	_eye_mode_tooltip_label.position = to_local(anchor_global)
-	_eye_mode_tooltip_label.visible = true
-
-func _display_target_name(target_sprite) -> String:
-	var p = target_sprite.path
-	if p == null:
-		return "(unnamed)"
-	var leaf = p.get_file()
-	if leaf == "":
-		leaf = p
-	# Trim file extension if present
-	var dot = leaf.rfind(".")
-	if dot > 0:
-		leaf = leaf.substr(0, dot)
-	return leaf
-
-# Update the eye-pick whip visual. Called from main.gd's _process so the line
-# follows the cursor while pick mode is active.
-func refreshEyePickWhip():
-	if _eye_whip_line == null:
-		return
-	if Global.eyeTrackPickMode and _eye_pick_btn != null and _eye_pick_btn.visible:
-		var anchor_global = _eye_pick_btn.global_position + _eye_pick_btn.size * 0.5
-		var anchor_local = to_local(anchor_global)
-		var mouse_local = to_local(get_global_mouse_position())
-		_eye_whip_line.clear_points()
-		_eye_whip_line.add_point(anchor_local)
-		_eye_whip_line.add_point(mouse_local)
-		_eye_whip_line.visible = true
-	else:
-		_eye_whip_line.visible = false
+func refreshEyePickWhip() -> void:
+	_eye_tracking.refresh_pick_whip()
 
 # --- Visibility Toggle handlers ---
 
@@ -1296,180 +676,20 @@ func _input(event):
 
 func updateData(sort_by_z: bool = true):
 	_filter_field.text = ""
-	_saved_collapse_states = {}
-	for child in container.get_children():
-		if is_instance_valid(child.sprite) and child.collapsed:
-			_saved_collapse_states[child.sprite.id] = true
-	clearContainer()
-	_update_generation += 1
-	var my_generation = _update_generation
-	await get_tree().process_frame
-	if my_generation != _update_generation:
-		return
-	var spritesAll := Global.sprite_nodes()
-
-	if sort_by_z:
-		spritesAll.sort_custom(func(a, b): return a.z > b.z)
-
-	var spritesWithParents = []
-	var allSprites = []
-	var sprite_to_list_item := {}
-
-	for sprite in spritesAll:
-		var listObj = SpriteListObject.new()
-		listObj.spritePath = sprite.path
-		listObj.sprite = sprite
-		listObj.parent = sprite.parentSprite
-		# Fallback: look up parent by ID when parentSprite isn't set yet (e.g. during load)
-		if listObj.parent == null and sprite.parentId != null:
-			listObj.parent = Global.sprite_by_id(sprite.parentId)
-		if listObj.parent != null:
-			spritesWithParents.append(listObj)
-		allSprites.append(listObj)
-		sprite_to_list_item[sprite] = listObj
-
-		container.add_child(listObj)
-
-	# Build parent-child relationships
-	for child in spritesWithParents:
-		var parent_item = sprite_to_list_item.get(child.parent)
-		if parent_item != null:
-			child.parentTag = parent_item
-			parent_item.childrenTags.append(child)
-
-	# DFS flatten: roots first, then children in z-sorted order
-	var roots = []
-	for obj in allSprites:
-		if obj.parentTag == null:
-			roots.append(obj)
-
-	var final_order = []
-	var stack = []
-	for i in range(roots.size() - 1, -1, -1):
-		stack.append(roots[i])
-	while stack.size() > 0:
-		var node = stack.pop_back()
-		final_order.append(node)
-		for i in range(node.childrenTags.size() - 1, -1, -1):
-			stack.append(node.childrenTags[i])
-
-	for i in range(final_order.size()):
-		container.move_child(final_order[i], i)
-
-	# Compute indent by chain-walk (order-independent)
-	for obj in final_order:
-		obj.indent = 0
-		var ancestor = obj.parentTag
-		while ancestor != null:
-			obj.indent += 1
-			ancestor = ancestor.parentTag
-		if obj.childrenTags.size() > 0:
-			obj._collapse_btn.text = "▼"
-			obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		obj.updateIndent()
-
-	# Restore collapse states from before rebuild
-	for obj in final_order:
-		if _saved_collapse_states.has(obj.sprite.id):
-			obj.collapsed = true
-			obj._collapse_btn.text = "▶"
-			obj._set_descendants_visible(false)
-
-	if _pending_scroll_target != null:
-		var target = _pending_scroll_target
-		_pending_scroll_target = null
-		await get_tree().process_frame
-		scroll_to_sprite(target)
+	var pending_target = _pending_scroll_target
+	_pending_scroll_target = null
+	await _layer_tree.update_data(sort_by_z, pending_target)
 
 func refreshHierarchy():
-	var items = container.get_children()
-	if items.size() == 0:
-		return
-
-	# Reset relationships and build a direct sprite -> row index.
-	var sprite_to_item := {}
-	for obj in items:
-		obj.childrenTags = []
-		obj.parentTag = null
-		obj.indent = 0
-		obj.collapsed = false
-		obj._collapse_btn.text = ""
-		obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		obj.parent = obj.sprite.parentSprite
-		sprite_to_item[obj.sprite] = obj
-
-	# Build parent-child relationships
-	for obj in items:
-		if obj.parent != null:
-			var parent_item = sprite_to_item.get(obj.parent)
-			if parent_item != null:
-				obj.parentTag = parent_item
-				parent_item.childrenTags.append(obj)
-
-	# DFS flatten
-	var roots = []
-	for obj in items:
-		if obj.parentTag == null:
-			roots.append(obj)
-
-	var final_order = []
-	var stack = []
-	for i in range(roots.size() - 1, -1, -1):
-		stack.append(roots[i])
-	while stack.size() > 0:
-		var node = stack.pop_back()
-		final_order.append(node)
-		for i in range(node.childrenTags.size() - 1, -1, -1):
-			stack.append(node.childrenTags[i])
-
-	for i in range(final_order.size()):
-		container.move_child(final_order[i], i)
-
-	# Compute indent by chain-walk
-	for obj in final_order:
-		obj.indent = 0
-		var ancestor = obj.parentTag
-		while ancestor != null:
-			obj.indent += 1
-			ancestor = ancestor.parentTag
-		if obj.childrenTags.size() > 0:
-			obj._collapse_btn.text = "▼"
-			obj._collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-		obj.updateIndent()
-
-	if _pending_scroll_target != null:
-		var target = _pending_scroll_target
-		_pending_scroll_target = null
-		await get_tree().process_frame
-		scroll_to_sprite(target)
+	var pending_target = _pending_scroll_target
+	_pending_scroll_target = null
+	await _layer_tree.refresh_hierarchy(pending_target)
 
 func clearContainer():
-	for i in container.get_children():
-		i.queue_free()
+	_layer_tree.clear()
 
 func _on_filter_changed(text: String):
-	var filter = text.to_lower()
-	if filter == "":
-		for child in container.get_children():
-			child.visible = true
-		for child in container.get_children():
-			if child.collapsed:
-				child._set_descendants_visible(false)
-		return
-
-	# Hide all first
-	for child in container.get_children():
-		child.visible = false
-
-	# Show matches and their full ancestor chains
-	for child in container.get_children():
-		if child._name_label.text.to_lower().begins_with(filter):
-			child.visible = true
-			var ancestor = child.parentTag
-			while ancestor != null:
-				ancestor.visible = true
-				ancestor = ancestor.parentTag
+	_layer_tree.filter(text)
 
 func updateAllVisible():
-	for i in container.get_children():
-		i.updateVis()
+	_layer_tree.update_all_visible()

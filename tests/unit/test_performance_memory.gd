@@ -71,13 +71,15 @@ func _test_optimized_call_sites(t) -> void:
 	var import_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/import_controller.gd"))
 	var row_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/sprite_list_object.gd"))
 	var list_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/viewer.gd"))
+	var tree_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/layer_tree_controller.gd"))
 	var viewer_bar_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/ControlPanel.gd"))
 	var undo_source := FileAccess.get_file_as_string(source_root.path_join("autoload/undo_manager.gd"))
 	t.assert_true(import_source.contains("WorkerThreadPool.add_group_task(\n\t\t_precompute_import_layer"), "PSD preparation uses the bounded engine worker pool")
 	t.assert_false(import_source.contains("var threads: Array"), "PSD preparation no longer creates one OS thread per layer")
 	t.assert_true(row_source.contains("Global.is_eye_track_target(sprite.id)"), "layer rows share one indexed eye-target calculation")
 	t.assert_false(row_source.contains("get_nodes_in_group(\"saved\")"), "layer rows no longer perform quadratic tree scans every frame")
-	t.assert_true(list_source.contains("sprite_to_list_item"), "layer hierarchy rebuild indexes parent rows directly")
+	t.assert_true(list_source.contains("_layer_tree.update_data"), "right sidebar delegates hierarchy rebuilds to its controller")
+	t.assert_true(tree_source.contains("sprite_to_row"), "layer hierarchy rebuild indexes parent rows directly")
 	# The mic threshold sliders live on the viewer menu bar. Its _process polls the
 	# live meters every frame, so the settings write must stay on value_changed.
 	t.assert_true(viewer_bar_source.contains("value_changed.connect"), "stream sliders persist settings only when values change")

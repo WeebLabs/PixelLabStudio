@@ -32,6 +32,7 @@ func _run() -> void:
 	assert_true(_main.saveLoaded, "production main scene completes startup")
 	assert_not_null(_main.avatar_controller, "production main scene owns the avatar lifecycle controller")
 	assert_not_null(_main.import_controller, "production main scene owns the import lifecycle controller")
+	await _test_component_scenes()
 
 	_materialized_fixture_path = _materialize_regression_fixture()
 	assert_false(_materialized_fixture_path.is_empty(), "regression fixture is materialized with an absolute image path")
@@ -41,6 +42,7 @@ func _run() -> void:
 	await _main._on_load_dialog_file_selected(_materialized_fixture_path)
 	await get_tree().process_frame
 	_test_loaded_avatar("fixture load")
+	await _test_sidebar_selection_state()
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_costumes()
@@ -59,6 +61,47 @@ func _run() -> void:
 	_remove_temp_file(_materialized_fixture_path)
 	print("[AVATAR SCENE] %d assertions, %d failures" % [assertions, failures])
 	get_tree().quit(1 if failures > 0 else 0)
+
+
+func _test_component_scenes() -> void:
+	var settings = _main.settingsMenu
+	assert_equal(settings.panel_size(), Vector2(420, 380), "settings facade retains its menu-bar sizing API")
+	assert_equal(settings._bodies.size(), 5, "settings scene constructs one real body per tab component")
+	for index in settings._bodies.size():
+		settings._show_tab(index)
+		for body_index in settings._bodies.size():
+			assert_equal(
+				settings._bodies[body_index].visible, body_index == index,
+				"settings tab %d owns the only visible component body" % index,
+			)
+		assert_true(settings._bodies[index].get_child_count() > 0, "settings tab %d constructs real controls" % index)
+	settings._show_tab(0)
+	for retired_node in ["Buttons", "WobbleControl", "Layers", "VisToggle", "EyeTracking", "SubViewportContainer"]:
+		assert_false(Global.spriteEdit.has_node(retired_node), "left sidebar no longer instantiates retired %s UI" % retired_node)
+	assert_equal(_main.editControls.process_mode, Node.PROCESS_MODE_DISABLED, "edit component tree is dormant on the player page")
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_equal(_main.editControls.process_mode, Node.PROCESS_MODE_INHERIT, "edit component tree resumes on the edit page")
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_equal(_main.editControls.process_mode, Node.PROCESS_MODE_DISABLED, "edit component tree stops after returning to the player page")
+
+
+func _test_sidebar_selection_state() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	_main.swapMode()
+	Global.select_sprite(sprite)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_true(Global.spriteEdit._controls_enabled, "left inspector enables its component controls for a selection")
+	assert_not_null(Global.spriteEdit._preview.texture, "left inspector presenter synchronizes the selected image")
+	Global.clear_selection()
+	await get_tree().process_frame
+	assert_false(Global.spriteEdit._controls_enabled, "left inspector disables its component controls without a selection")
+	_main.swapMode()
+	await get_tree().process_frame
 
 
 func _materialize_regression_fixture() -> String:

@@ -3,6 +3,59 @@ extends RefCounted
 const SidebarComponent = preload("res://ui_scenes/common/sidebar_ui.gd")
 const MenuBarComponent = preload("res://ui_scenes/common/menu_bar.gd")
 const MicMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
+const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_controller.gd")
+const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
+
+
+class FakeLayerRow extends HBoxContainer:
+	var sprite = null
+	var parentTag = null
+	var childrenTags: Array = []
+	var indent := 0
+	var collapsed := false
+	var _collapse_btn := Button.new()
+	var _name_label := Label.new()
+	var visibility_updates := 0
+
+	func _init() -> void:
+		add_child(_collapse_btn)
+		add_child(_name_label)
+
+	func updateIndent() -> void:
+		pass
+
+	func _set_descendants_visible(value: bool) -> void:
+		for child in childrenTags:
+			child.visible = value
+
+	func updateVis() -> void:
+		visibility_updates += 1
+
+
+class FakeEyeSprite extends RefCounted:
+	var id := 0
+	var path := ""
+	var eyeTrack := false
+	var eyeTrackType := 0
+	var eyeTrackMode := 0
+	var eyeTrackInvert := false
+	var eyeTrackDistance := 20.0
+	var eyeTrackSpeed := 0.15
+	var eyeTrackTargetId: Variant = null
+
+
+class FakeEyeGlobal extends Node:
+	var heldSprite = null
+	var sprites: Array = []
+
+	func sprite_nodes() -> Array:
+		return sprites
+
+	func sprite_by_id(id):
+		for sprite in sprites:
+			if sprite.id == id:
+				return sprite
+		return null
 
 
 func run(t) -> void:
@@ -19,6 +72,8 @@ func run(t) -> void:
 	_test_shared_menu_actions(t)
 	_test_settings_panel_contract(t)
 	_test_sidebar_call_sites(t)
+	_test_layer_tree_controller(t)
+	_test_eye_tracking_policy(t)
 
 
 func _test_decorative_controls_do_not_capture_input(t) -> void:
@@ -286,22 +341,35 @@ func _test_settings_panel_contract(t) -> void:
 	var source_root := _source_root()
 	var panel := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/settings_menu.gd"))
 	var scene := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/settings_menu.tscn"))
+	var tab_sources := []
+	for filename in [
+		"audio_settings_tab.gd", "display_settings_tab.gd", "motion_settings_tab.gd",
+		"hotkey_settings_tab.gd", "output_settings_tab.gd",
+	]:
+		tab_sources.append(FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/" + filename)))
 
 	t.assert_true(panel.contains("AppTabBar.new()"), "the settings panel uses the shared tab strip")
-	t.assert_true(panel.contains("Form.section"), "the settings panel uses the shared form sections")
+	t.assert_true(panel.contains("_audio_tab.build"), "the settings facade delegates construction to tab components")
+	t.assert_true(panel.split("\n").size() <= 150, "settings scene facade stays focused on frame and tab coordination")
+	for source in tab_sources:
+		t.assert_true(source.contains("Form.section"), "each settings component uses the shared form sections")
+		t.assert_false(source.contains("Global."), "settings components use their injected application boundary")
+		t.assert_false(source.contains("Saving."), "settings components use their injected persistence boundary")
 	t.assert_true(panel.contains("SidebarUIFactory.DEFAULT_PANEL_COLOR"), "the settings panel uses the shared palette")
 	for tab in ["Audio", "Display", "Motion", "Hotkeys", "Output"]:
 		t.assert_true(panel.contains('"%s"' % tab), "the settings panel declares the %s tab" % tab)
 
 	# The whole point of the rewrite: no child is placed by coordinate any more,
 	# and the scene carries no hand-laid node tree.
-	t.assert_false(panel.contains(".position = Vector2("), "settings rows are laid out by containers, not coordinates")
+	for source in [panel] + tab_sources:
+		t.assert_false(source.contains(".position = Vector2("), "settings rows are laid out by containers, not coordinates")
 	t.assert_false(panel.contains("NinePatchRect"), "the settings panel no longer wears the old skin")
 	t.assert_true(scene.length() < 400, "the settings scene is a bare node, its content is constructed in code")
 
 	# Microphone selection moved into the Audio tab; its old popup is gone.
-	t.assert_true(panel.contains("AudioServer.get_input_device_list()"), "the Audio tab lists input devices")
-	t.assert_true(panel.contains("Global.selectMicrophone"), "the Audio tab selects the input device")
+	var audio_source: String = tab_sources[0]
+	t.assert_true(audio_source.contains("AudioServer.get_input_device_list()"), "the Audio tab lists input devices")
+	t.assert_true(audio_source.contains("_global.selectMicrophone"), "the Audio tab selects the input device")
 	t.assert_false(
 		FileAccess.file_exists(source_root.path_join("main_scenes/MicInputSelect.gd")),
 		"the standalone microphone popup is gone",
@@ -312,6 +380,8 @@ func _test_sidebar_call_sites(t) -> void:
 	var source_root := _source_root()
 	var left_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteEditMenu/sprite_viewer.gd"))
 	var right_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/viewer.gd"))
+	var tree_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/layer_tree_controller.gd"))
+	var presenter_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteEditMenu/selection_presenter.gd"))
 	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
 	var mouse_source := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/mouse/mouse_cursor.gd"))
 	for source in [left_source, right_source]:
@@ -321,6 +391,12 @@ func _test_sidebar_call_sites(t) -> void:
 		t.assert_false(source.contains("Image.create(16, 16"), "sidebars no longer duplicate grabber rasterization")
 	t.assert_true(global_source.contains("SidebarUIFactory.is_over_app_chrome"), "global wheel routing uses the shared app-chrome bounds")
 	t.assert_true(mouse_source.contains("Global.isMouseOverSidebar()"), "sprite selection uses the same app-chrome guard as wheel routing")
+	t.assert_true(left_source.split("\n").size() <= 700, "left sidebar facade stays below the componentization threshold")
+	t.assert_true(right_source.split("\n").size() <= 700, "right sidebar facade stays below the componentization threshold")
+	t.assert_true(right_source.contains("_layer_tree.update_data"), "right sidebar preserves hierarchy behavior through its facade")
+	t.assert_true(left_source.contains("_selection_presenter.sync"), "left sidebar preserves selection refresh through its facade")
+	t.assert_false(tree_source.contains("_owner._"), "layer-tree controller does not reach into facade-private state")
+	t.assert_false(presenter_source.contains("Global."), "selection presenter uses its injected application boundary")
 
 	# Both bars are built from the shared component, and neither hand-styles its
 	# own chrome. This is what stops the two modes drifting apart again.
@@ -336,6 +412,72 @@ func _test_sidebar_call_sites(t) -> void:
 		FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd")).contains("ControlPanel/"),
 		"main reaches viewer panel children through its API, not by node path",
 	)
+
+
+func _test_layer_tree_controller(t) -> void:
+	var controller := LayerTreeController.new()
+	var owner := Node2D.new()
+	var container := VBoxContainer.new()
+	var scroll := ScrollContainer.new()
+	owner.add_child(scroll)
+	scroll.add_child(container)
+	controller.setup(owner, container, scroll, owner, get_script())
+
+	var root := FakeLayerRow.new()
+	root._name_label.text = "Body"
+	var child := FakeLayerRow.new()
+	child._name_label.text = "Body Shadow"
+	child.parentTag = root
+	root.childrenTags.append(child)
+	var peer := FakeLayerRow.new()
+	peer._name_label.text = "Hat"
+	for row in [peer, child, root]:
+		container.add_child(row)
+
+	var ordered: Array = controller._flatten([peer, child, root])
+	t.assert_equal(ordered, [peer, root, child], "layer-tree flattening keeps each child immediately after its parent")
+	controller._apply_order_and_indentation(ordered)
+	t.assert_equal(container.get_child(2), child, "layer-tree controller applies the flattened row order")
+	t.assert_equal(child.indent, 1, "layer-tree controller derives indentation from ancestry")
+	t.assert_equal(root._collapse_btn.text, "▼", "parents expose their collapse affordance")
+
+	controller.filter("body shadow")
+	t.assert_true(root.visible, "filter matches keep the ancestor chain visible")
+	t.assert_true(child.visible, "filter matches remain visible")
+	t.assert_false(peer.visible, "filter hides unrelated rows")
+	controller.update_all_visible()
+	t.assert_equal(child.visibility_updates, 1, "visibility refreshes are delegated to each layer row")
+	owner.free()
+
+
+func _test_eye_tracking_policy(t) -> void:
+	var panel := EyeTrackingPanel.new()
+	var global := FakeEyeGlobal.new()
+	var target := FakeEyeSprite.new()
+	target.id = 10
+	target.path = "res://avatar/Long Eye Target.png"
+	var first := FakeEyeSprite.new()
+	first.id = 20
+	first.eyeTrack = true
+	first.eyeTrackMode = 1
+	first.eyeTrackTargetId = target.id
+	var second := FakeEyeSprite.new()
+	second.id = 30
+	second.eyeTrack = true
+	second.eyeTrackMode = 1
+	second.eyeTrackTargetId = target.id
+	global.sprites = [target, first, second]
+	panel._global = global
+	t.assert_equal(panel._scope(), "global", "eye controls enter global scope when tracked layers exist without a selection")
+	t.assert_equal(panel._agreed_value("eyeTrackTargetId"), target.id, "global eye controls detect agreed values")
+	t.assert_equal(panel._full_target_name(), "Long Eye Target", "eye target labels resolve through the sprite registry")
+	second.eyeTrackTargetId = null
+	t.assert_equal(panel._agreed_value("eyeTrackTargetId"), null, "mixed global eye values resolve to neutral")
+	t.assert_equal(panel._full_target_name(), "", "mixed global targets never display a misleading name")
+	global.heldSprite = first
+	t.assert_equal(panel._scope(), "per_layer", "a selected sprite takes precedence over global eye scope")
+	t.assert_equal(panel._full_target_name(), "Long Eye Target", "per-layer target names use the selected sprite's target")
+	global.free()
 
 
 func _source_root() -> String:

@@ -1,6 +1,6 @@
 # Quality Baseline
 
-> Updated: 2026-08-17 — Phase 11 main-scene decomposition gate
+> Updated: 2026-08-17 — Phase 13 UI-componentization gate
 
 This document records the reproducible safety rails used throughout the
 refactor. Exact timing artifacts are written to `.artifacts/` and retained by
@@ -259,3 +259,24 @@ layers and 475.51 ms for 250 layers. The new pure ribbon benchmark performs ten
 complete centerline/endpoint/coverage auto-fits in 220.28 ms and records its
 result under `wiggle_geometry` in `.artifacts/performance.json`. All budgets,
 the 120-frame active NDI teardown smoke, and standalone macOS pack export pass.
+
+## Phase 13 UI-componentization gate
+
+> Updated: 2026-08-17 — real component scenes and facade ceilings
+
+The production application runner passes 454 assertions. It instantiates all
+five settings-tab bodies, changes the active tab, verifies retired left-sidebar
+nodes are absent, checks edit-tree processing on player→edit→player
+transitions, and exercises selected/unselected inspector presentation. The
+isolated suite passes 794 assertions, including layer-tree ordering,
+indentation, filtering, and visibility dispatch; tracking scope, mixed values,
+and registry-backed target names; settings dependency injection; and source
+ceilings of 700 lines for each sidebar and 150 for settings. The resulting
+facades are 695, 697, and 123 lines respectively.
+
+On the baseline M1 Max with Godot 4.6.3, the cumulative performance run measured
+3.66 microseconds per active 100-layer animation frame, 637.18 ms for 100 schema
+validations, 3.88 ms for indexed eye-target lookup, and 220.58 ms for ten ribbon
+auto-fits. Complete avatar loads measured 271.15 ms for 100 layers and 465.60 ms
+for 250 layers. All smoke budgets, the 120-frame active NDI teardown test, and
+the standalone macOS pack export pass.

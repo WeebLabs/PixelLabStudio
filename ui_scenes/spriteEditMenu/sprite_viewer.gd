@@ -1,8 +1,10 @@
 extends Node2D
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+const NormalMapPanel = preload("res://ui_scenes/spriteEditMenu/normal_map_panel.gd")
+const RotationPreviewRenderer = preload("res://ui_scenes/spriteEditMenu/rotation_preview_renderer.gd")
+const SelectionPresenter = preload("res://ui_scenes/spriteEditMenu/selection_presenter.gd")
 
-#Node Reference
 @onready var spriteRotDisplay = $RotationalLimits/RotBack/SpriteDisplay
 
 var _preview: Sprite2D
@@ -14,18 +16,11 @@ var _parent_label: Label
 var _bg: ColorRect
 var panel_width: float = 265
 var panel_height: float = 630
-# Total vertical extent of laid-out content, set by _layout_panel(). The
-# scroll clamp uses this so the user can always scroll to the actual bottom
-# even if sections grow or shrink.
 var content_height: float = 0.0
 
-# Spacing constants live on Global so both sidebars share one source of truth.
-# Tune Global.UI_ROW_GAP / UI_DIVIDER_PAD to reflow every panel that uses them.
 const ROT_RADIUS = 105.0           # rotation-circle visualization radius at full panel width
 const ROT_CONTROLS_GAP = 20.0      # gap between the circle and the min/max label rows
 const DEFAULT_PANEL_WIDTH = 265.0  # baseline; preview & rotation circle scale down below this
-# Maximum preview-thumbnail rect at full panel width; both axes scale together
-# with the panel width once it drops below DEFAULT_PANEL_WIDTH.
 const PREVIEW_MAX_W = 240.0
 const PREVIEW_MAX_H = 120.0
 const PREVIEW_Y = 65.0             # preview center-y (top half of panel)
@@ -40,9 +35,6 @@ var _resize_drag_start_x: float = 0.0
 var _resize_drag_start_width: float = 0.0
 var _resize_hover: bool = false
 
-# Width-dependent UI elements tracked so _apply_size() can reflow on resize.
-# Each entry: [control, margin] where the control's width is kept at
-# (panel_width - margin), so the right padding it had at creation is preserved.
 var _resizables: Array = []
 var _dividers: Array = []
 var _controls_enabled: bool = false
@@ -50,8 +42,6 @@ var _sliders: Array = []
 var _buttons: Array = []
 var _sections: Array = []
 
-# Sidebar tabs (below the sprite-sheet section): Animation (clip list + inspector,
-# absorbs the old wobble) and Reactive (drag / rotational drag + limits / squash).
 var _tab_bar: AppTabBar
 var _active_left_tab: int = 0
 var _anim_panel: AnimationClipPanel
@@ -66,23 +56,9 @@ var _slider_theme: Dictionary
 
 # Normal map section
 var _normal_section: Control
-var _normal_status: Label
-var _normal_import_btn: Button
-var _normal_clear_btn: Button
-var _normal_dialog: FileDialog
-
-# WobbleControl section — 4 label+slider pairs (xFrq/xAmp/yFrq/yAmp) reparented
-# into a VBoxContainer for auto-layout. Cached refs replace $WobbleControl/...
-# node paths.
-var _wobble_vbox: VBoxContainer
-var _xfrq_label: Label
-var _xfrq_slider: HSlider
-var _xamp_label: Label
-var _xamp_slider: HSlider
-var _yfrq_label: Label
-var _yfrq_slider: HSlider
-var _yamp_label: Label
-var _yamp_slider: HSlider
+var _normal_panel = NormalMapPanel.new()
+var _rotation_renderer = RotationPreviewRenderer.new()
+var _selection_presenter = SelectionPresenter.new()
 
 # Slider section — single label + DragSlider, reparented into VBox.
 var _slider_vbox: VBoxContainer
@@ -130,23 +106,7 @@ func _exit_tree() -> void:
 
 func _ready():
 	Global.attach_sprite_edit(self)
-	# Legacy icon sprites — kept hidden because the .tscn still has them at
-	# fixed positions that would overlap the wobble sliders. Real controls
-	# moved to viewer.gd's right sidebar.
-	$Buttons/Speaking.visible = false
-	$Buttons/Blinking.visible = false
-	$Buttons/Trash.visible = false
-	$Buttons/Unlink.visible = false
-
-	# Hide individual panel backgrounds to integrate into unified sidebar
-	$Border.visible = false
-	$WobbleControl/animationBox.visible = false
 	$RotationalLimits/RotBorder.visible = false
-	$VisToggle/setToggle/rect.visible = false
-
-	# Hide 3D SubViewport previews — replaced by static 2D preview
-	$SubViewportContainer.visible = false
-	$SubViewportContainer2.visible = false
 
 	# Create static 2D sprite preview
 	_preview = Sprite2D.new()
@@ -167,13 +127,8 @@ func _ready():
 	# (Section position shifts are consolidated into a single block below the
 	# VBox creation — see "Section layout" comment further down.)
 
-	# Hide sections moved to right sidebar
-	$Layers.visible = false
-	$EyeTracking.visible = false
-	$VisToggle.visible = false
-
 	# Containerize the label+slider sections. Each scene-defined section node
-	# (Slider, WobbleControl, Rotation, Animation) gets a VBoxContainer placed
+	# (Slider, Rotation, Animation) gets a VBoxContainer placed
 	# at the original first-widget offset; the section's existing children are
 	# reparented into it in display order, sliders set to SIZE_EXPAND_FILL.
 
@@ -182,23 +137,6 @@ func _ready():
 	_drag_slider = get_node("Slider/DragSlider")
 	_slider_vbox = _build_section_vbox($Slider, Vector2(9, 155), 223,
 		[_drag_label, _drag_slider])
-
-	# WobbleControl (legacy x/y wobble sliders) — wobble is now authored as an
-	# oscillate/translation clip in the Animation tab, so this scene section is
-	# hidden and left out of the layout. Old saves fold their wobble into a clip
-	# via spriteObject.migrateLegacyWobble(). The handler funcs + scene signal
-	# connections are kept (a hidden slider can't emit) so the .tscn stays valid.
-	$WobbleControl.visible = false
-	# Cache the hidden widget refs anyway so the legacy _on_x_frq_value_changed etc.
-	# handlers (still wired in the .tscn) hold valid nodes rather than nulls.
-	_xfrq_label = $WobbleControl/xFrqLabel
-	_xfrq_slider = $WobbleControl/xFrq
-	_xamp_label = $WobbleControl/xAmpLabel
-	_xamp_slider = $WobbleControl/xAmp
-	_yfrq_label = $WobbleControl/yFrqLabel
-	_yfrq_slider = $WobbleControl/yFrq
-	_yamp_label = $WobbleControl/yAmpLabel
-	_yamp_slider = $WobbleControl/yAmp
 
 	# Rotation — squash + rDrag (note: scene order has squash first visually)
 	_squash_label = get_node("Rotation/squashlabel")
@@ -249,7 +187,7 @@ func _ready():
 	# Sections to dim when no sprite is selected
 	_sections = [
 		_preview,
-		$Position, $Buttons, $Slider,
+		$Position, $Slider,
 		$Rotation, $RotationalLimits, $Animation,
 	]
 
@@ -263,9 +201,6 @@ func _ready():
 	for slider in _sliders:
 		slider.theme = null
 		SidebarUIFactory.apply_slider_theme(slider, _slider_theme)
-
-	_set_controls_enabled(false)
-	setImage()
 
 	# Restyle labels to match right sidebar
 	var _labels = [
@@ -282,46 +217,11 @@ func _ready():
 
 	$Position/fileTitle.visible = false
 
-	# Normal Map row — below preview, above Position. HBoxContainer auto-arranges
-	# status label (expanding) + Normal button + Clear button.
-	const NRML_Y = 132
-	const NRML_ROW_HEIGHT = 24
-	_normal_section = HBoxContainer.new()
-	_normal_section.position = Vector2(10, NRML_Y)
-	_normal_section.size = Vector2(panel_width - 20, NRML_ROW_HEIGHT)
-	_normal_section.add_theme_constant_override("separation", 4)
-	add_child(_normal_section)
+	# Normal Map row — below preview, above Position.
+	_normal_section = _normal_panel.build(self, Global, UndoManager, panel_width)
 	_resizables.append([_normal_section, 20])
-
-	_normal_status = Label.new()
-	_normal_status.text = "(none)"
-	_normal_status.add_theme_font_size_override("font_size", 11)
-	_normal_status.add_theme_color_override("font_color", Color(0.6, 0.6, 0.65))
-	_normal_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_normal_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_normal_status.clip_text = true
-	_normal_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	_normal_section.add_child(_normal_status)
-
-	_normal_import_btn = Button.new()
-	_normal_import_btn.text = "Normal"
-	_normal_import_btn.custom_minimum_size = Vector2(70, 22)
-	_normal_import_btn.add_theme_font_size_override("font_size", 11)
-	_normal_import_btn.pressed.connect(_on_normal_import)
-	_normal_section.add_child(_normal_import_btn)
-
-	_normal_clear_btn = Button.new()
-	_normal_clear_btn.text = "Clear"
-	_normal_clear_btn.custom_minimum_size = Vector2(60, 22)
-	_normal_clear_btn.add_theme_font_size_override("font_size", 11)
-	_normal_clear_btn.disabled = true
-	_normal_clear_btn.pressed.connect(_on_normal_clear)
-	_normal_section.add_child(_normal_clear_btn)
-
 	_sections.append(_normal_section)
-	_sections.append(_normal_status)
-	_buttons.append(_normal_import_btn)
-	_buttons.append(_normal_clear_btn)
+	_buttons.append_array(_normal_panel.buttons())
 
 	# RotationalLimits has no VBox (the rotation circle uses angular geometry).
 	# Wrap it in a Control whose bounds match the visible content extent so the
@@ -394,6 +294,10 @@ func _ready():
 	panel_width = SidebarUIFactory.clamp_panel_width(
 		saved_w, get_viewport().get_visible_rect().size.x, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH_RATIO,
 	)
+	_selection_presenter.setup(Global, _selection_ui(), _normal_panel,
+		Vector2(PREVIEW_MAX_W, PREVIEW_MAX_H), ROT_RADIUS)
+	_set_controls_enabled(Global.heldSprite != null)
+	setImage()
 	_apply_size()
 
 func _set_controls_enabled(enabled: bool):
@@ -409,195 +313,40 @@ func _set_controls_enabled(enabled: bool):
 		SidebarUIFactory.apply_slider_theme(slider, _slider_theme, enabled)
 	
 func _replace_rot_display_textures():
-	# Textures-only: positions for RotBack / RotBorder / RotLimit* are handled
-	# in _ready before _layout_panel so the section's bounds Control is correct.
-	var size = 260
-	var cx = 130.0
-	var cy = 130.0
-	var radius = ROT_RADIUS
-	var fill_color = Color(0.18, 0.18, 0.18)
-	var border_color = Color(0.4, 0.4, 0.4, 0.6)
-	var border_width = 2.0
-
-	# Dark grey filled circle with clean border for RotBack
-	var back_img = Image.create(size, size, false, Image.FORMAT_RGBA8)
-	for x in range(size):
-		for y in range(size):
-			var dist = Vector2(x, y).distance_to(Vector2(cx, cy))
-			if dist <= radius - border_width:
-				back_img.set_pixel(x, y, fill_color)
-			elif dist <= radius:
-				back_img.set_pixel(x, y, border_color)
-	$RotationalLimits/RotBack.texture = ImageTexture.create_from_image(back_img)
-
-	# Clean thin line for rotation markers (spans from center to circle edge)
-	var line_w = int(radius)
-	var line_h = 4
-	var line_img = Image.create(line_w, line_h, false, Image.FORMAT_RGBA8)
-	var line_color = Color(0.75, 0.75, 0.8, 0.6)
-	for x in range(line_w):
-		line_img.set_pixel(x, 1, line_color)
-		line_img.set_pixel(x, 2, line_color)
-	var line_tex = ImageTexture.create_from_image(line_img)
-	var pointer_img = Image.create(line_w, line_h, false, Image.FORMAT_RGBA8)
-	var pointer_color = Color(0.85, 0.85, 0.9, 0.9)
-	for x in range(line_w):
-		pointer_img.set_pixel(x, 1, pointer_color)
-		pointer_img.set_pixel(x, 2, pointer_color)
-	var pointer_tex = ImageTexture.create_from_image(pointer_img)
-	for node in [$RotationalLimits/RotBack/RotLineDisplay,
-				$RotationalLimits/RotBack/RotLineDisplay2]:
-		node.texture = line_tex
-		node.offset = Vector2(radius / 2.0, 0)
-	$RotationalLimits/RotBack/RotLineDisplay3.texture = pointer_tex
-	$RotationalLimits/RotBack/RotLineDisplay3.offset = Vector2(radius / 2.0, 0)
-
-	# Reorder children: fill → lines → sprite → dot (later = on top)
-	var rot_back = $RotationalLimits/RotBack
-	rot_back.move_child($RotationalLimits/RotBack/rotLimitBar, 0)
-	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay, 1)
-	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay2, 2)
-	rot_back.move_child($RotationalLimits/RotBack/RotLineDisplay3, 3)
-	rot_back.move_child($RotationalLimits/RotBack/SpriteDisplay, 4)
-	# White dot to indicate origin point
-	var dot_size = 8
-	var dot_img = Image.create(dot_size, dot_size, false, Image.FORMAT_RGBA8)
-	var dot_center = dot_size / 2.0
-	for x in range(dot_size):
-		for y in range(dot_size):
-			if Vector2(x, y).distance_to(Vector2(dot_center, dot_center)) <= dot_center:
-				dot_img.set_pixel(x, y, Color(1, 1, 1))
-	var origin_dot = Sprite2D.new()
-	origin_dot.texture = ImageTexture.create_from_image(dot_img)
-	rot_back.add_child(origin_dot)
-	$RotationalLimits/RotBack/SpriteDisplay.position = Vector2.ZERO
-	$RotationalLimits/RotBack/RotLineDisplay.position = Vector2.ZERO
-	$RotationalLimits/RotBack/RotLineDisplay2.position = Vector2.ZERO
-	$RotationalLimits/RotBack/RotLineDisplay3.position = Vector2.ZERO
-	# Resize rotLimitBar to fill circle radius, change to light blue
-	var bar = $RotationalLimits/RotBack/rotLimitBar
-	var bar_size = int(radius) * 2
-	var fill_img = Image.create(bar_size, bar_size, false, Image.FORMAT_RGBA8)
-	fill_img.fill(Color(0.55, 0.78, 1.0))
-	bar.texture_progress = ImageTexture.create_from_image(fill_img)
-	bar.offset_left = -radius
-	bar.offset_top = -radius
-	bar.offset_right = radius
-	bar.offset_bottom = radius
-	bar.pivot_offset = Vector2(radius, radius)
+	_rotation_renderer.rebuild($RotationalLimits/RotBack, ROT_RADIUS)
 
 func setImage():
-	if Global.heldSprite == null:
-		_preview.texture = null
-		_parent_label.text = ""
-		_pos_label.text = ""
-		_offset_label.text = ""
-		_layer_label.text = ""
-		_drag_label.text = ""
-		spriteRotDisplay.texture = null
-		spriteRotDisplay.rotation_degrees = 0
-		$RotationalLimits/RotBack/RotLineDisplay3.rotation_degrees = 0
-		_rot_min_slider.set_value_no_signal(-180)
-		_rot_max_slider.set_value_no_signal(180)
-		_rot_min_label.text = "rotational limit min: -180"
-		_rot_max_label.text = "rotational limit max: 180"
-		$RotationalLimits/RotBack/rotLimitBar.value = 360
-		$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = -180 + 90
-		$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = -180
-		$RotationalLimits/RotBack/RotLineDisplay2.rotation_degrees = 180
-		_update_normal_display()
-		return
-
-	# Crop to opaque content of the first frame so the sprite fills the preview
-	var img = Global.heldSprite.imageData
-	var img_size = img.get_size()
-	var frame_w = int(img_size.x / Global.heldSprite.frames)
-	var frame_h = int(img_size.y)
-
-	# Find bounding rect of non-transparent pixels in first frame (native C++)
-	var used: Rect2i
-	if Global.heldSprite.frames <= 1:
-		used = img.get_used_rect()
-	else:
-		used = img.get_region(Rect2i(0, 0, frame_w, frame_h)).get_used_rect()
-
-	if used.size.x > 0 and used.size.y > 0:
-		var content_rect = Rect2(used)
-		var atlas = AtlasTexture.new()
-		atlas.atlas = Global.heldSprite.tex
-		atlas.region = content_rect
-		_preview.texture = atlas
-		_preview.hframes = 1
-		_preview_base_scale = min(PREVIEW_MAX_W / content_rect.size.x, PREVIEW_MAX_H / content_rect.size.y)
-	else:
-		_preview.texture = Global.heldSprite.tex
-		_preview.hframes = Global.heldSprite.frames
-		_preview_base_scale = min(PREVIEW_MAX_W / frame_w, PREVIEW_MAX_H / frame_h)
-	# _apply_size() applies the panel-width scale factor on top of the base
-	# scale and re-centers the preview.
+	_preview_base_scale = _selection_presenter.sync()
 	_apply_size()
 
-	# Update parent label
-	if Global.heldSprite.parentId != null:
-		var nodes = get_tree().get_nodes_in_group(str(Global.heldSprite.parentId))
-		if nodes.size() > 0:
-			var count = nodes[0].path.get_slice_count("/") - 1
-			_parent_label.text = "Parent: " + nodes[0].path.get_slice("/", count)
-		else:
-			_parent_label.text = "Root Element"
-	else:
-		_parent_label.text = "Root Element"
 
-	spriteRotDisplay.texture = Global.heldSprite.tex
-	spriteRotDisplay.offset = Global.heldSprite.offset
-	# Scale so opaque area occupies 50% of circle radius
-	var rot_img = Global.heldSprite.imageData
-	var rot_used = rot_img.get_used_rect()
-	var target_size = 105.0  # 50% of radius (105) = 52.5 per side from center
-	if rot_used.size.x > 0 and rot_used.size.y > 0:
-		var rot_scale = target_size / max(rot_used.size.x, rot_used.size.y)
-		spriteRotDisplay.scale = Vector2(rot_scale, rot_scale)
-	else:
-		spriteRotDisplay.scale = Vector2(1, 1) * (target_size / rot_img.get_size().y)
-
-	_drag_label.text = "drag: " + str(Global.heldSprite.dragSpeed)
-	_drag_slider.set_value_no_signal(Global.heldSprite.dragSpeed)
-
-	_rdrag_label.text = "rotational drag: " + str(Global.heldSprite.rdragStr)
-	_rdrag_slider.set_value_no_signal(Global.heldSprite.rdragStr)
-
-	_rot_min_slider.set_value_no_signal(Global.heldSprite.rLimitMin)
-	_rot_min_label.text = "rotational limit min: " + str(Global.heldSprite.rLimitMin)
-	_rot_max_slider.set_value_no_signal(Global.heldSprite.rLimitMax)
-	_rot_max_label.text = "rotational limit max: " + str(Global.heldSprite.rLimitMax)
-
-	_squash_label.text = "squash: " + str(Global.heldSprite.stretchAmount)
-	_squash_slider.set_value_no_signal(Global.heldSprite.stretchAmount)
-
-	_anim_speed_label.text = "animation speed: " + str(Global.heldSprite.animSpeed)
-	_anim_speed_slider.set_value_no_signal(Global.heldSprite.animSpeed)
-
-	_anim_frames_label.text = "sprite frames: " + str(Global.heldSprite.frames)
-	_anim_frames_slider.set_value_no_signal(Global.heldSprite.frames)
-
-	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
-
-	$EyeTracking/EyeTrackToggle.set_pressed_no_signal(Global.heldSprite.eyeTrack)
-	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(Global.heldSprite.eyeTrackDistance)
-	$EyeTracking/eyeTrackDist.set_value_no_signal(Global.heldSprite.eyeTrackDistance)
-	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(Global.heldSprite.eyeTrackSpeed)
-	$EyeTracking/eyeTrackSpeed.set_value_no_signal(Global.heldSprite.eyeTrackSpeed)
-	$EyeTracking/EyeTrackInvert.set_pressed_no_signal(Global.heldSprite.eyeTrackInvert)
-
-	changeRotLimit()
-
-	setLayerButtons()
-
-	_update_normal_display()
-
-	if Global.spriteList:
-		Global.spriteList.updateControls()
-		Global.spriteList.scroll_to_selected()
+func _selection_ui() -> Dictionary:
+	return {
+		"preview": _preview,
+		"parent_label": _parent_label,
+		"position_label": _pos_label,
+		"offset_label": _offset_label,
+		"layer_label": _layer_label,
+		"drag_label": _drag_label,
+		"drag_slider": _drag_slider,
+		"rdrag_label": _rdrag_label,
+		"rdrag_slider": _rdrag_slider,
+		"rot_display": spriteRotDisplay,
+		"rot_pointer": $RotationalLimits/RotBack/RotLineDisplay3,
+		"rot_progress": $RotationalLimits/RotBack/rotLimitBar,
+		"rot_min_line": $RotationalLimits/RotBack/RotLineDisplay,
+		"rot_max_line": $RotationalLimits/RotBack/RotLineDisplay2,
+		"rot_min_label": _rot_min_label,
+		"rot_min_slider": _rot_min_slider,
+		"rot_max_label": _rot_max_label,
+		"rot_max_slider": _rot_max_slider,
+		"squash_label": _squash_label,
+		"squash_slider": _squash_slider,
+		"anim_speed_label": _anim_speed_label,
+		"anim_speed_slider": _anim_speed_slider,
+		"anim_frames_label": _anim_frames_label,
+		"anim_frames_slider": _anim_frames_slider,
+	}
 
 
 # Place a section so its content Control's top edge lands at scene-y `y`. The
@@ -885,34 +634,6 @@ func _on_drag_slider_value_changed(value):
 	Global.heldSprite.dragSpeed = value
 
 
-func _on_x_frq_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	_xfrq_label.text = "x frequency: " + str(value)
-	Global.heldSprite.xFrq = value
-
-
-func _on_x_amp_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	_xamp_label.text = "x amplitude: " + str(value)
-	Global.heldSprite.xAmp = value
-	Global.main.ndi_mark_dirty()
-
-
-func _on_y_frq_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	_yfrq_label.text = "y frequency: " + str(value)
-	Global.heldSprite.yFrq = value
-
-func _on_y_amp_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	_yamp_label.text = "y amplitude: " + str(value)
-	Global.heldSprite.yAmp = value
-	Global.main.ndi_mark_dirty()
-
 
 func _on_r_drag_value_changed(value):
 	if Global.heldSprite == null: return
@@ -920,12 +641,6 @@ func _on_r_drag_value_changed(value):
 	_rdrag_label.text = "rotational drag: " + str(value)
 	Global.heldSprite.rdragStr = value
 	Global.main.ndi_mark_dirty()
-
-
-# (Removed: _on_speaking_pressed / _on_blinking_pressed / _on_trash_pressed /
-# _on_unlink_pressed — these were connected to scene buttons inside the now-
-# hidden $Buttons/Speaking, $Buttons/Blinking, $Buttons/Trash, $Buttons/Unlink
-# sprites. The real handlers live in viewer.gd's right sidebar.)
 
 
 func _on_rot_limit_min_value_changed(value):
@@ -947,144 +662,17 @@ func _on_rot_limit_max_value_changed(value):
 	changeRotLimit()
 
 func changeRotLimit():
-	if Global.heldSprite == null: return
-	$RotationalLimits/RotBack/rotLimitBar.value = Global.heldSprite.rLimitMax - Global.heldSprite.rLimitMin
-	$RotationalLimits/RotBack/rotLimitBar.rotation_degrees = Global.heldSprite.rLimitMin + 90
+	_selection_presenter.sync_rotation_limits()
 
-	$RotationalLimits/RotBack/RotLineDisplay.rotation_degrees = Global.heldSprite.rLimitMin
-	$RotationalLimits/RotBack/RotLineDisplay2.rotation_degrees = Global.heldSprite.rLimitMax
-
-func setLayerButtons():
-	if Global.heldSprite == null: return
-	var a = Global.heldSprite.costumeLayers.duplicate()
-	
-	var active_mod = Color(1, 1, 1, 1)
-	var inactive_mod = Color(0.5, 0.5, 0.5, 0.7)
-	$Layers/Layer1.self_modulate = active_mod if a[0] == 1 else inactive_mod
-	$Layers/Layer2.self_modulate = active_mod if a[1] == 1 else inactive_mod
-	$Layers/Layer3.self_modulate = active_mod if a[2] == 1 else inactive_mod
-	$Layers/Layer4.self_modulate = active_mod if a[3] == 1 else inactive_mod
-	$Layers/Layer5.self_modulate = active_mod if a[4] == 1 else inactive_mod
-	$Layers/Layer6.self_modulate = active_mod if a[5] == 1 else inactive_mod
-	$Layers/Layer7.self_modulate = active_mod if a[6] == 1 else inactive_mod
-	$Layers/Layer8.self_modulate = active_mod if a[7] == 1 else inactive_mod
-	$Layers/Layer9.self_modulate = active_mod if a[8] == 1 else inactive_mod
-	$Layers/Layer10.self_modulate = active_mod if a[9] == 1 else inactive_mod
-	
-	var nodes = Global.sprite_nodes()
-	for sprite in nodes:
-		sprite.applyCostumeVisibility()   # costume membership, honoring a manual hide
-		
+func setLayerButtons() -> void:
+	for sprite in Global.sprite_nodes():
+		sprite.applyCostumeVisibility()
 
 
-func _on_layer_button_1_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[0] == 0:
-		Global.heldSprite.costumeLayers[0] = 1
-	else:
-		Global.heldSprite.costumeLayers[0] = 0
-	setLayerButtons()
-
-
-func _on_layer_button_2_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[1] == 0:
-		Global.heldSprite.costumeLayers[1] = 1
-	else:
-		Global.heldSprite.costumeLayers[1] = 0
-	setLayerButtons()
-
-
-func _on_layer_button_3_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[2] == 0:
-		Global.heldSprite.costumeLayers[2] = 1
-	else:
-		Global.heldSprite.costumeLayers[2] = 0
-	setLayerButtons()
-
-
-func _on_layer_button_4_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[3] == 0:
-		Global.heldSprite.costumeLayers[3] = 1
-	else:
-		Global.heldSprite.costumeLayers[3] = 0
-	setLayerButtons()
-
-
-func _on_layer_button_5_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[4] == 0:
-		Global.heldSprite.costumeLayers[4] = 1
-	else:
-		Global.heldSprite.costumeLayers[4] = 0
-	setLayerButtons()
-
-func _on_layer_button_6_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[5] == 0:
-		Global.heldSprite.costumeLayers[5] = 1
-	else:
-		Global.heldSprite.costumeLayers[5] = 0
-	setLayerButtons()
-
-func _on_layer_button_7_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[6] == 0:
-		Global.heldSprite.costumeLayers[6] = 1
-	else:
-		Global.heldSprite.costumeLayers[6] = 0
-	setLayerButtons()
-
-func _on_layer_button_8_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[7] == 0:
-		Global.heldSprite.costumeLayers[7] = 1
-	else:
-		Global.heldSprite.costumeLayers[7] = 0
-	setLayerButtons()
-
-func _on_layer_button_9_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[8] == 0:
-		Global.heldSprite.costumeLayers[8] = 1
-	else:
-		Global.heldSprite.costumeLayers[8] = 0
-	setLayerButtons()
-
-func _on_layer_button_10_pressed():
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[9] == 0:
-		Global.heldSprite.costumeLayers[9] = 1
-	else:
-		Global.heldSprite.costumeLayers[9] = 0
-	setLayerButtons()
-
-func layerSelected():
-	var newPos = Vector2.ZERO
-	match Global.main.costume:
-		1:
-			newPos = $Layers/Layer1.position
-		2:
-			newPos = $Layers/Layer2.position
-		3:
-			newPos = $Layers/Layer3.position
-		4:
-			newPos = $Layers/Layer4.position
-		5:
-			newPos = $Layers/Layer5.position
-		6:
-			newPos = $Layers/Layer6.position
-		7:
-			newPos = $Layers/Layer7.position
-		8:
-			newPos = $Layers/Layer8.position
-		9:
-			newPos = $Layers/Layer9.position
-		10:
-			newPos = $Layers/Layer10.position
-	$Layers/Select.position = newPos
+# Retained for AvatarController compatibility; the visible selection indicator
+# now lives in the right sidebar and follows Global.main.costume there.
+func layerSelected() -> void:
+	pass
 
 
 func _on_squash_value_changed(value):
@@ -1107,94 +695,3 @@ func _on_anim_frames_value_changed(value):
 	Global.heldSprite.frames = value
 	Global.heldSprite.changeFrames()
 	setImage()
-
-
-func _on_delete_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.toggle = "null"
-	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
-	Global.heldSprite.makeVis()
-
-func _on_set_toggle_pressed():
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
-	Global.begin_visibility_key_capture()
-	await Global.main.visibility_binding_armed
-
-	var keys = await Global.main.spriteVisToggles
-	Global.finish_visibility_key_capture()
-	var key = keys[0]
-	if Global.heldSprite == null: return
-	Global.heldSprite.toggle = key
-	$VisToggle/setToggle/Label.text = "toggle: \"" + Global.heldSprite.toggle +  "\""
-
-func _on_eye_track_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.eyeTrack = button_pressed
-	Global.main.ndi_mark_dirty()
-
-func _on_eye_track_dist_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	$EyeTracking/eyeTrackDistLabel.text = "tracking distance: " + str(value)
-	Global.heldSprite.eyeTrackDistance = value
-	Global.main.ndi_mark_dirty()
-
-func _on_eye_track_speed_value_changed(value):
-	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	$EyeTracking/eyeTrackSpeedLabel.text = "tracking speed: " + str(value)
-	Global.heldSprite.eyeTrackSpeed = value
-
-func _on_eye_track_invert_toggled(button_pressed):
-	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.eyeTrackInvert = button_pressed
-
-func _update_normal_display():
-	if _normal_status == null:
-		return
-	if Global.heldSprite == null or !Global.heldSprite.hasNormalMap():
-		_normal_status.text = "(none)"
-		_normal_clear_btn.disabled = true
-	else:
-		var nname = Global.heldSprite.normalPath.get_file()
-		if nname == "":
-			nname = "(embedded)"
-		_normal_status.text = nname
-		_normal_clear_btn.disabled = false
-
-func _on_normal_import():
-	if _normal_dialog == null:
-		_normal_dialog = FileDialog.new()
-		_normal_dialog.title = "Select Normal Map"
-		_normal_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-		_normal_dialog.access = FileDialog.ACCESS_FILESYSTEM
-		_normal_dialog.filters = PackedStringArray(["*.png;PNG Image"])
-		_normal_dialog.use_native_dialog = true
-		_normal_dialog.file_selected.connect(_on_normal_file_selected)
-		add_child(_normal_dialog)
-	_normal_dialog.popup_centered(Vector2i(600, 400))
-
-func _on_normal_file_selected(path: String):
-	if Global.heldSprite == null:
-		return
-	var img = Image.new()
-	if img.load(path) != OK:
-		Global.notify_user("Failed to load normal map.")
-		return
-	UndoManager.save_state()
-	Global.heldSprite.setNormalMap(img, path)
-	UndoManager.invalidate_normal(Global.heldSprite.id)
-	_update_normal_display()
-
-func _on_normal_clear():
-	if Global.heldSprite == null or !Global.heldSprite.hasNormalMap():
-		return
-	UndoManager.save_state()
-	Global.heldSprite.clearNormalMap()
-	UndoManager.invalidate_normal(Global.heldSprite.id)
-	_update_normal_display()

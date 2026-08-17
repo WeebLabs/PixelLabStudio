@@ -8,13 +8,13 @@ save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–12 are complete. Phase 13 is next. Completed phases remain
+Progress: Phases 0–13 are complete. Phase 14 is next. Completed phases remain
 covered by the cumulative production-scene, isolated, native, performance, and
 standalone export gates.
 
 ## Developer handoff
 
-> Updated: 2026-08-17 — standalone continuation guide after Phase 12
+> Updated: 2026-08-17 — standalone continuation guide after Phase 13
 
 This file is the canonical execution and handoff plan. A developer taking over
 should start on branch `refactor`, read `AGENTS.md`, then read
@@ -23,7 +23,9 @@ should start on branch `refactor`, read `AGENTS.md`, then read
 phase using a different minor release. The local phase sequence currently ends
 with commits titled `Phase 9: add production avatar regression harness`,
 `Phase 10: define application state boundaries`, `Phase 11: complete main scene
-decomposition`, and the Phase 12 sprite-runtime commit containing this update.
+decomposition`, and the Phase 12 sprite-runtime commit.
+The next local commit is the Phase 13 UI-componentization commit containing
+this handoff update.
 Confirm with `git log --oneline` because the remote branch may lag local work.
 
 Before editing:
@@ -59,13 +61,15 @@ Current structural baseline:
 - `ui_scenes/selectedSprite/spriteObject.gd`: 951 lines; scene-facing layer
   facade backed by pure policies plus visual, collision, animation, and wiggle
   services.
-- Phase 13 hotspots: `ui_scenes/spriteList/viewer.gd` (1,475 lines/67 methods),
-  `ui_scenes/spriteEditMenu/sprite_viewer.gd` (1,200/50), and
-  `ui_scenes/settings/settings_menu.gd` (575/43).
-- Latest Phase 12 gate: 410 real-scene assertions, 740 isolated assertions,
-  227.17 ms for 100-layer load, 475.51 ms for 250-layer load, and 220.28 ms for
-  ten complete wiggle auto-fits on the baseline M1 Max. All budgets, NDI
-  teardown, and macOS pack export pass.
+- UI scene facades: `ui_scenes/spriteList/viewer.gd` (695 lines/38 methods),
+  `ui_scenes/spriteEditMenu/sprite_viewer.gd` (697/27), and
+  `ui_scenes/settings/settings_menu.gd` (123/7). Feature components are all
+  smaller than 500 lines.
+- Latest Phase 13 gate: 454 real-scene assertions, 794 isolated assertions,
+  271.15 ms for 100-layer load, 465.60 ms for 250-layer load, 3.66 µs per
+  active 100-layer animation frame, and 220.58 ms for ten complete wiggle
+  auto-fits on the baseline M1 Max. All budgets, NDI teardown, and standalone
+  macOS pack export pass.
 
 Non-negotiable compatibility rules:
 
@@ -314,6 +318,23 @@ Acceptance: no extracted panel resolves private state on another panel; facade
 files primarily construct/wire components; each hotspot is below 700 lines or
 has a documented reason; no hidden panel processes on the player page; all
 current UI and release gates remain green.
+
+> Completed: 2026-08-17 — The right sidebar delegates hierarchy/filter/scroll,
+> tracking, and layer details to `LayerTreeController`, `EyeTrackingPanel`, and
+> `LayerDetailsPanel`; the left delegates selection presentation, normal-map
+> actions, and rotation texture construction to focused components alongside
+> the existing animation panel. Its retired 3D previews and superseded hidden
+> controls were removed from the production scene. Settings now has one
+> injected component per Audio, Display, Motion, Hotkeys, and Output tab while
+> `settings_menu.gd` retains its public frame/input facade. Source contracts
+> enforce the 700-line sidebar ceiling, injected dependency direction, and
+> stable facade calls. Real-scene tests instantiate all five settings bodies,
+> exercise every tab, selection/no-selection, and edit/player processing; pure
+> tests cover layer flattening/filtering/indentation and tracking scope/target
+> rules. The cumulative Godot 4.6.3 gate passes 454 real-scene assertions and
+> 794 isolated assertions, performance budgets, active NDI teardown, and the
+> standalone macOS pack export. Stop here before Phase 14 unless explicitly
+> authorized to continue.
 
 ## Phase 14 — Mutation, undo, and input boundaries
 

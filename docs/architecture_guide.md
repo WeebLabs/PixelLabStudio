@@ -78,17 +78,24 @@ PNGTuberPlus/
 │   │   ├── sprite_visibility_policy.gd Pure talk/blink/costume visibility
 │   │   └── sprite_visual_runtime.gd Texture, normal, blend, and depth synchronization
 │   ├── spriteEditMenu/
-│   │   ├── sprite_viewer.gd      Left sidebar — sprite property editor (265px)
+│   │   ├── sprite_viewer.gd      Left sidebar scene facade/layout (265px)
+│   │   ├── selection_presenter.gd Selected-layer preview and field synchronization
+│   │   ├── normal_map_panel.gd   Normal-map import/clear component
+│   │   ├── rotation_preview_renderer.gd Rotation-circle texture construction
 │   │   └── chain.gd              Visual line during reparenting
 │   ├── spriteList/
-│   │   ├── viewer.gd             Right sidebar — layer tree + tabbed controls (310px, resizable)
+│   │   ├── viewer.gd             Right sidebar scene facade/layout (310px, resizable)
+│   │   ├── layer_tree_controller.gd Layer rows, hierarchy, filtering, and scroll
+│   │   ├── eye_tracking_panel.gd Tracking controls and target presentation
+│   │   ├── layer_details_panel.gd Details controls and NDI reference policy
 │   │   ├── physics_tab.gd        Physics tab — wiggle controls
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
 │   │   ├── psd_import_dialog.gd     PSD layer selection dialog (import flow)
 │   │   └── replace_review_dialog.gd Unified replace review dialog (PSD/folder/PNG)
 │   ├── settings/
-│   │   └── settings_menu.gd      Constructed, tabbed settings panel
+│   │   ├── settings_menu.gd      Constructed settings scene facade
+│   │   └── *_settings_tab.gd     Audio/display/motion/hotkey/output components
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
 │
@@ -265,7 +272,7 @@ Key child nodes:
 │  sidebar,    │       here, click to     │  Layer list       │
 │  265px)      │       select)            │  (scrollable)     │
 │              │                          │───────────────────│
-│  - 3D preview│                          │  Costume buttons  │
+│  - 2D preview│                          │  Costume buttons  │
 │  - Sliders   │                          │───────────────────│
 │  - Properties│                          │ [Details|Eye|Phys]│  ← tab bar
 │  - Dividers  │                          │  active tab body  │  (scrollable)
@@ -284,6 +291,22 @@ Key child nodes:
 > Updated: 2026-06-01 — **Physics tab Presets.** A **Presets** section (top of the tab) holds a wrapping `HFlowContainer` of chips: 2 built-in starting points (`_BUILTIN_PRESETS` — Fluffy / Stiff) plus the user's saved customs (faint-pink tint). Click a chip → `_on_preset_pressed` applies the `_PRESET_KEYS` "feel" bundle (stiffness/damping/springiness/shape-return/weight/reactivity/motion-intensity/wag*/max-bend/Bones — NOT coverage, path, or enable/children) to the held layer (undoable; live via the per-frame `configure`). **+ Save current as preset** reveals a `LineEdit` (Enter captures the current layer's feel as a named custom; total presets are capped at `_MAX_PRESETS` = 10 incl. built-ins — a new name past the cap is refused, overwriting an existing one is fine); **right-click** a custom chip removes it. Customs persist in `Saving.settings["wigglePresets"]` (written immediately via `Saving.write_settings`). Preset controls enable only with an active wiggle layer. (Also: the **Bones** slider is `wiggleSegments`, renamed from "resolution".)
 
 > Updated: 2026-06-04 — The **Eye Tracking** tab is renamed **Tracking**. Its enable checkbox is now scope-labelled by `refreshEyeUI()`: **"Enable (Layer)"** when a layer is selected (per-layer toggle), **"Enable (Global)"** otherwise (the global kill switch).
+
+> Updated: 2026-08-17 — **Both sidebars are scene facades below 700 lines.**
+> The right facade delegates row creation/hierarchy/filtering/scrolling to
+> `LayerTreeController`, tracking scope/controls/tooltip/pick-whip behavior to
+> `EyeTrackingPanel`, and layer flags to `LayerDetailsPanel`; its established
+> `Global.spriteList` methods remain compatibility wrappers. The left facade
+> delegates selected-layer preview and field synchronization to
+> `SelectionPresenter`, normal-map file actions to `NormalMapPanel`, and
+> one-time circle textures to `RotationPreviewRenderer`, alongside the existing
+> animation component. `Global.spriteEdit` and its `setImage()`,
+> `setLayerButtons()`, and `layerSelected()` surface remain stable. The left
+> scene no longer instantiates its replaced 3D viewports, old top buttons,
+> legacy wobble sliders, costume strip, visibility controls, or eye controls;
+> old saves still migrate legacy wobble data in the sprite runtime. Extracted
+> components receive their state/services explicitly and never reach into a
+> sibling panel's private fields.
 
 ---
 
@@ -439,7 +462,8 @@ children all carried literal coordinates, whose scene file held a 27 KB node tre
 including ten spelled-out hotkey rows, and which grew its own background and
 shifted its own position as code-built sections were appended to it.
 
-Five tabs, declared in `_TABS` and built by the matching `_build_*` method:
+Five tabs are declared in `_TABS`; each is built and refreshed by its matching
+`*_settings_tab.gd` component:
 
 | Tab | Contents |
 |---|---|
@@ -451,8 +475,18 @@ Five tabs, declared in `_TABS` and built by the matching `_build_*` method:
 
 The tab strip is pinned at the top and the active body scrolls, matching the
 right sidebar. `setvalues()` re-reads every control from live state; it runs at
-startup and again on each open. To add a setting, add a row to a `_build_*`
-method; to add a category, add a tab.
+startup and again on each open. To add a setting, add a row to the matching tab
+component; to add a category, add a component and tab title. The 123-line
+`settings_menu.gd` facade owns only the frame, tab visibility, hover state, and
+the public `setvalues()`/`awaitingCostumeInput` compatibility surface.
+
+> Updated: 2026-08-17 — Settings persistence and callbacks now live with their
+> owning Audio, Display, Motion, Hotkeys, or Output component. Every component
+> receives `Global`/`Saving` explicitly, uses `FormUI` rows and the shared
+> slider theme, and is constructed as part of the real production settings
+> scene. The hotkey component exposes its capture slot through the facade's
+> read-only compatibility property, so `main.gd` does not depend on component
+> internals.
 
 **Audio tab.** Microphone selection used to be a separate `MicInputSelect` popup
 of `mic_select_button.tscn` rows hanging off its own bar button. That scene, its
@@ -999,7 +1033,7 @@ Backward compatible: old saves without these fields load fine via `.has()` check
 
 ### UI
 
-- **Sprite Edit Panel** (`sprite_viewer.gd`): "normal map" section with status label, Import button (opens file dialog), Clear button
+- **Sprite Edit Panel** (`normal_map_panel.gd`, wired by `sprite_viewer.gd`): status label, Import button (opens file dialog), Clear button
 - **Sprite List** (`sprite_list_object.gd`): Blue "N" badge shown next to layer name when normal map is assigned
 
 ## Light Compatibility Data
