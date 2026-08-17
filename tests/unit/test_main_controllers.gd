@@ -3,6 +3,14 @@ extends RefCounted
 const Capture = preload("res://main_scenes/controllers/capture_controller.gd")
 const ViewportCoordinator = preload("res://main_scenes/controllers/viewport_controller.gd")
 const SaveCoordinator = preload("res://main_scenes/controllers/save_controller.gd")
+const AvatarCoordinator = preload("res://main_scenes/controllers/avatar_controller.gd")
+const ImportCoordinator = preload("res://main_scenes/controllers/import_controller.gd")
+const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
+
+class FakeSprite extends RefCounted:
+	var path: String
+	func _init(sprite_path: String) -> void:
+		path = sprite_path
 
 
 func run(t) -> void:
@@ -12,6 +20,7 @@ func run(t) -> void:
 	_test_viewport_zoom_contract(t)
 	_test_session_recovery_contract(t)
 	_test_save_image_encoding_contract(t)
+	_test_import_matching(t)
 	_test_main_decomposition_contract(t)
 	_test_idle_mode_contract(t)
 
@@ -21,7 +30,7 @@ func run(t) -> void:
 # The usual cause is a bare global class_name: the isolated test workspace has no
 # script class registry, so controllers must reach other scripts via preload.
 func _test_controller_scripts_compile(t) -> void:
-	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator]]:
+	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator], ["avatar", AvatarCoordinator], ["import", ImportCoordinator]]:
 		var script: GDScript = entry[1]
 		t.assert_true(
 			script != null and script.can_instantiate(),
@@ -80,6 +89,30 @@ func _test_save_image_encoding_contract(t) -> void:
 	var decode_error := decoded.load_png_from_buffer(Marshalls.base64_to_raw(entry["imageData"]))
 	t.assert_equal(decode_error, OK, "worker-encoded sprite images remain valid PNG data")
 	t.assert_equal(decoded.get_size(), Vector2i(2, 2), "worker-encoded sprite images preserve dimensions")
+
+
+func _test_import_matching(t) -> void:
+	t.assert_equal(ImportMatcher.sprite_name("psd://Hat"), "Hat", "PSD virtual paths expose their layer name")
+	t.assert_equal(ImportMatcher.sprite_name("animated://Mouth"), "Mouth", "animated virtual paths expose their layer name")
+	t.assert_equal(ImportMatcher.sprite_name("/avatars/Face.closed.png"), "Face.closed", "filesystem paths remove only their final extension")
+
+	var image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	var first_hat := FakeSprite.new("psd://Hat")
+	var second_hat := FakeSprite.new("/avatars/hat.png")
+	var mouth := FakeSprite.new("animated://Mouth")
+	var result := ImportMatcher.match_items(
+		[first_hat, second_hat, mouth],
+		[
+			{"name": "HAT", "image": image, "position": Vector2.ZERO},
+			{"name": "Eyes", "image": image, "position": Vector2.ONE},
+		],
+	)
+	t.assert_equal(result["matched"].size(), 2, "one source layer matches every live layer with the same normalized name")
+	t.assert_true(result["matched"][0]["sprite"] == first_hat, "matching retains live sprite references for transactional application")
+	t.assert_equal(result["new_items"].size(), 1, "unmatched source layers remain available for addition")
+	t.assert_equal(result["new_items"][0]["name"], "Eyes", "new-layer metadata remains intact")
+	t.assert_equal(result["orphaned"].size(), 1, "live layers missing from the source are reported as orphans")
+	t.assert_true(result["orphaned"][0] == mouth, "orphan calculation returns the exact live layer")
 
 
 # The player page pays for nothing it cannot use. Hiding a node does not stop its
@@ -141,9 +174,13 @@ func _test_main_decomposition_contract(t) -> void:
 	var main_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/main.gd"))
 	var capture_source := FileAccess.get_file_as_string("res://main_scenes/controllers/capture_controller.gd")
 	var viewport_source := FileAccess.get_file_as_string("res://main_scenes/controllers/viewport_controller.gd")
+	var avatar_source := FileAccess.get_file_as_string("res://main_scenes/controllers/avatar_controller.gd")
+	var import_source := FileAccess.get_file_as_string("res://main_scenes/controllers/import_controller.gd")
 	t.assert_true(main_source.contains("CaptureControllerScene"), "main owns the extracted capture coordinator")
 	t.assert_true(main_source.contains("ViewportControllerScene"), "main owns the extracted viewport coordinator")
 	t.assert_true(main_source.contains("SaveControllerScene"), "main owns the extracted avatar-save coordinator")
+	t.assert_true(main_source.contains("AvatarControllerScene"), "main owns the extracted avatar lifecycle coordinator")
+	t.assert_true(main_source.contains("ImportControllerScene"), "main owns the extracted import coordinator")
 	t.assert_true(main_source.contains("capture_controller.on_capture_released()"), "main keeps the stable capture release interface")
 	t.assert_false(main_source.contains("func _encode_worker"), "FFmpeg worker implementation no longer lives in main")
 	t.assert_false(main_source.contains("frames.raw"), "raw recording storage no longer lives in main")
@@ -153,10 +190,18 @@ func _test_main_decomposition_contract(t) -> void:
 	t.assert_true(capture_source.contains("_on_screenshot_dialog_canceled"), "canceling screenshot save releases the pending image")
 	t.assert_false(capture_source.contains("Global."), "capture controller receives shared state through its setup boundary")
 	t.assert_false(viewport_source.contains("Global."), "viewport controller receives shared state through its setup boundary")
+	t.assert_false(avatar_source.contains("Global."), "avatar controller receives shared state through its setup boundary")
+	t.assert_false(import_source.contains("Global."), "import controller receives shared state through its setup boundary")
+	t.assert_false(main_source.contains("func _load_worker_decode"), "avatar decode worker implementation no longer lives in main")
+	t.assert_false(main_source.contains("var _psd_thread"), "PSD worker ownership no longer lives in main")
+	t.assert_false(main_source.contains("var _anim_thread"), "animated-image worker ownership no longer lives in main")
+	t.assert_false(main_source.contains("var _replace_dialog"), "replace-dialog ownership no longer lives in main")
+	t.assert_true(_function_body(main_source, "func _on_load_dialog_file_selected").contains("avatar_controller.load_avatar"), "main keeps only the stable avatar-load facade")
+	t.assert_true(_function_body(main_source, "func _build_avatar_save_data").contains("avatar_controller.build_save_data"), "save snapshots delegate to the avatar boundary")
 	t.assert_false(main_source.contains("func _update_resize_state"), "viewport resize bookkeeping no longer lives in main")
 	t.assert_false(main_source.contains("func _session_save_worker"), "session worker implementation no longer lives in main")
 	t.assert_false(main_source.contains("var saveDialog"), "save-dialog ownership no longer lives in main")
-	t.assert_true(main_source.count("\n") < 2100, "main decomposition keeps the coordinator below the Phase 3 size ceiling")
+	t.assert_true(main_source.count("\n") < 650, "main decomposition keeps the coordinator below the Phase 11 size ceiling")
 
 
 func _source_root() -> String:

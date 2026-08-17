@@ -219,18 +219,19 @@ func _test_mic_threshold_wiring(t) -> void:
 func _test_modal_selection_guard(t) -> void:
 	var source_root := _source_root()
 	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
+	var import_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/import_controller.gd"))
 	var guard := _function_body(main_source, "func isFileSystemOpen")
 	# Without this the assert_false checks below would pass on an empty string.
 	t.assert_true(guard.contains("return true"), "the modal guard body was located")
-	t.assert_true(guard.contains("_single_replace_dialog != null"), "the single-replace prompt counts as an open modal")
-	t.assert_false(guard.contains("_single_replace_dialog != null:\n\t\tGlobal.heldSprite = null"), "the guard does not clear the layer the prompt is about to replace")
+	t.assert_true(guard.contains("has_single_replace_dialog()"), "the single-replace prompt counts as an open modal")
+	t.assert_false(guard.contains("has_single_replace_dialog():\n\t\tGlobal.clear_selection()"), "the guard does not clear the layer the prompt is about to replace")
 
-	var confirm := _function_body(main_source, "func _on_single_replace_confirmed")
+	var confirm := _function_body(import_source, "func _on_single_replace_confirmed")
 	t.assert_true(confirm.contains("replaceSprite"), "the confirm body was located")
 	t.assert_true(confirm.contains("_single_replace_target"), "the confirm acts on the layer the prompt named")
 	t.assert_false(confirm.contains("Global.heldSprite.replaceSprite"), "the confirm no longer replaces whatever is selected when it is answered")
 	t.assert_true(
-		_function_body(main_source, "func _on_single_replace_cancelled").contains("_single_replace_target = null"),
+		_function_body(import_source, "func _on_single_replace_cancelled").contains("_single_replace_target = null"),
 		"cancelling releases the captured layer",
 	)
 

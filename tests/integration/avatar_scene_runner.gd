@@ -30,6 +30,8 @@ func _run() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	assert_true(_main.saveLoaded, "production main scene completes startup")
+	assert_not_null(_main.avatar_controller, "production main scene owns the avatar lifecycle controller")
+	assert_not_null(_main.import_controller, "production main scene owns the import lifecycle controller")
 
 	_materialized_fixture_path = _materialize_regression_fixture()
 	assert_false(_materialized_fixture_path.is_empty(), "regression fixture is materialized with an absolute image path")
@@ -39,6 +41,7 @@ func _run() -> void:
 	await _main._on_load_dialog_file_selected(_materialized_fixture_path)
 	await get_tree().process_frame
 	_test_loaded_avatar("fixture load")
+	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_costumes()
 	await _test_rejected_load_preserves_avatar()
@@ -123,6 +126,35 @@ func _test_idle_motion() -> void:
 		await get_tree().process_frame
 	var moved_y: float = base.get_node("WobbleOrigin").position.y
 	assert_true(absf(moved_y - start_y) > 0.1, "migrated idle sway produces visible runtime motion")
+
+
+func _test_edit_commands() -> void:
+	var source = Global.sprite_by_id(COSTUME_ONE_ID)
+	assert_not_null(source, "duplicate command source exists")
+	if source == null:
+		return
+	Global.select_sprite(source)
+	_main._on_duplicate_button_pressed()
+	await get_tree().process_frame
+	var duplicate = Global.heldSprite
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES + 1, "duplicate command registers exactly one new layer")
+	assert_true(duplicate != null and duplicate != source, "duplicate command selects the new layer")
+	if duplicate == null or duplicate == source:
+		return
+	assert_equal(duplicate.parentId, source.parentId, "duplicate command preserves the parent identifier")
+	assert_true(duplicate.parentSprite == source.parentSprite, "duplicate command preserves the resolved parent")
+	assert_equal(duplicate.costumeLayers, source.costumeLayers, "duplicate command preserves costume membership")
+	var replacement: Image = duplicate.imageData.duplicate()
+	_main._on_replace_confirmed(
+		[{"sprite": duplicate, "name": "Controller Replacement", "image": replacement}],
+		[], [], Vector2.ZERO, false,
+	)
+	assert_equal(duplicate.path, "psd://Controller Replacement", "replacement application runs through the avatar controller")
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES + 1, "replacement application does not alter layer membership")
+	duplicate.queue_free()
+	Global.clear_selection()
+	await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "duplicate cleanup unregisters the temporary layer")
 
 
 func _test_costumes() -> void:

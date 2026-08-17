@@ -1,6 +1,6 @@
 # Quality Baseline
 
-> Updated: 2026-08-06 — Phase 8 release qualification gates
+> Updated: 2026-08-17 — Phase 11 main-scene decomposition gate
 
 This document records the reproducible safety rails used throughout the
 refactor. Exact timing artifacts are written to `.artifacts/` and retained by
@@ -218,3 +218,22 @@ assigning held selection, calling private `Global` methods, or duplicating the
 three-parent scene traversal. The full Godot 4.6.3 compile, behavioral, and NDI
 teardown gates pass after routing production enumeration through the live sprite
 registry.
+
+## Phase 11 main-scene gate
+
+> Updated: 2026-08-17 — controller extraction and edit-lifecycle coverage
+
+The real application runner passes 401 assertions after adding duplicate-layer
+and replacement mutation coverage through the decomposed controller graph. The
+isolated suite passes 710 assertions, including controller compilation, pure
+duplicate-name import matching, dependency-injection contracts, stable facade
+contracts, and a 650-line ceiling for `main.gd` (currently 597 lines). A verbose
+real-scene run reports no leaked `Object` instances after moving the duplicate
+sprite's reparent guard before scene insertion.
+
+On the baseline M1 Max with Godot 4.6.3, complete avatar loads measured 223.78
+ms for 100 layers and 412.56 ms for 250 layers. The wider performance gate also
+passed at 3.49 microseconds per active 100-layer animation frame, 0.25 idle,
+608.70 ms for 100 schema validations, and 4.83 ms for the indexed 250-layer
+eye-target workload. The 120-frame active NDI teardown smoke and standalone
+macOS pack export both pass.

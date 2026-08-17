@@ -8,7 +8,7 @@ save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–10 are complete. Phase 11 is next. Completed phases remain
+Progress: Phases 0–11 are complete. Phase 12 is next. Completed phases remain
 covered by the cumulative production-scene, isolated, native, performance, and
 standalone export gates.
 
@@ -181,6 +181,18 @@ standalone export gates.
 - Extract transactional avatar assembly, import-result application, edit
   commands, costume orchestration, and dialog presentation from `main.gd`.
 - Leave the scene script responsible for lifecycle wiring and delegation.
+
+> Completed: 2026-08-17 — `AvatarController` now owns avatar assembly,
+> validation, save-data construction, edit commands, hierarchy reconstruction,
+> costumes, and decode-worker shutdown. `ImportController` owns PSD/APNG/PNG
+> pipelines, bounded worker preparation, dialogs, review application, and
+> cancellation, while the pure `ImportMatcher` makes duplicate-name decisions
+> deterministic. The compatibility-facing `main.gd` fell from roughly 1,660 to
+> 597 lines. The production audit also fixed duplicated layers setting their
+> `_skip_ready_reparent` guard after `add_child()`, when `_ready()` had already
+> scheduled its timer. The cumulative Godot 4.6.3 gate passes 401 real-scene
+> assertions, 710 isolated assertions, performance budgets, NDI teardown, and
+> standalone macOS pack export.
 
 ## Phase 12 — Sprite runtime decomposition
 

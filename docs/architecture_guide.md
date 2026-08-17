@@ -50,7 +50,10 @@ PNGTuberPlus/
 ├── main_scenes/           Main scene, edit controls, control panel
 │   ├── main.tscn / main.gd       Entry point and scene coordinator
 │   ├── controllers/               Explicit main-scene lifecycle boundaries
+│   │   ├── avatar_controller.gd   Avatar assembly, edits, costumes, save data
 │   │   ├── capture_controller.gd  Screenshot, recording, FFmpeg ownership
+│   │   ├── import_controller.gd   PSD/APNG/PNG workers and import dialogs
+│   │   ├── import_matcher.gd      Pure replacement name matching
 │   │   ├── save_controller.gd     Save dialogs, workers, session recovery
 │   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
 │   ├── EditControls.gd            Top menu bar (edit mode)
@@ -136,6 +139,9 @@ PNGTuberPlus/
 > Updated: 2026-08-17 — The directory map reflects the constructed menu and
 > settings rebuild and the production-scene integration/performance harness.
 
+> Updated: 2026-08-17 — The main-scene controller map includes the completed
+> avatar and import boundaries from Phase 11.
+
 ---
 
 ## Autoload Singletons
@@ -204,7 +210,7 @@ Key child nodes:
 - Various file dialog nodes
 
 > Updated: 2026-08-06 — `main.gd` is the compatibility-facing scene
-> coordinator and delegates three independent lifecycles under
+> coordinator and delegates independent lifecycles under
 > `main_scenes/controllers/`. `CaptureController` owns screenshots, recording
 > viewports/files, FFmpeg discovery/arguments/progress, and deterministic
 > cleanup. `ViewportController` owns resize settling, camera pan/zoom,
@@ -215,6 +221,21 @@ Key child nodes:
 > autoloads internally. Existing scene-signal method names remain as thin
 > wrappers on `main.gd`. Pure format, zoom-boundary, recovery-policy, and image
 > encoding contracts live in `tests/unit/test_main_controllers.gd`.
+
+> Updated: 2026-08-17 — `main.gd` is now a 597-line lifecycle and scene-signal
+> facade. `AvatarController` owns transactional avatar assembly, validation,
+> hierarchy reconstruction, save-data construction, edit commands, costume
+> application, and its decode-worker shutdown. `ImportController` owns the
+> PSD/APNG/PNG pipelines, bounded preparation workers, native file dialogs,
+> replacement review, and import cancellation/shutdown. `ImportMatcher` is the
+> pure, deterministic duplicate-name matching policy shared by replacement
+> flows. All receive their scene and autoload dependencies in `setup()` and
+> existing signal method names remain thin `main.gd` facades. A duplicated
+> sprite must set `_skip_ready_reparent` before `add_child()`: `_ready()` runs
+> synchronously on insertion, so setting the guard afterward leaks the deferred
+> reparent timer and can move the clone unexpectedly. Production-scene tests
+> exercise load/save, duplicate, replacement, costume, hierarchy, and shutdown
+> through the real controller graph.
 
 > Updated: 2026-08-06 — Global background capture is a dynamically instantiated
 > optional boundary. `main.gd` checks for `BackgroundInputCapture` through

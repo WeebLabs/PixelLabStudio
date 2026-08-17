@@ -1,11 +1,11 @@
 extends Node2D
 
-const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
-const SpriteState = preload("res://autoload/domain/sprite_state.gd")
 const CaptureControllerScene = preload("res://main_scenes/controllers/capture_controller.gd")
 const ViewportControllerScene = preload("res://main_scenes/controllers/viewport_controller.gd")
 const SaveControllerScene = preload("res://main_scenes/controllers/save_controller.gd")
+const AvatarControllerScene = preload("res://main_scenes/controllers/avatar_controller.gd")
+const ImportControllerScene = preload("res://main_scenes/controllers/import_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 
 var editMode = true
@@ -41,6 +41,8 @@ var _background_input_capture: Node = null
 var capture_controller: CaptureController = null
 var viewport_controller: ViewportController = null
 var save_controller: AvatarSaveController = null
+var avatar_controller: AvatarController = null
+var import_controller: ImportController = null
 
 
 #Scene Reference
@@ -67,7 +69,6 @@ var screen_scale = 1.0
 
 #IMPORTANT
 var fileSystemOpen = false
-var _sprite_id_random := RandomNumberGenerator.new()
 
 #background input capture
 signal emptiedCapture
@@ -82,27 +83,12 @@ func _exit_tree() -> void:
 	Global.detach_main(self)
 
 func _shutdown_import_workers() -> void:
-	if _psd_parser != null:
-		_psd_parser.cancel()
-	if _anim_parser != null and _anim_parser.has_method("cancel"):
-		_anim_parser.cancel()
-	for worker in [_psd_thread, _anim_thread]:
-		if worker != null and worker.is_started():
-			worker.wait_to_finish()
-	if _import_group_id >= 0:
-		WorkerThreadPool.wait_for_group_task_completion(_import_group_id)
-		_import_group_id = -1
-	if _load_group_id >= 0:
-		WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
-		_load_group_id = -1
-	_psd_thread = null
-	_anim_thread = null
-	_psd_parser = null
-	_anim_parser = null
-	_anim_queue.clear()
+	if import_controller != null:
+		import_controller.shutdown()
+	if avatar_controller != null:
+		avatar_controller.shutdown()
 
 func _ready():
-	_sprite_id_random.randomize()
 	Global.attach_main(self)
 	_initialize_background_input_capture()
 	Global.attach_failure_overlay($Failed)
@@ -112,6 +98,14 @@ func _ready():
 	capture_controller.setup(self, Global, Saving)
 	viewport_controller = ViewportControllerScene.new()
 	viewport_controller.setup(self, Global, Saving)
+	avatar_controller = AvatarControllerScene.new()
+	avatar_controller.name = "AvatarController"
+	add_child(avatar_controller)
+	avatar_controller.setup(self, Global, Saving, UndoManager, spriteObject)
+	import_controller = ImportControllerScene.new()
+	import_controller.name = "ImportController"
+	add_child(import_controller)
+	import_controller.setup(self, Global, UndoManager, avatar_controller, spriteObject)
 	save_controller = SaveControllerScene.new()
 	save_controller.name = "AvatarSaveController"
 	add_child(save_controller)
@@ -335,9 +329,7 @@ func _process(delta):
 	
 	fileSystemOpen = isFileSystemOpen()
 
-	_process_psd_thread(delta)
-	_process_import_thread(delta)
-	_process_anim_thread(delta)
+	import_controller.process_frame(delta)
 	save_controller.process_frame(delta)
 	viewport_controller.process_frame()
 
@@ -354,15 +346,15 @@ func isFileSystemOpen():
 		return true
 	if replaceReviewDialog.visible:
 		return true
-	if _import_dialog != null and _import_dialog.visible:
+	if import_controller != null and import_controller.is_import_dialog_open():
 		Global.clear_selection()
 		return true
-	if _replace_dialog != null and _replace_dialog.visible:
+	if import_controller != null and import_controller.is_replace_dialog_open():
 		return true
 	# The single-PNG confirmation names one layer and replaces whatever is held
 	# when it is answered, so canvas selection has to stop while it is up. Like
 	# the review dialog it must NOT clear heldSprite: that is its target.
-	if _single_replace_dialog != null:
+	if import_controller != null and import_controller.has_single_replace_dialog():
 		return true
 	if capture_controller != null and capture_controller.is_dialog_open():
 		return true
@@ -409,529 +401,34 @@ func swapMode() -> void:
 
 
 func _next_z_index() -> int:
-	return Global.maximum_sprite_z() + 1
+	return avatar_controller.next_z_index()
 
 
 func _next_sprite_id() -> int:
-	var candidate := _sprite_id_random.randi()
-	while Global.sprite_by_id(candidate) != null:
-		candidate = _sprite_id_random.randi()
-	return candidate
+	return avatar_controller.next_sprite_id()
 
 #Adds sprite object to scene
 func add_image(path):
-	UndoManager.save_state()
-
-	var id := _next_sprite_id()
-
-	var sprite = spriteObject.instantiate()
-	sprite.path = path
-	sprite.id = id
-	sprite.z = _next_z_index()
-	origin.add_child(sprite)
-	sprite.position = Vector2.ZERO
-
-	Global.spriteList.updateData()
-	ndi_mark_dirty()
-
-	Global.notify_user("Added new sprite.")
+	avatar_controller.add_image(path)
 	
 func add_image_from_data(img: Image, layer_name: String, canvas_position: Vector2):
-	var id := _next_sprite_id()
+	return avatar_controller.add_image_from_data(img, layer_name, canvas_position)
 
-	var sprite = spriteObject.instantiate()
-	sprite.loadedImage = img
-	sprite.path = "psd://" + layer_name
-	sprite.id = id
-	origin.add_child(sprite)
-	sprite.position = canvas_position
-
-	return sprite
-
-var _psd_parser: PSDParser = null
-var _psd_thread: Thread = null
-var _psd_result = null
-var _psd_progress_dialog: ModalDialogUI = null
-var _psd_replace_mode: bool = false
-
-# Worker-pool sprite preparation (post-PSD-import)
-var _import_group_id := -1
-var _import_layers: Array = []
-var _import_canvas_size: Vector2 = Vector2.ZERO
-var _import_results: Array = []
-var _import_normal_layers: Dictionary = {}
-var _import_progress_dialog2: ModalDialogUI = null
-
-# Threaded avatar JSON load (parallel PNG decode + polygon generation per sprite)
-var _load_keys: Array = []
-var _load_data_ref = null
-var _load_results: Array = []
-var _load_group_id := -1
-
-var _anim_parser: APNGParser = null
-var _anim_thread: Thread = null
-var _anim_result = null
-var _anim_progress_dialog: ModalDialogUI = null
-var _anim_replace_mode: bool = false
-var _anim_import_name: String = ""
-var _anim_queue: Array = []
-
+# Scene-signal compatibility facades; ImportController owns worker/dialog state.
 func _on_psd_dialog_file_selected(path):
-	_begin_psd_parse(path, false)
+	import_controller.import_psd_file(path)
 
-func _begin_psd_parse(path: String, replace_mode: bool) -> void:
-	if _psd_thread != null:
-		Global.notify_user("A PSD import is already running.")
-		return
-	_psd_replace_mode = replace_mode
-	_psd_parser = PSDParser.new()
-	_psd_result = null
-
-	# Show progress bar
-	_psd_progress_dialog = _create_progress_dialog("Loading PSD...")
-
-	# Run parser in a thread
-	_psd_thread = Thread.new()
-	var start_error := _psd_thread.start(func(): return _psd_parser.parse(path))
-	if start_error != OK:
-		_psd_thread = null
-		_psd_parser = null
-		_psd_progress_dialog.queue_free()
-		_psd_progress_dialog = null
-		_psd_replace_mode = false
-		Global.notify_user("Could not start the PSD import worker.")
-		Global.epicFail(start_error)
-
-func _process_psd_thread(_delta):
-	if _psd_thread == null or _psd_parser == null:
-		return
-	if _psd_progress_dialog == null:
-		return
-
-	# Update progress bar
-	_psd_progress_dialog.set_progress(_psd_parser.progress)
-	_psd_progress_dialog.set_title(_psd_parser.status_text)
-
-	# Check if thread is done
-	if !_psd_thread.is_alive():
-		_psd_result = _psd_thread.wait_to_finish()
-		_psd_thread = null
-
-		# Remove progress dialog
-		_psd_progress_dialog.queue_free()
-		_psd_progress_dialog = null
-
-		var result = _psd_result
-		_psd_result = null
-		_psd_parser = null
-
-		if result.error != "":
-			_psd_replace_mode = false
-			if result.error != "Import cancelled.":
-				Global.notify_user("PSD Error: " + result.error)
-				Global.epicFail(ERR_INVALID_DATA)
-			return
-
-		if _psd_replace_mode:
-			_psd_replace_mode = false
-			_show_replace_review_from_psd(result)
-		else:
-			psdImportDialog.setup(result)
-			psdImportDialog.visible = true
 
 func _on_psd_import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary = {}):
-	_import_layers = selected_layers
-	_import_canvas_size = canvas_size
-	_import_normal_layers = normal_layers
-	_import_results = []
-	_import_results.resize(selected_layers.size())
-	if selected_layers.is_empty():
-		_import_layers = []
-		_import_normal_layers = {}
-		Global.notify_user("No PSD layers were selected.")
-		return
+	import_controller.apply_psd_selection(selected_layers, canvas_size, normal_layers)
 
-	# Show progress dialog for sprite creation phase
-	_import_progress_dialog2 = _create_progress_dialog("Processing sprites...")
-
-	# Use the bounded engine pool instead of creating one OS thread per layer.
-	_import_group_id = WorkerThreadPool.add_group_task(
-		_precompute_import_layer, selected_layers.size(), -1, false, "PSD layer preparation"
-	)
-	if _import_group_id < 0:
-		_import_progress_dialog2.queue_free()
-		_import_progress_dialog2 = null
-		Global.notify_user("Could not start the PSD processing worker.")
-		Global.epicFail(ERR_CANT_CREATE)
-
-func _precompute_import_layer(index: int) -> void:
-	var image: Image = _import_layers[index].image
-	var premultiplied := image.duplicate()
-	premultiplied.premultiply_alpha()
-	var bitmap := BitMap.new()
-	bitmap.create_from_image_alpha(image)
-	_import_results[index] = {
-		"pma_image": premultiplied,
-		"polygons": bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0),
-	}
-
-func _load_worker_decode(idx: int):
-	# Runs on a worker thread. Decodes the PNG, premultiplies alpha, and builds the
-	# polygon outline for one sprite. Each task writes to its own _load_results slot,
-	# so no mutex is needed for the result writes.
-	var key = _load_keys[idx]
-	var item_data = _load_data_ref[key]
-	var img = Image.new()
-	var has_image = false
-
-	if item_data.has("path"):
-		var err = img.load(item_data["path"])
-		if err == OK:
-			has_image = true
-	if !has_image and item_data.has("imageData"):
-		var raw = Marshalls.base64_to_raw(item_data["imageData"])
-		if img.load_png_from_buffer(raw) == OK:
-			has_image = true
-
-	var result = {"ok": has_image}
-	if has_image:
-		var pma = img.duplicate()
-		pma.premultiply_alpha()
-		var bitmap = BitMap.new()
-		bitmap.create_from_image_alpha(img)
-		var polygons = bitmap.opaque_to_polygons(Rect2(Vector2.ZERO, bitmap.get_size()), 4.0)
-		result["image"] = img
-		result["pma_image"] = pma
-		result["polygons"] = polygons
-
-		if item_data.has("normalImageData"):
-			var nrml_raw = Marshalls.base64_to_raw(item_data["normalImageData"])
-			var nrml = Image.new()
-			if nrml.load_png_from_buffer(nrml_raw) == OK:
-				result["normal_image"] = nrml
-
-	_load_results[idx] = result
-
-func _process_import_thread(_delta):
-	if _import_group_id < 0:
-		return
-
-	# Update progress
-	var count = _import_layers.size()
-	if count > 0 and _import_progress_dialog2 != null:
-		var completed := WorkerThreadPool.get_group_processed_element_count(_import_group_id)
-		_import_progress_dialog2.set_progress(float(completed) / count)
-		_import_progress_dialog2.set_title("Processing sprites... " + str(completed) + "/" + str(count))
-
-	if WorkerThreadPool.is_group_task_completed(_import_group_id):
-		WorkerThreadPool.wait_for_group_task_completion(_import_group_id)
-		_import_group_id = -1
-
-		if _import_progress_dialog2 != null:
-			_import_progress_dialog2.queue_free()
-			_import_progress_dialog2 = null
-
-		_finalize_psd_import()
-
-func _finalize_psd_import():
-	UndoManager.save_state()
-	var canvas_center = _import_canvas_size * 0.5
-	var layer_z = _next_z_index()
-	var count = _import_layers.size()
-
-	for i in range(count):
-		var layer = _import_layers[i]
-		var result = _import_results[i]
-
-		var id := _next_sprite_id()
-
-		var sprite = spriteObject.instantiate()
-		sprite.loadedImage = layer.image
-		sprite.path = "psd://" + layer.name
-		sprite.id = id
-		sprite._prebuilt_pma_image = result["pma_image"]
-		sprite._prebuilt_polygons = result["polygons"]
-		sprite.z = layer_z
-
-		var layer_center = Vector2(
-			(layer.left + layer.right) * 0.5,
-			(layer.top + layer.bottom) * 0.5
-		)
-		# Check for matching normal map layer
-		var layer_base = layer.name.to_lower()
-		if _import_normal_layers.has(layer_base):
-			var nrml_layer = _import_normal_layers[layer_base]
-			sprite.loadedNormalImage = nrml_layer.image
-			sprite.normalPath = "psd://" + nrml_layer.name
-
-		origin.add_child(sprite)
-		sprite.position = layer_center - canvas_center
-		sprite.setZIndex()
-		layer_z += 1
-
-	Global.spriteList.updateData(true)
-	Global.notify_user("Imported " + str(count) + " layers from PSD.")
-
-	_import_layers = []
-	_import_results = []
-	_import_normal_layers = {}
-
-	_save_post_import_snapshot()
 
 func _on_psd_import_cancelled():
-	if _psd_parser != null:
-		_psd_parser.cancel()
-	Global.notify_user("PSD import cancelled.")
+	import_controller.cancel_psd_import()
 
-func _save_post_import_snapshot():
-	# Wait for spriteObject._ready() reparent timers (0.1s) to settle
-	await get_tree().create_timer(0.2).timeout
-	UndoManager.save_state()
-
-# --- Animated GIF/APNG Import ---
-
-func _start_animated_import(path: String, is_replace: bool):
-	if _anim_thread != null:
-		_anim_queue.append({"path": path, "replace": is_replace})
-		return
-
-	_anim_replace_mode = is_replace
-	_anim_result = null
-	_anim_import_name = path.get_file().get_basename()
-
-	_anim_parser = APNGParser.new()
-
-	_anim_progress_dialog = _create_progress_dialog("Loading animated image...")
-
-	_anim_thread = Thread.new()
-	var start_error := _anim_thread.start(func(): return _anim_parser.parse(path))
-	if start_error != OK:
-		_anim_thread = null
-		_anim_parser = null
-		_anim_progress_dialog.queue_free()
-		_anim_progress_dialog = null
-		Global.notify_user("Could not start the animated-image worker.")
-		Global.epicFail(start_error)
-		_process_anim_queue()
-
-func _process_anim_thread(_delta):
-	if _anim_thread == null or _anim_parser == null:
-		return
-	if _anim_progress_dialog == null:
-		return
-
-	_anim_progress_dialog.set_progress(_anim_parser.progress)
-	_anim_progress_dialog.set_title(_anim_parser.status_text)
-
-	if !_anim_thread.is_alive():
-		_anim_result = _anim_thread.wait_to_finish()
-		_anim_thread = null
-
-		_anim_progress_dialog.queue_free()
-		_anim_progress_dialog = null
-
-		var result = _anim_result
-		_anim_result = null
-		_anim_parser = null
-
-		if result.error != "":
-			if result.error != "Import cancelled.":
-				Global.notify_user("Import Error: " + result.error)
-				Global.epicFail(ERR_INVALID_DATA)
-			_process_anim_queue()
-			return
-
-		_finish_animated_import(result)
-		_process_anim_queue()
-
-func _process_anim_queue():
-	if _anim_queue.size() > 0:
-		var next = _anim_queue.pop_front()
-		_start_animated_import(next["path"], next["replace"])
-
-func _finish_animated_import(result):
-	var frame_count = result.frames.size()
-	var w = result.width
-	var h = result.height
-
-	# Cap frame count if sprite sheet would exceed max texture size
-	var max_width = 16384
-	if w * frame_count > max_width:
-		frame_count = max_width / w
-		Global.notify_user("Warning: Capped to " + str(frame_count) + " frames (texture size limit)")
-
-	# Single-frame: import as static sprite
-	if frame_count <= 1:
-		if _anim_replace_mode:
-			_replace_with_animated(result.frames[0].image, 1, 0)
-		else:
-			_add_animated_sprite(result.frames[0].image, 1, 0)
-		return
-
-	# Build horizontal sprite sheet
-	var sheet = Image.create(w * frame_count, h, false, Image.FORMAT_RGBA8)
-	sheet.fill(Color(0, 0, 0, 0))
-	for i in range(frame_count):
-		sheet.blit_rect(result.frames[i].image, Rect2i(0, 0, w, h), Vector2i(w * i, 0))
-
-	# Calculate animation speed from average delay
-	var total_delay: float = 0.0
-	for i in range(frame_count):
-		total_delay += result.frames[i].delay_ms
-	var avg_delay_ms = total_delay / float(frame_count)
-	var fps = 1000.0 / avg_delay_ms
-	var anim_speed = int(round(fps * 6.0))
-	if anim_speed <= 0:
-		anim_speed = 60
-
-	if _anim_replace_mode:
-		_replace_with_animated(sheet, frame_count, anim_speed)
-	else:
-		_add_animated_sprite(sheet, frame_count, anim_speed)
-
-func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
-	UndoManager.save_state()
-
-	var id := _next_sprite_id()
-
-	var sprite = spriteObject.instantiate()
-	sprite.loadedImage = sheet
-	sprite.path = "animated://" + _anim_import_name
-	sprite.id = id
-	sprite.frames = frame_count
-	sprite.animSpeed = anim_speed
-	sprite.z = _next_z_index()
-	origin.add_child(sprite)
-	sprite.position = Vector2.ZERO
-
-	Global.spriteList.updateData()
-	Global.notify_user("Imported animated sprite (" + str(frame_count) + " frames)")
-
-func _replace_with_animated(sheet: Image, frame_count: int, anim_speed: int):
-	if Global.heldSprite == null:
-		return
-
-	UndoManager.save_state()
-
-	Global.heldSprite.imageData = sheet
-	var pma = sheet.duplicate()
-	pma.premultiply_alpha()
-	var texture = ImageTexture.create_from_image(pma)
-	Global.heldSprite.tex = texture
-	Global.heldSprite.sprite.texture = texture
-	Global.heldSprite.path = "animated://import"
-	Global.heldSprite.frames = frame_count
-	Global.heldSprite.animSpeed = anim_speed
-	Global.heldSprite.changeFrames()
-	Global.heldSprite.remadePolygon = false
-	Global.heldSprite.remakePolygon()
-
-	UndoManager.invalidate_image(Global.heldSprite.id)
-	Global.spriteList.updateData()
-	Global.notify_user("Replaced with animated sprite (" + str(frame_count) + " frames)")
-
-# --- Unified Import Dialog ---
-
-var _import_dialog: FileDialog = null
-
-func _create_import_dialog():
-	_import_dialog = FileDialog.new()
-	_import_dialog.title = "Import"
-	_import_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
-	_import_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	_import_dialog.filters = PackedStringArray(["*.png;PNG Files", "*.psd;PSD Files"])
-	_import_dialog.use_native_dialog = true
-	_import_dialog.files_selected.connect(_on_import_files_selected)
-	add_child(_import_dialog)
 
 func _on_import_button_pressed():
-	if _import_dialog == null:
-		_create_import_dialog()
-	_import_dialog.popup_centered(Vector2i(600, 400))
-
-func _on_import_files_selected(paths: PackedStringArray):
-	if paths.size() == 0:
-		return
-
-	var psd_paths: Array = []
-	var png_paths: Array = []
-	for p in paths:
-		match p.get_extension().to_lower():
-			"psd": psd_paths.append(p)
-			"png": png_paths.append(p)
-
-	if psd_paths.size() > 0 and png_paths.size() > 0:
-		Global.notify_user("Cannot mix PSD and PNG files. Select one type.")
-		return
-	if psd_paths.size() > 1:
-		Global.notify_user("Select only one PSD file at a time.")
-		return
-
-	if psd_paths.size() == 1:
-		_on_psd_dialog_file_selected(psd_paths[0])
-	else:
-		_import_png_files(png_paths)
-
-func _import_png_files(paths: Array):
-	UndoManager.save_state()
-
-	# Separate normal maps from diffuse files
-	var diffuse_paths = []
-	var normal_map = {}  # base_name (lower) -> normal_path
-	for path in paths:
-		var filename = path.get_file().get_basename()
-		if filename.to_lower().ends_with("_nrml"):
-			var base = filename.substr(0, filename.length() - 5)
-			normal_map[base.to_lower()] = path
-		else:
-			diffuse_paths.append(path)
-
-	var count = 0
-	for path in diffuse_paths:
-		if path.get_extension().to_lower() == "png" and APNGParser.is_apng(path):
-			_start_animated_import(path, false)
-		else:
-			var id := _next_sprite_id()
-			var sprite = spriteObject.instantiate()
-			sprite.path = path
-			sprite.id = id
-			sprite.z = _next_z_index()
-
-			# Check for matching normal map
-			var diffuse_base = path.get_file().get_basename().to_lower()
-			if normal_map.has(diffuse_base):
-				var nrml_img = Image.new()
-				if nrml_img.load(normal_map[diffuse_base]) == OK:
-					sprite.loadedNormalImage = nrml_img
-					sprite.normalPath = normal_map[diffuse_base]
-				normal_map.erase(diffuse_base)
-
-			origin.add_child(sprite)
-			sprite.position = Vector2.ZERO
-		count += 1
-
-	# Import remaining unmatched normals: try to pair with existing sprites
-	for base in normal_map:
-		var matched = false
-		for spr in Global.sprite_nodes():
-			var spr_base = spr.path.get_file().get_basename().to_lower()
-			if spr_base == base:
-				var nrml_img = Image.new()
-				if nrml_img.load(normal_map[base]) == OK:
-					spr.setNormalMap(nrml_img, normal_map[base])
-					UndoManager.invalidate_normal(spr.id)
-				matched = true
-				break
-		if !matched:
-			Global.notify_user("No match for normal: " + normal_map[base].get_file())
-
-	Global.spriteList.updateData()
-	ndi_mark_dirty()
-	if count == 1:
-		Global.notify_user("Added new sprite.")
-	elif count > 1:
-		Global.notify_user("Imported " + str(count) + " sprites.")
-	_save_post_import_snapshot()
+	import_controller.show_import_dialog()
 
 func _on_save_button_pressed():
 	save_controller.show_save_dialog()
@@ -939,196 +436,10 @@ func _on_save_button_pressed():
 func _on_load_button_pressed():
 	save_controller.show_load_dialog()
 
-#LOAD AVATAR
+# Avatar loading remains scene-signal compatible while the controller owns
+# validation, worker state, transactional assembly, and post-load policy.
 func _on_load_dialog_file_selected(path):
-	UndoManager.save_state()
-	var data = Saving.read_save(path)
-
-	if data == null:
-		Global.notify_user(Saving.last_error)
-		return
-
-	Global.clear_selection()
-	# Hide the old avatar immediately so it doesn't linger on screen during load
-	origin.visible = false
-	origin.queue_free()
-	var new = Node2D.new()
-	# Match the position onWindowSizeChange() will set later — otherwise panCamera()
-	# would re-center the camera on (0,0) every frame and the UI would visibly drift
-	new.position = get_viewport().get_visible_rect().size * 0.5
-	# Keep the new avatar hidden while sprites stream in (and start transparent for fade-in)
-	# Premult-alpha sprites need RGB and A scaled together — fading via modulate.a alone
-	# leaves RGB at full brightness and the avatar reads as too bright mid-fade
-	new.visible = false
-	new.modulate = Color(0, 0, 0, 0)
-	$OriginMotion.add_child(new)
-	origin = new
-
-	# Build the ordered sprite list from validated entries. Metadata is selected
-	# by shape rather than a hard-coded name list so schema additions remain safe.
-	_load_keys = []
-	for _it in data:
-		var _entry: Variant = data[_it]
-		if _entry is Dictionary and _entry.get("type") == "sprite":
-			_load_keys.append(_it)
-	var _load_total = _load_keys.size()
-	_load_data_ref = data
-	_load_results = []
-	_load_results.resize(_load_total)
-
-	var _load_dialog: ModalDialogUI = null
-	if _load_total > 0:
-		# Run PNG decode + premult + polygon generation in parallel across worker threads
-		_load_group_id = WorkerThreadPool.add_group_task(_load_worker_decode, _load_total, -1, false, "Avatar load")
-		if _load_group_id < 0:
-			Global.notify_user("Avatar worker pool unavailable; using synchronous image setup.")
-		var _load_start_ms = Time.get_ticks_msec()
-		var _last_bar_ms = _load_start_ms
-		# Only show the bar if decode is still running after 200 ms — fast loads skip it
-		const BAR_SHOW_DELAY_MS = 200
-		while _load_group_id >= 0 and !WorkerThreadPool.is_group_task_completed(_load_group_id):
-			await get_tree().process_frame
-			var now = Time.get_ticks_msec()
-			if _load_dialog == null and now - _load_start_ms >= BAR_SHOW_DELAY_MS:
-				# _create_progress_dialog attaches the dialog to UILayer itself,
-				# and it stays centred on its own.
-				_load_dialog = _create_progress_dialog("Loading avatar...")
-			if _load_dialog != null and now - _last_bar_ms >= 100:
-				_last_bar_ms = now
-				var done = WorkerThreadPool.get_group_processed_element_count(_load_group_id)
-				_load_dialog.set_progress(float(done) / float(_load_total))
-		if _load_group_id >= 0:
-			WorkerThreadPool.wait_for_group_task_completion(_load_group_id)
-			_load_group_id = -1
-		if _load_dialog != null:
-			_load_dialog.set_progress(1.0)
-
-	# Spawn sprites synchronously now that decode/polygon work is prebuilt — this
-	# loop is fast because each spriteObject._ready just adopts the prebuilt data
-	for i in range(_load_total):
-		var item = _load_keys[i]
-		var sprite = spriteObject.instantiate()
-		SpriteState.apply_before_ready(sprite, data[item])
-
-		# Hand off the thread-decoded results, or fall back to the JSON-base64 path
-		# if decode failed for some reason (sprite._ready will retry from base64)
-		var r = _load_results[i] if i < _load_results.size() else null
-		if r != null and r.get("ok", false):
-			sprite.loadedImage = r["image"]
-			sprite._prebuilt_pma_image = r["pma_image"]
-			sprite._prebuilt_polygons = r["polygons"]
-			if r.has("normal_image"):
-				sprite.loadedNormalImage = r["normal_image"]
-		else:
-			if data[item].has("imageData"):
-				sprite.loadedImageData = data[item]["imageData"]
-			if data[item].has("normalImageData"):
-				sprite.loadedNormalData = data[item]["normalImageData"]
-
-		# Reparent is done synchronously below — don't fire the per-sprite 0.1s timer cascade
-		sprite._skip_ready_reparent = true
-
-		origin.add_child(sprite)
-		sprite.position = ValueCodec.vector2_value(data[item]["pos"])
-		# No physics ticks until the avatar is revealed
-		sprite.set_process(false)
-
-	# Release thread-state references so the result images can be freed once consumed
-	_load_keys = []
-	_load_data_ref = null
-	_load_results = []
-
-	# Single pass over every spawned sprite:
-	#   - reparent to declared parent (replaces the per-sprite 0.1s _ready timer cascade)
-	#   - pre-warm remakePolygon for animated sprites (so first-tick rebuild is a no-op)
-	#   - re-enable physics so the first _process tick (drag snap, wobble) lands before reveal
-	for spr in Global.sprite_nodes():
-		if spr.parentId != null:
-			var parent_sprite := Global.sprite_by_id(spr.parentId)
-			if parent_sprite != null:
-				spr.reparent(parent_sprite.sprite, false)
-				spr.parentSprite = parent_sprite
-				spr.set_owner(parent_sprite.sprite)
-				spr._force_drag_snap = true
-			else:
-				spr.parentId = null
-				spr.parentSprite = null
-		if spr.frames > 1:
-			spr.remakePolygon()
-		spr.set_process(true)
-
-	# Do remaining heavy post-load setup while the avatar is still hidden and the bar is
-	# at 100% — this keeps the upcoming fade-in free of frame stutters
-	_create_light_gizmo()
-	if data.has("_light"):
-		_apply_light_data(data["_light"])
-
-	# Restore the global eye-tracking kill switch (legacy avatars default to on)
-	Global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
-
-	# Restore the per-avatar NDI crop box so the avatar arrives pre-framed.
-	# Absent in old/third-party saves; keep the current crop in that case rather
-	# than snapping to a default. recalculate_now() below reframes off this value.
-	if data.has("_ndiCropRect"):
-		var _cr = data["_ndiCropRect"]
-		if _cr is Array and _cr.size() == 4:
-			Saving.settings["ndiCropRect"] = [float(_cr[0]), float(_cr[1]), float(_cr[2]), float(_cr[3])]
-	elif data.has("_ndiRulerY"):
-		# Legacy crop-line-only save: keep the current box, snap its bottom to the line
-		var _b = float(data["_ndiRulerY"])
-		var _cur = Saving.settings.get("ndiCropRect", [-500.0, _b - 1000.0, 500.0, _b])
-		Saving.settings["ndiCropRect"] = [float(_cur[0]), minf(float(_cur[1]), _b - 64.0), float(_cur[2]), _b]
-
-	changeCostume(1)
-	# The session-recovery file is ephemeral — never promote it to lastAvatar,
-	# otherwise startup auto-load and Reset would pull from it instead of the
-	# user's actual saved avatar.
-	if path != AvatarSaveController.SESSION_SAVE_PATH and not Saving.is_isolated_session():
-		Saving.settings["lastAvatar"] = path
-		# Persist immediately — _exit_tree isn't reliable across all shutdown paths
-		Saving.write_settings(Saving.settingsPath)
-	await Global.spriteList.updateData()
-
-	onWindowSizeChange()
-
-	# NDI reference auto-detect: now that all sprites are parented correctly we can
-	# pick the ref layer here, behind the progress bar, instead of via a T+1s timer
-	var has_ref = false
-	for spr in Global.sprite_nodes():
-		if spr.ndiRefLayer:
-			has_ref = true
-			break
-	if !has_ref:
-		# Prefer "Neck", fall back to "Body" — name must start with the keyword
-		# (e.g. "Neck", "Body 2" match but "Sputnik Body" does not)
-		var ref_candidates = ["neck", "body"]
-		for keyword in ref_candidates:
-			var found = false
-			for spr in Global.sprite_nodes():
-				var filename = spr.path.get_file().strip_edges().to_lower()
-				while filename.contains("."):
-					filename = filename.get_basename()
-				if filename == keyword or filename.begins_with(keyword + " "):
-					spr.ndiRefLayer = true
-					found = true
-					break
-			if found:
-				break
-
-	# Force the NDI viewport's framing recomputation synchronously now instead of
-	# waiting for the 1s debounce — eliminates the framing hitch ~1s after reveal
-	if ndi_manager != null:
-		ndi_manager.recalculate_now()
-
-	if _load_dialog != null:
-		_load_dialog.queue_free()
-
-	Global.notify_user("Loaded avatar at: " + path)
-
-	# Reveal the finished avatar and fade it in — scale RGB and A together for premult-alpha
-	origin.visible = true
-	var fade = create_tween()
-	fade.tween_property(origin, "modulate", Color(1, 1, 1, 1), 0.3)
+	return await avatar_controller.load_avatar(path)
 
 # The one progress dialog: save, load, PSD/APNG import, video encoding. Layout,
 # palette, centring and the modal input guard all come from ModalDialogUI, which
@@ -1151,36 +462,9 @@ func onScreenshotReleased() -> void:
 		capture_controller.on_capture_released()
 
 
-# Build the same Dictionary structure manual save and session auto-save both
-# write out. Image references go in `_image_ref` / `_normal_image_ref` so the
-# AvatarSaveController can base64-encode them off the main thread.
+# Save/session workers call this scene-compatible snapshot facade.
 func _build_avatar_save_data() -> Dictionary:
-	var data = {}
-	var nodes = Global.sprite_nodes()
-	var id = 0
-	for child in nodes:
-		if child.type == "sprite":
-			data[id] = SpriteState.capture_save(child)
-		id += 1
-
-	if _light_gizmo != null:
-		data["_light"] = {
-			"pos": var_to_str(_light_gizmo.position),
-			"energy": _light_gizmo.light_energy,
-			"color": var_to_str(_light_gizmo.light_color),
-			"range": _light_gizmo.light_range,
-			"enabled": _light_gizmo.light_enabled,
-		}
-	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
-	data["_schemaVersion"] = AvatarSave.CURRENT_VERSION
-	# Per-avatar NDI crop box (origin-relative [left, top, right, bottom]). Travels
-	# with the avatar so a purchased/shared avatar arrives pre-framed and never needs
-	# manual re-cropping. The legacy "_ndiRulerY" (box bottom) is written too so the
-	# save still pre-frames on older builds.
-	var _crop = Saving.settings.get("ndiCropRect", [-500.0, -800.0, 500.0, 200.0])
-	data["_ndiCropRect"] = _crop
-	data["_ndiRulerY"] = float(_crop[3])
-	return data
+	return avatar_controller.build_save_data()
 
 func _on_link_button_pressed():
 	if Global.begin_reparenting():
@@ -1189,363 +473,29 @@ func _on_link_button_pressed():
 
 # --- Unified Replace Flow ---
 
-var _replace_dialog: FileDialog = null
-
-func _create_replace_dialog():
-	_replace_dialog = FileDialog.new()
-	_replace_dialog.title = "Replace"
-	_replace_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-	_replace_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	_replace_dialog.filters = PackedStringArray(["*.psd;PSD Files", "*.png;PNG Files"])
-	_replace_dialog.use_native_dialog = true
-	_replace_dialog.file_selected.connect(_on_replace_file_selected)
-	add_child(_replace_dialog)
-
 func _on_replace_button_pressed():
-	if _replace_dialog == null:
-		_create_replace_dialog()
-	_replace_dialog.popup_centered(Vector2i(600, 400))
+	import_controller.show_replace_dialog()
 
-func _on_replace_file_selected(path: String):
-	if path.get_extension().to_lower() == "psd":
-		_handle_replace_from_psd(path)
-	elif path.get_extension().to_lower() == "png":
-		_handle_replace_single_png(path)
-	else:
-		Global.notify_user("Unsupported file type: " + path.get_extension())
-
-static func _extract_sprite_name(sprite_path: String) -> String:
-	if sprite_path.begins_with("psd://"):
-		return sprite_path.substr(6)
-	if sprite_path.begins_with("animated://"):
-		return sprite_path.substr(11)
-	var filename = sprite_path.get_file()
-	var ext = filename.get_extension()
-	if ext != "":
-		filename = filename.substr(0, filename.length() - ext.length() - 1)
-	return filename
-
-func _handle_replace_from_psd(path: String):
-	_begin_psd_parse(path, true)
-
-func _show_replace_review_from_psd(psd_result):
-	var sprites = Global.sprite_nodes()
-
-	# Build sprite name lookup (case-insensitive) -> array of sprites
-	var sprite_lookup: Dictionary = {}
-	for s in sprites:
-		var sname = _extract_sprite_name(s.path).to_lower()
-		if !sprite_lookup.has(sname):
-			sprite_lookup[sname] = []
-		sprite_lookup[sname].append(s)
-
-	# Build PSD layer lookup (case-insensitive, skip invalid layers)
-	var layer_lookup: Dictionary = {}
-	for layer in psd_result.layers:
-		if layer.width <= 0 or layer.height <= 0:
-			continue
-		if layer.image == null:
-			continue
-		layer_lookup[layer.name.to_lower()] = layer
-
-	# Compute matched, new, orphaned
-	var matched: Array = []
-	var matched_sprite_ids: Dictionary = {}
-	var matched_layer_names: Dictionary = {}
-
-	for lname in layer_lookup:
-		var layer = layer_lookup[lname]
-		if sprite_lookup.has(lname):
-			for s in sprite_lookup[lname]:
-				matched.append({"sprite": s, "name": layer.name, "image": layer.image})
-				matched_sprite_ids[s.get_instance_id()] = true
-			matched_layer_names[lname] = true
-
-	# New items: layers not matched to any sprite
-	var new_items: Array = []
-	var canvas_center = Vector2(psd_result.width, psd_result.height) * 0.5
-	for lname in layer_lookup:
-		if !matched_layer_names.has(lname):
-			var layer = layer_lookup[lname]
-			var layer_center = Vector2(
-				(layer.left + layer.right) * 0.5,
-				(layer.top + layer.bottom) * 0.5
-			)
-			var pos = layer_center - canvas_center
-			new_items.append({"name": layer.name, "image": layer.image, "position": pos})
-
-	# Orphaned sprites: in project but not in source
-	var orphaned: Array = []
-	for s in sprites:
-		if !matched_sprite_ids.has(s.get_instance_id()):
-			orphaned.append(s)
-
-	var canvas_size = Vector2(psd_result.width, psd_result.height)
-	replaceReviewDialog.setup(matched, new_items, orphaned, canvas_size)
-	replaceReviewDialog.visible = true
-
-func _handle_replace_from_folder(folder_path: String):
-	var items: Array = []
-	var dir = DirAccess.open(folder_path)
-	if dir == null:
-		Global.notify_user("Cannot open folder: " + folder_path)
-		return
-	dir.list_dir_begin()
-	var file_name = dir.get_next()
-	while file_name != "":
-		if !dir.current_is_dir() and file_name.get_extension().to_lower() == "png":
-			var full_path = folder_path.path_join(file_name)
-			var img = Image.new()
-			if img.load(full_path) == OK:
-				var name = file_name.substr(0, file_name.length() - file_name.get_extension().length() - 1)
-				items.append({"name": name, "image": img, "position": Vector2.ZERO})
-		file_name = dir.get_next()
-	dir.list_dir_end()
-
-	if items.size() == 0:
-		Global.notify_user("No PNG files found in folder.")
-		return
-
-	_show_replace_review_from_items(items, Vector2.ZERO)
-
-func _show_replace_review_from_items(items: Array, canvas_size: Vector2):
-	var sprites = Global.sprite_nodes()
-
-	# Build sprite name lookup (case-insensitive)
-	var sprite_lookup: Dictionary = {}
-	for s in sprites:
-		var sname = _extract_sprite_name(s.path).to_lower()
-		if !sprite_lookup.has(sname):
-			sprite_lookup[sname] = []
-		sprite_lookup[sname].append(s)
-
-	var matched: Array = []
-	var matched_sprite_ids: Dictionary = {}
-	var matched_item_names: Dictionary = {}
-
-	for item in items:
-		var iname = item["name"].to_lower()
-		if sprite_lookup.has(iname):
-			for s in sprite_lookup[iname]:
-				matched.append({"sprite": s, "name": item["name"], "image": item["image"]})
-				matched_sprite_ids[s.get_instance_id()] = true
-			matched_item_names[iname] = true
-
-	# New items: not matched
-	var new_items: Array = []
-	for item in items:
-		if !matched_item_names.has(item["name"].to_lower()):
-			new_items.append(item)
-
-	# Orphaned sprites
-	var orphaned: Array = []
-	for s in sprites:
-		if !matched_sprite_ids.has(s.get_instance_id()):
-			orphaned.append(s)
-
-	replaceReviewDialog.setup(matched, new_items, orphaned, canvas_size)
-	replaceReviewDialog.visible = true
-
-func _handle_replace_single_png(path: String):
-	if Global.heldSprite == null:
-		Global.notify_user("Select a sprite first to replace with a single PNG.")
-		return
-
-	# Check for APNG
-	if APNGParser.is_apng(path):
-		_start_animated_import(path, true)
-		return
-
-	# Show simple confirmation dialog
-	var sprite_name = _extract_sprite_name(Global.heldSprite.path)
-	var file_name = path.get_file()
-	_show_single_replace_confirm(path, sprite_name, file_name)
-
-var _single_replace_dialog: Node2D = null
-var _single_replace_path: String = ""
-# The prompt names one layer, so it has to act on that layer. Reading the live
-# selection when the button is pressed replaced whatever happened to be held by
-# then, which is not what the user was asked to confirm.
-var _single_replace_target = null
-
-func _show_single_replace_confirm(path: String, sprite_name: String, file_name: String):
-	_single_replace_path = path
-	_single_replace_target = Global.heldSprite
-
-	_single_replace_dialog = Node2D.new()
-	_single_replace_dialog.z_index = 4095
-	_single_replace_dialog.visibility_layer = 2
-	_single_replace_dialog.position = camera.position
-
-	var blocker = Area2D.new()
-	blocker.add_to_group("canvas_input_blocker")
-	var col = CollisionShape2D.new()
-	var shape = RectangleShape2D.new()
-	shape.size = Vector2(3840, 2160)
-	col.shape = shape
-	blocker.add_child(col)
-	_single_replace_dialog.add_child(blocker)
-
-	var bg = ColorRect.new()
-	bg.position = Vector2(-180, -60)
-	bg.size = Vector2(360, 120)
-	bg.color = Color(0.15, 0.15, 0.15, 1.0)
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_single_replace_dialog.add_child(bg)
-
-	var label = Label.new()
-	label.position = Vector2(-170, -50)
-	label.size = Vector2(340, 48)
-	label.text = "Replace \"" + sprite_name + "\" with \"" + file_name + "\"?"
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", 14)
-	_single_replace_dialog.add_child(label)
-
-	var buttons = HBoxContainer.new()
-	buttons.position = Vector2(-100, 10)
-	buttons.size = Vector2(200, 40)
-	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	buttons.add_theme_constant_override("separation", 16)
-	_single_replace_dialog.add_child(buttons)
-
-	var replaceBtn = Button.new()
-	replaceBtn.text = "Replace"
-	replaceBtn.custom_minimum_size = Vector2(80, 32)
-	replaceBtn.pressed.connect(_on_single_replace_confirmed)
-	buttons.add_child(replaceBtn)
-
-	var cancelBtn = Button.new()
-	cancelBtn.text = "Cancel"
-	cancelBtn.custom_minimum_size = Vector2(80, 32)
-	cancelBtn.pressed.connect(_on_single_replace_cancelled)
-	buttons.add_child(cancelBtn)
-
-	add_child(_single_replace_dialog)
-
-func _on_single_replace_confirmed():
-	if _single_replace_dialog != null:
-		_single_replace_dialog.queue_free()
-		_single_replace_dialog = null
-
-	var target = _single_replace_target
-	_single_replace_target = null
-	if target == null or not is_instance_valid(target):
-		Global.notify_user("The layer to replace is no longer in the rig.")
-		return
-
-	var path = _single_replace_path
-	UndoManager.save_state()
-	target.replaceSprite(path)
-	UndoManager.invalidate_image(target.id)
-	Global.spriteList.updateData()
-	Global.notify_user("Replaced sprite with: " + path.get_file())
-
-func _on_single_replace_cancelled():
-	if _single_replace_dialog != null:
-		_single_replace_dialog.queue_free()
-		_single_replace_dialog = null
-	_single_replace_target = null
-	Global.notify_user("Replace cancelled.")
-
-# --- Replace Review Dialog Handlers ---
 
 func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_size: Vector2, remove_orphans: bool):
-	UndoManager.save_state()
-	var replaced = 0
-	var added = 0
-	var removed = 0
+	import_controller.apply_replace_review(matched, new_items, orphaned_sprites, canvas_size, remove_orphans)
 
-	# Replace matched sprites
-	for entry in matched:
-		entry["sprite"].replaceSpriteFromData(entry["image"], entry["name"])
-		UndoManager.invalidate_image(entry["sprite"].id)
-		replaced += 1
-
-	# Add new items (user-selected via checkboxes)
-	for item in new_items:
-		add_image_from_data(item["image"], item["name"], item["position"])
-		added += 1
-
-	# Remove orphans (if opted in)
-	if remove_orphans:
-		for s in orphaned_sprites:
-			if is_instance_valid(s):
-				if Global.heldSprite == s:
-					Global.clear_selection()
-				s.queue_free()
-				removed += 1
-
-	Global.spriteList.updateData()
-	ndi_mark_dirty()
-
-	var msg = "Replaced " + str(replaced) + " layers"
-	if added > 0:
-		msg += ", added " + str(added) + " new"
-	if removed > 0:
-		msg += ", removed " + str(removed) + " orphaned"
-	Global.notify_user(msg + ".")
 
 func _on_replace_cancelled():
-	Global.notify_user("Replace cancelled.")
+	import_controller.cancel_replace_review()
+
+func _on_duplicate_button_pressed() -> void:
+	avatar_controller.duplicate_selected()
 
 
-func _on_duplicate_button_pressed():
-	if Global.heldSprite == null:
-		return
-	UndoManager.save_state()
-	var id := _next_sprite_id()
-	
-	var sprite = spriteObject.instantiate()
-	SpriteState.copy_for_duplicate(Global.heldSprite, sprite)
-	sprite.id = id
+func changeCostumeStreamDeck(id: String) -> void:
+	avatar_controller.change_costume_from_device(id)
 
-	origin.add_child(sprite)
 
-	if Global.heldSprite.parentId != null and Global.heldSprite.parentSprite != null:
-		sprite._skip_ready_reparent = true
-		var newParent = Global.heldSprite.parentSprite
-		sprite.reparent(newParent.sprite, false)
-		sprite.parentId = Global.heldSprite.parentId
-		sprite.parentSprite = newParent
-		sprite.position = Global.heldSprite.position
-	else:
-		sprite.position = Global.heldSprite.position
+func changeCostume(newCostume) -> void:
+	avatar_controller.change_costume(int(newCostume))
 
-	Global.select_sprite(sprite)
 
-	Global.spriteList.updateData()
-
-	Global.notify_user("Duplicated sprite.")
-
-func changeCostumeStreamDeck(id: String):
-	match id:
-		"1":changeCostume(1)
-		"2":changeCostume(2)
-		"3":changeCostume(3)
-		"4":changeCostume(4)
-		"5":changeCostume(5)
-		"6":changeCostume(6)
-		"7":changeCostume(7)
-		"8":changeCostume(8)
-		"9":changeCostume(9)
-		"10":changeCostume(10)
-
-func changeCostume(newCostume):
-	costume = newCostume
-	Global.clear_selection()
-	var nodes = Global.sprite_nodes()
-	for sprite in nodes:
-		sprite.applyCostumeVisibility()   # costume membership, honoring a manual hide
-	Global.spriteEdit.layerSelected()
-	spriteList.updateAllVisible()
-	
-	if bounceOnCostumeChange:
-		onSpeak()
-
-	ndi_mark_dirty()
-	Global.notify_user("Change costume: " + str(newCostume))
-	
 func moveSpriteMenu(delta):
 
 	#moves sprite viewer editor thing around
@@ -1641,21 +591,7 @@ func bgInputSprite(node, keys_pressed):
 	spriteVisToggles.emit(keyStrings)
 
 func _on_clear_avatar_pressed():
-	UndoManager.save_state()
-	Global.clear_selection()
-	origin.queue_free()
-	var new = Node2D.new()
-	$OriginMotion.add_child(new)
-	origin = new
-	Global.spriteList.updateData()
-	onWindowSizeChange()
-	ndi_mark_dirty()
-	Global.notify_user("Cleared avatar.")
+	avatar_controller.clear_avatar()
 
 func _on_reset_avatar_pressed():
-	var path = Saving.settings["lastAvatar"]
-	if path == null or path == "":
-		Global.notify_user("No avatar to reset.")
-		return
-	_on_load_dialog_file_selected(path)
-	Global.notify_user("Reset avatar to last saved state.")
+	await avatar_controller.reset_avatar()

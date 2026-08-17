@@ -125,10 +125,11 @@ func _test_ndi_geometry(t) -> void:
 func _test_integration_lifecycles(t) -> void:
 	var source_root := _source_root()
 	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
+	var import_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/import_controller.gd"))
 	var ndi_source := FileAccess.get_file_as_string(source_root.path_join("ndi/ndi_output_manager.gd"))
 	var streamdeck_source := FileAccess.get_file_as_string(source_root.path_join("addons/godot-streamdeck-addon/singleton.gd"))
 	t.assert_true(main_source.contains("_shutdown_import_workers()"), "main explicitly shuts down import workers")
-	t.assert_true(main_source.contains("worker.wait_to_finish()"), "main joins import workers before scene teardown")
+	t.assert_true(import_source.contains("worker.wait_to_finish()"), "the import controller joins workers before scene teardown")
 	t.assert_true(ndi_source.contains("size_changed.disconnect"), "NDI manager disconnects its root viewport signal")
 	t.assert_true(ndi_source.contains("_destroy_ndi_pipeline(true)"), "NDI manager performs deterministic shutdown cleanup")
 	t.assert_true(ndi_source.contains("if immediate:\n\t\tndi_viewport = null"), "NDI shutdown leaves scene-owned containers to recursive teardown")
