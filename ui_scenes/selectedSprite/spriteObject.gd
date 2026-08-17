@@ -1499,7 +1499,11 @@ func setCollisionActive(active: bool) -> void:
 # Every collision rebuild goes through here, so shapes built while the player
 # page is up (loading an avatar, for one) start in the right state.
 func _build_collision(polygons: Array) -> bool:
-	var has_collision: bool = CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons)
+	# The traced polygons are in image-pixel space, so the whole image is the
+	# bound that is guaranteed to contain every opaque pixel the alpha test can
+	# accept. Sheets replace this with a per-frame rect in remakePolygon().
+	var bounds := Rect2(Vector2.ZERO, Vector2(imageData.get_size()))
+	var has_collision: bool = CollisionBuilder.populate_polygons(grabArea, outlineScene, polygons, bounds)
 	setCollisionActive(Global.main == null or Global.main.editMode)
 	return has_collision
 

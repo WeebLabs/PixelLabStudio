@@ -128,6 +128,69 @@ func _test_collision_geometry(t) -> void:
 	transparent.fill(Color.TRANSPARENT)
 	t.assert_true(CollisionDomain.alpha_polygons(transparent).is_empty(), "transparent images request fallback collision geometry")
 
+	_test_collision_shape_contract(t)
+
+
+# The collider is a broad phase only: mouse_cursor._is_pixel_opaque decides every
+# hit from the image alpha. So it has to CONTAIN the traced outlines (never clip
+# them, or clicks that work today would stop working) while staying one shape,
+# because a CollisionPolygon2D decomposes into pieces the broadphase re-fits on
+# every tick the avatar moves. The traced outlines themselves are what the user
+# sees around a selected layer and must survive untouched.
+func _test_collision_shape_contract(t) -> void:
+	# Two disjoint blocks, so the fixture traces more than one outline: with one
+	# outline the collider count cannot tell the two implementations apart.
+	var image := Image.create(64, 32, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	for y in range(6, 26):
+		for x in range(4, 22):
+			image.set_pixel(x, y, Color.WHITE)
+		for x in range(40, 58):
+			image.set_pixel(x, y, Color.WHITE)
+	var polygons := CollisionDomain.alpha_polygons(image)
+	t.assert_true(polygons.size() > 1, "the fixture traces more than one outline")
+
+	var area := Area2D.new()
+	var bounds := Rect2(Vector2.ZERO, Vector2(image.get_size()))
+	var added: bool = CollisionDomain.populate_polygons(area, _outline_scene(), polygons, bounds)
+	t.assert_true(added, "tracing produced collision geometry")
+
+	var colliders := 0
+	var outlines := 0
+	var shape: Shape2D = null
+	var shape_position := Vector2.ZERO
+	for child in area.get_children():
+		if child is CollisionShape2D:
+			colliders += 1
+			shape = child.shape
+			shape_position = child.position
+		elif child is CollisionPolygon2D:
+			colliders += 1
+		elif child is Line2D:
+			outlines += 1
+	t.assert_equal(colliders, 1, "a layer carries exactly one collider, whatever its outline count")
+	t.assert_true(shape is RectangleShape2D, "that collider is a rectangle, not a decomposed polygon")
+	t.assert_equal(outlines, polygons.size(), "every traced outline is still drawn")
+
+	# The bound must contain every traced point, or a click that lands today
+	# would miss tomorrow.
+	var rect := Rect2(shape_position - (shape as RectangleShape2D).size * 0.5, (shape as RectangleShape2D).size)
+	var contained := true
+	for polygon in polygons:
+		for point in polygon:
+			if not rect.has_point(point):
+				contained = false
+	t.assert_true(contained, "the collider contains every traced outline point")
+	area.free()
+
+
+func _outline_scene() -> PackedScene:
+	var line := Line2D.new()
+	var packed := PackedScene.new()
+	packed.pack(line)
+	line.free()
+	return packed
+
 
 func _test_shared_call_sites(t) -> void:
 	var source_root := _source_root()
