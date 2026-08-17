@@ -1,6 +1,8 @@
 extends Node2D
 class_name WigglePathEditor
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 # On-canvas editor for a layer's wiggle ribbon path (the appendage's spine). Lives
 # as a child of the layer's DragOrigin while Global.wigglePathMode is on for that
 # layer, so it inherits the content's transform and stays glued to the artwork as
@@ -77,7 +79,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				var wh := _hit_width_handle(tex)         # width grip
 				var pd := tex.distance_to(owner_sprite.wigglePath[ph]) if ph >= 0 else INF
 				var wd := tex.distance_to(_width_handle_tex(wh)) if wh >= 0 else INF
-				UndoManager.save_state()
+				MutationCommands.drag("wiggle-path", func(): return true)
 				if wh >= 0 and wd <= pd:
 					_width_drag = wh                     # grab the closer of the two
 				elif ph >= 0:
@@ -94,8 +96,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			var hit := _hit_handle(_mouse_tex())
 			if hit >= 0:
-				UndoManager.save_state()
-				_remove_point(hit)
+				MutationCommands.structural(func():
+					_remove_point(hit)
+					return true)
 				get_viewport().set_input_as_handled()
 
 	elif event is InputEventMouseMotion:

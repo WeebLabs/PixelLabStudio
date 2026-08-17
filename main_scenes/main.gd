@@ -7,6 +7,7 @@ const SaveControllerScene = preload("res://main_scenes/controllers/save_controll
 const AvatarControllerScene = preload("res://main_scenes/controllers/avatar_controller.gd")
 const ImportControllerScene = preload("res://main_scenes/controllers/import_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
+const InputCommands = preload("res://autoload/input/input_commands.gd")
 
 var editMode = true
 
@@ -274,6 +275,23 @@ func _create_light_gizmo():
 	_light_gizmo.position = Vector2(200, -200)
 	origin.add_child(_light_gizmo)
 
+# Public light accessors so history capture/restore never reaches into the
+# gizmo node reference. Returns null when lighting is not instantiated.
+func light_snapshot() -> Variant:
+	if _light_gizmo == null:
+		return null
+	return {
+		"pos": var_to_str(_light_gizmo.position),
+		"energy": _light_gizmo.light_energy,
+		"color": var_to_str(_light_gizmo.light_color),
+		"range": _light_gizmo.light_range,
+		"enabled": _light_gizmo.light_enabled,
+	}
+
+func apply_light_snapshot(data: Variant) -> void:
+	if data is Dictionary:
+		_apply_light_data(data)
+
 func _apply_light_data(ld: Dictionary):
 	if _light_gizmo == null:
 		return
@@ -489,7 +507,9 @@ func _on_duplicate_button_pressed() -> void:
 
 
 func changeCostumeStreamDeck(id: String) -> void:
-	avatar_controller.change_costume_from_device(id)
+	var command: Dictionary = InputCommands.decode_device_costume(id)
+	if command["command"] == "change_costume":
+		changeCostume(command["costume"])
 
 
 func changeCostume(newCostume) -> void:
@@ -525,70 +545,64 @@ func moveSpriteMenu(delta):
 
 	
 func _on_background_input_capture_bg_key_pressed(node, keys_pressed):
-	if Global.is_z_index_editor_active():
-		return
-	var keyStrings = []
+	for command in InputCommands.decode_background(_key_strings(keys_pressed), {
+		"z_editor_active": Global.is_z_index_editor_active(),
+		"file_dialog_open": fileSystemOpen,
+		"text_focus": Global.has_text_entry_focus(),
+		"awaiting_animation_bind": Global.is_awaiting_animation_key_capture(),
+		"awaiting_costume_index": settingsMenu.awaitingCostumeInput,
+		"costume_keys": costumeKeys,
+		"settings_has_mouse": settingsMenu.hasMouse,
+	}):
+		_run_background_command(command)
 
-	for i in keys_pressed:
-		if keys_pressed[i]:
-			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
 
-	if fileSystemOpen:
-		return
-	
-	if keyStrings.size() <= 0:
-		emit_signal("emptiedCapture")
-		return
-
-	# Animation tab "Bind key": capture the next key into the target clip instead
-	# of triggering anything.
-	if not keyStrings.is_empty() and Global.apply_animation_key_capture(keyStrings[0]):
-		return
-
-	if settingsMenu.awaitingCostumeInput >= 0:
-		
-		if keyStrings[0] == "Keycode1":
-			if !settingsMenu.hasMouse:
-				emit_signal("pressedKey")
-				return
-		
-		var currentButton = costumeKeys[settingsMenu.awaitingCostumeInput]
-		costumeKeys[settingsMenu.awaitingCostumeInput] = keyStrings[0]
-		Saving.settings["costumeKeys"] = costumeKeys
-		Global.notify_user("Changed costume " + str(settingsMenu.awaitingCostumeInput+1) + " hotkey from \"" + currentButton + "\" to \"" + keyStrings[0] + "\"")
-		emit_signal("pressedKey")
-	
-	for key in keyStrings:
-		var i = costumeKeys.find(key)
-		if i >= 0:
-			changeCostume(i+1)
-
-	# Animation key triggers — fire every layer's key-bound clips. Skipped while
-	# binding a costume key or typing into a text field.
-	if settingsMenu.awaitingCostumeInput < 0 and not Global.has_text_entry_focus():
-		for key in keyStrings:
+func _run_background_command(command: Dictionary) -> void:
+	match command["command"]:
+		"capture_emptied":
+			emit_signal("emptiedCapture")
+		"capture_rejected":
+			emit_signal("pressedKey")
+		"bind_animation_key":
+			Global.apply_animation_key_capture(command["key"])
+		"bind_costume_key":
+			var index: int = command["index"]
+			var previous: String = costumeKeys[index]
+			costumeKeys[index] = command["key"]
+			Saving.settings["costumeKeys"] = costumeKeys
+			Global.notify_user("Changed costume " + str(index + 1) + " hotkey from \"" + previous + "\" to \"" + command["key"] + "\"")
+			emit_signal("pressedKey")
+		"change_costume":
+			changeCostume(command["costume"])
+		"trigger_animation_key":
 			for s in Global.sprite_nodes():
 				if s.type == "sprite":
-					s.triggerAnimationKey(key)
-	
+					s.triggerAnimationKey(command["key"])
 
 
 func bgInputSprite(node, keys_pressed):
-	if Global.is_z_index_editor_active():
-		return
-	if fileSystemOpen:
-		return
-	var keyStrings = []
-	
-	for i in keys_pressed:
-		if keys_pressed[i]:
-			keyStrings.append(OS.get_keycode_string(i) if !OS.get_keycode_string(i).strip_edges().is_empty() else "Keycode" + str(i))
-	
-	if keyStrings.size() <= 0:
-		visibility_binding_armed.emit()
-		return
-	
-	spriteVisToggles.emit(keyStrings)
+	var command: Dictionary = InputCommands.decode_visibility_capture(_key_strings(keys_pressed), {
+		"z_editor_active": Global.is_z_index_editor_active(),
+		"file_dialog_open": fileSystemOpen,
+	})
+	match command["command"]:
+		"visibility_capture_armed":
+			visibility_binding_armed.emit()
+		"visibility_keys_captured":
+			spriteVisToggles.emit(command["keys"])
+
+
+# Background hooks deliver a keycode -> held map; commands are decoded from the
+# readable key names, so the conversion happens once here.
+func _key_strings(keys_pressed) -> Array:
+	var names: Array = []
+	for code in keys_pressed:
+		if not keys_pressed[code]:
+			continue
+		var name := OS.get_keycode_string(code)
+		names.append(name if not name.strip_edges().is_empty() else "Keycode" + str(code))
+	return names
+
 
 func _on_clear_avatar_pressed():
 	avatar_controller.clear_avatar()

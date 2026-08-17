@@ -2,6 +2,7 @@ extends Node
 
 const MAIN_SCENE := preload("res://main_scenes/main.tscn")
 const AvatarSaveControllerScript = preload("res://main_scenes/controllers/save_controller.gd")
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 
 const REGRESSION_FIXTURE := "res://tests/fixtures/avatar_scene_regression.json"
 const INVALID_FIXTURE := "res://tests/fixtures/avatar_duplicate_id.json"
@@ -46,6 +47,7 @@ func _run() -> void:
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_costumes()
+	await _test_command_history()
 	await _test_rejected_load_preserves_avatar()
 	await _test_save_load_round_trip()
 
@@ -266,6 +268,114 @@ func _test_costumes() -> void:
 		await get_tree().process_frame
 		assert_false(costume_five.visible, "manual layer hiding survives costume changes")
 		costume_five.userHidden = false
+
+
+# Phase 14: every user mutation reaches history through MutationCommands, so
+# these run the real commands against the real scene and undo/redo them.
+func _test_command_history() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	_main.changeCostume(1)
+	Global.select_sprite(sprite)
+	await get_tree().process_frame
+
+	# Discrete command.
+	var original_blend: int = sprite.blendMode
+	var depth_before := UndoManager.history_depth()
+	assert_true(MutationCommands.set_layer_property(sprite, "blendMode", original_blend + 1), "a production discrete command applies")
+	assert_equal(UndoManager.history_depth(), depth_before + 1, "a discrete command adds one history entry")
+	UndoManager.undo()
+	await get_tree().process_frame
+	assert_equal(sprite.blendMode, original_blend, "undo restores the pre-command value")
+	UndoManager.redo()
+	await get_tree().process_frame
+	assert_equal(sprite.blendMode, original_blend + 1, "redo reapplies the command")
+	UndoManager.undo()
+	await get_tree().process_frame
+	assert_equal(sprite.blendMode, original_blend, "the layer is left as it was found")
+
+	# Unchanged writes must not accumulate history the user has to undo through.
+	depth_before = UndoManager.history_depth()
+	assert_false(MutationCommands.set_layer_property(sprite, "blendMode", original_blend), "re-writing the current value is not a change")
+	assert_false(MutationCommands.structural(func(): return false), "a no-op structural command reports no change")
+	assert_equal(UndoManager.history_depth(), depth_before, "no-op commands leave the history untouched")
+
+	# Continuous gesture: one entry for the whole drag, fully reverted by one undo.
+	var original_opacity: float = sprite.opacity
+	MutationCommands.end_gesture()
+	depth_before = UndoManager.history_depth()
+	for step in [0.9, 0.8, 0.7, 0.6]:
+		MutationCommands.drag_layer_property(sprite, "opacity", step, "slider")
+	assert_equal(UndoManager.history_depth(), depth_before + 1, "a continuous drag produces one history entry")
+	assert_approx(sprite.opacity, 0.6, 0.0001, "every drag step reaches the layer")
+	UndoManager.undo()
+	await get_tree().process_frame
+	assert_approx(sprite.opacity, original_opacity, 0.0001, "one undo reverts the whole drag")
+	MutationCommands.end_gesture()
+
+	# Structural command: deleting a layer and restoring it rebuilds the scene.
+	var doomed = Global.sprite_by_id(COSTUME_TWO_ID)
+	if doomed != null:
+		var count_before := Global.sprite_count()
+		MutationCommands.structural(func():
+			Global.unlinkChildren(doomed)
+			doomed.queue_free()
+			return true)
+		Global.clear_selection()
+		await get_tree().process_frame
+		assert_equal(Global.sprite_count(), count_before - 1, "a structural delete command removes the layer")
+		UndoManager.undo()
+		await get_tree().process_frame
+		assert_equal(Global.sprite_count(), count_before, "undo restores the deleted layer")
+		assert_not_null(Global.sprite_by_id(COSTUME_TWO_ID), "the restored layer keeps its identity")
+
+	# A restored child re-attaches to its parent in the same frame. Restore used
+	# to lean on the sprite's deferred 0.1s reparent timer, which left the
+	# hierarchy briefly wrong and outlived a short session.
+	var nested = Global.sprite_by_id(NESTED_ID)
+	if nested != null and nested.parentId != null:
+		var parent_id = nested.parentId
+		MutationCommands.structural(func():
+			nested.queue_free()
+			return true)
+		Global.clear_selection()
+		await get_tree().process_frame
+		UndoManager.undo()
+		var restored_child = Global.sprite_by_id(NESTED_ID)
+		assert_not_null(restored_child, "undo restores the nested layer")
+		if restored_child != null:
+			assert_equal(restored_child.parentId, parent_id, "the restored child keeps its recorded parent")
+			assert_not_null(restored_child.parentSprite, "the restored child is linked to its parent without waiting on a timer")
+			if restored_child.parentSprite != null:
+				assert_equal(restored_child.parentSprite.id, parent_id, "the restored child is linked to the right parent")
+		await get_tree().process_frame
+
+	# Undo must not resurrect a layer the user hid by hand: visibility is
+	# re-derived through the layer policy, which reads userHidden.
+	var hidden = Global.sprite_by_id(BASE_ID)
+	if hidden != null:
+		hidden.userHidden = true
+		hidden.applyCostumeVisibility()
+		assert_false(hidden.visible, "a hand-hidden layer starts hidden")
+		MutationCommands.set_layer_property(hidden, "stretchAmount", hidden.stretchAmount + 1)
+		UndoManager.undo()
+		await get_tree().process_frame
+		assert_false(hidden.visible, "undo leaves a hand-hidden layer hidden")
+		hidden.userHidden = false
+		hidden.applyCostumeVisibility()
+
+	# The history stays bounded rather than growing without limit.
+	for step in range(UndoManager.MAX_HISTORY + 10):
+		MutationCommands.set_layer_property(sprite, "stretchAmount", float(step % 7) + 1.0)
+	assert_true(UndoManager.history_depth() <= UndoManager.MAX_HISTORY, "history stays within its bound under sustained editing")
+
+	# Every command above either reverted itself or restored what it removed, so
+	# the avatar is left exactly as the earlier tests set it up.
+	MutationCommands.end_gesture()
+	_main.changeCostume(1)
+	await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "the command history walk leaves the avatar intact")
 
 
 func _test_rejected_load_preserves_avatar() -> void:

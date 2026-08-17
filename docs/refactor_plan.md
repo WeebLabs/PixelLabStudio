@@ -359,6 +359,26 @@ Acceptance: user mutations are undoable through one canonical path, continuous
 input produces one logical history entry, undo has no UI knowledge, save/load
 and all ten costumes round-trip, and production tests cover command undo/redo.
 
+> Completed: 2026-08-17 — `autoload/domain/mutation_commands.gd` is the single
+> canonical mutation path, with narrow commands for discrete single-property,
+> continuous drag, structured-field, structural, and awaited bulk work; each
+> owns its snapshot boundary once and aborts to discard a no-op entry.
+> All 74 former `save_state()` call sites were migrated, and a source contract
+> fails the build if any production file outside the command layer opens a
+> transaction. `UndoManager` gained `begin`/`commit`/`abort`, gesture-keyed
+> continuous edits, and a `state_restored(scope)` signal; every scene and
+> sidebar consequence of a restore moved to `AvatarController.on_state_restored()`.
+> Foreground, background, and Stream Deck input share the pure decoder in
+> `autoload/input/input_commands.gd`, preserving the existing focus guards while
+> stateful tap-versus-hold timing stays in `Global`. Four defects surfaced by the
+> migration were fixed: clip rename captured no history, restore un-hid
+> eye-hidden layers, no-op commands left dead entries, and restored sprites
+> reparented on a deferred timer that leaked at exit. The cumulative Godot 4.6.3
+> gate passes 476 real-scene assertions and 878 isolated assertions, performance
+> budgets, active NDI teardown, and the standalone macOS pack export, with no
+> leaked ObjectDB instances. Stop here before Phase 15 unless explicitly
+> authorized to continue.
+
 ## Phase 15 — Performance and lifecycle qualification
 
 - Profile load, costume, hierarchy, sidebar, animation, undo-memory, import

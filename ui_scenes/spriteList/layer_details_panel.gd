@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 var _global: Node
 var _undo_manager: Node
 var _ignore_bounce: CheckBox
@@ -52,22 +54,23 @@ func _checkboxes() -> Array:
 func _on_ignore_bounce_toggled(pressed: bool) -> void:
 	if _global.heldSprite == null:
 		return
-	_undo_manager.save_state()
-	_global.heldSprite.ignoreBounce = pressed
+	MutationCommands.set_layer_property(_global.heldSprite, "ignoreBounce", pressed)
 
 
 func _on_clip_linked_toggled(pressed: bool) -> void:
 	if _global.heldSprite == null:
 		return
-	_undo_manager.save_state()
-	_global.heldSprite.setClip(pressed)
+	MutationCommands.structural(func():
+		if _global.heldSprite.clipped == pressed:
+			return false
+		_global.heldSprite.setClip(pressed)
+		return true)
 
 
 func _on_static_toggled(pressed: bool) -> void:
 	if _global.heldSprite == null:
 		return
-	_undo_manager.save_state()
-	_global.heldSprite.staticElement = pressed
+	MutationCommands.set_layer_property(_global.heldSprite, "staticElement", pressed)
 	if not pressed:
 		_global.heldSprite._force_drag_snap = true
 
@@ -75,10 +78,11 @@ func _on_static_toggled(pressed: bool) -> void:
 func _on_ndi_reference_toggled(pressed: bool) -> void:
 	if _global.heldSprite == null:
 		return
-	_undo_manager.save_state()
-	if pressed:
-		for sprite in _global.sprite_nodes():
-			if sprite != _global.heldSprite:
-				sprite.ndiRefLayer = false
-	_global.heldSprite.ndiRefLayer = pressed
+	MutationCommands.structural(func():
+		if pressed:
+			for sprite in _global.sprite_nodes():
+				if sprite != _global.heldSprite:
+					sprite.ndiRefLayer = false
+		_global.heldSprite.ndiRefLayer = pressed
+		return true)
 	_global.main.ndi_mark_dirty()

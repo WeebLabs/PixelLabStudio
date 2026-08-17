@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 var _owner: Node
 var _global: Node
 var _undo_manager: Node
@@ -80,16 +82,18 @@ func _on_file_selected(path: String) -> void:
 	if image.load(path) != OK:
 		_global.notify_user("Failed to load normal map.")
 		return
-	_undo_manager.save_state()
-	_global.heldSprite.setNormalMap(image, path)
-	_undo_manager.invalidate_normal(_global.heldSprite.id)
+	MutationCommands.structural(func():
+		_global.heldSprite.setNormalMap(image, path)
+		_undo_manager.invalidate_normal(_global.heldSprite.id)
+		return true)
 	sync()
 
 
 func _on_clear_pressed() -> void:
 	if _global.heldSprite == null or not _global.heldSprite.hasNormalMap():
 		return
-	_undo_manager.save_state()
-	_global.heldSprite.clearNormalMap()
-	_undo_manager.invalidate_normal(_global.heldSprite.id)
+	MutationCommands.structural(func():
+		_global.heldSprite.clearNormalMap()
+		_undo_manager.invalidate_normal(_global.heldSprite.id)
+		return true)
 	sync()

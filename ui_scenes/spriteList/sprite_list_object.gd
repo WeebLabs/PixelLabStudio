@@ -1,5 +1,7 @@
 extends PanelContainer
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 var sprite = null
 var parent = null
 var spritePath = ""
@@ -224,8 +226,9 @@ func _select():
 		return
 
 	if Global.heldSprite != null and Global.reparentMode:
-		UndoManager.save_state()
-		Global.linkSprite(Global.heldSprite, sprite)
+		MutationCommands.structural(func():
+			Global.linkSprite(Global.heldSprite, sprite)
+			return true)
 		Global.chain.enable(false)
 
 	Global.select_sprite(sprite)

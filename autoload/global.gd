@@ -1,5 +1,8 @@
 extends Node
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const InputCommands = preload("res://autoload/input/input_commands.gd")
+
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 
 const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
@@ -311,6 +314,12 @@ func begin_animation_key_capture(clip: Dictionary) -> void:
 	animKeyBindClip = clip
 
 
+# True while the animation tab's "Bind key" is armed, so the input decoder can
+# route the next background key to the binding instead of triggering clips.
+func is_awaiting_animation_key_capture() -> bool:
+	return awaitingAnimKeyBind and animKeyBindClip != null
+
+
 func apply_animation_key_capture(key: String) -> bool:
 	if not awaitingAnimKeyBind or animKeyBindClip == null:
 		return false
@@ -364,27 +373,13 @@ func _process(delta):
 	if not is_instance_valid(main):
 		return
 	
+	_run_key_commands()
+
 	if main != null and heldSprite != null and !_text_field_active:
-		if Input.is_action_just_pressed("zDown"):
-			UndoManager.save_state()
-			heldSprite.z -= 1
-			heldSprite.setZIndex()
-			notify_user("Moved sprite layer.")
-		if Input.is_action_just_pressed("zUp"):
-			UndoManager.save_state()
-			heldSprite.z += 1
-			heldSprite.setZIndex()
-			notify_user("Moved sprite layer.")
 		if main.editMode:
 			if wigglePathMode and Input.is_action_just_pressed("ui_cancel"):
 				wigglePathMode = false
 				notify_user("Finished editing ribbon path.")
-			if Input.is_action_just_pressed("reparent"):
-				reparentMode = !reparentMode
-				originMode = false
-				wigglePathMode = false
-				if is_instance_valid(chain):
-					chain.enable(reparentMode)
 			if Input.is_action_just_pressed("origin"):
 				_origin_press_time = Time.get_ticks_msec()
 			if Input.is_action_pressed("origin") and !originMode:
@@ -398,8 +393,9 @@ func _process(delta):
 			if Input.is_action_just_released("origin"):
 				if Time.get_ticks_msec() - _origin_press_time < 300:
 					if heldSprite != null:
-						UndoManager.save_state()
-						heldSprite.snapOriginToMouse()
+						MutationCommands.structural(func():
+							heldSprite.snapOriginToMouse()
+							return true)
 						notify_user("Snapped origin to cursor.")
 				else:
 					if originMode:
@@ -432,25 +428,53 @@ func _process(delta):
 		main.onScreenshotReleased()
 		_screenshot_key_held = false
 
-	if !main.fileSystemOpen and !_text_field_active:
 
-		if Input.is_action_just_pressed("refresh"):
+# Foreground key commands. The decoder owns which action maps to which command
+# and every guard that suppresses it; this loop only runs what it is handed.
+func _run_key_commands() -> void:
+	var fired := {}
+	for action in InputCommands.FOREGROUND_ORDER:
+		fired[action] = Input.is_action_just_pressed(action)
+	var commands: Array = InputCommands.decode_foreground(fired, {
+		"has_selection": heldSprite != null,
+		"edit_mode": main.editMode,
+		"control_held": Input.is_action_pressed("control"),
+		"text_focus": _text_field_active,
+		"file_dialog_open": main.fileSystemOpen,
+	})
+	for command in commands:
+		_run_key_command(command)
+
+
+func _run_key_command(command: String) -> void:
+	match command:
+		"layer_depth_down":
+			_nudge_z(-1)
+		"layer_depth_up":
+			_nudge_z(1)
+		"toggle_reparent_mode":
+			reparentMode = !reparentMode
+			originMode = false
+			wigglePathMode = false
+			if is_instance_valid(chain):
+				chain.enable(reparentMode)
+		"unlink_layer":
+			if heldSprite != null and heldSprite.parentId != null:
+				MutationCommands.structural(func():
+					unlinkSprite()
+					return true)
+		"refresh_avatar":
 			refresh()
-		if Input.is_action_just_pressed("unlink"):
-			UndoManager.save_state()
-			unlinkSprite()
-
-		if Input.is_action_pressed("control"):
-			if Input.is_action_just_pressed("saveImages"):
-				saveImagesFromData()
-			if Input.is_action_just_pressed("undo"):
-				UndoManager.undo()
-			if Input.is_action_just_pressed("redo"):
-				UndoManager.redo()
-			if Input.is_action_just_pressed("screenshot"):
-				_screenshot_key_held = true
-				_screenshot_press_time = Time.get_ticks_msec()
-				main.onScreenshotPressed()
+		"save_images":
+			saveImagesFromData()
+		"undo":
+			UndoManager.undo()
+		"redo":
+			UndoManager.redo()
+		"screenshot_press":
+			_screenshot_key_held = true
+			_screenshot_press_time = Time.get_ticks_msec()
+			main.onScreenshotPressed()
 
 
 func _update_microphone(delta: float) -> void:
@@ -469,6 +493,16 @@ func _update_microphone(delta: float) -> void:
 	spectrum = _microphone_monitor.spectrum
 	
 	
+# One discrete history entry per key press, matching the pre-command behavior
+# (is_action_just_pressed fires once per press, so this is not a held gesture).
+func _nudge_z(step: int) -> void:
+	MutationCommands.structural(func():
+		heldSprite.z += step
+		heldSprite.setZIndex()
+		return true)
+	notify_user("Moved sprite layer.")
+
+
 func _is_any_field_focused() -> bool:
 	if _suppress_keys_frame == Engine.get_process_frames():
 		return true
@@ -563,9 +597,12 @@ func _apply_z_input():
 	var text = _z_input.text.strip_edges()
 	if heldSprite == null or !text.is_valid_int():
 		return
-	UndoManager.save_state()
-	heldSprite.z = text.to_int()
-	heldSprite.setZIndex()
+	MutationCommands.structural(func():
+		if heldSprite.z == text.to_int():
+			return false
+		heldSprite.z = text.to_int()
+		heldSprite.setZIndex()
+		return true)
 	notify_user("Set z-index to " + str(heldSprite.z) + ".")
 	spriteList.updateData()
 	_z_input.select_all()
@@ -743,8 +780,9 @@ func select(areas):
 		if heldSprite.parentId == prevSpr.id:
 			return
 		
-		UndoManager.save_state()
-		linkSprite(prevSpr,heldSprite)
+		MutationCommands.structural(func():
+			linkSprite(prevSpr, heldSprite)
+			return true)
 		if is_instance_valid(chain):
 			chain.enable(reparentMode)
 	
@@ -758,16 +796,18 @@ func _finish_eye_track_pick(target):
 		notify_user("A sprite can't eye-track itself.")
 		_clear_eye_track_pick()
 		return
-	UndoManager.save_state()
 	if eyeTrackPickBroadcast:
-		var assigned = 0
+		var receivers: Array = []
 		for spr in sprite_nodes():
 			if spr.eyeTrack and spr != target:
+				receivers.append(spr)
+		MutationCommands.structural(func():
+			for spr in receivers:
 				spr.eyeTrackTargetId = target.id
-				assigned += 1
-		notify_user("Eye target set on " + str(assigned) + " layer(s).")
+			return not receivers.is_empty())
+		notify_user("Eye target set on " + str(receivers.size()) + " layer(s).")
 	else:
-		eyeTrackPickSource.eyeTrackTargetId = target.id
+		MutationCommands.set_layer_property(eyeTrackPickSource, "eyeTrackTargetId", target.id)
 		notify_user("Eye target set to \"" + target.path.get_file() + "\".")
 	_flash_pink(target)
 	_clear_eye_track_pick()

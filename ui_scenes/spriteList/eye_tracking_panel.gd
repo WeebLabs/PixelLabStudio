@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 var _owner: Node2D
 var _global: Node
 var _undo_manager: Node
@@ -210,74 +212,66 @@ func _build_sliders(label_color: Color) -> void:
 	_global.make_slider_resettable(_speed_slider, 0.15)
 
 
+# Per-layer edits write the selected layer. Global edits fan the same value out
+# over every tracked layer inside one command, so the whole broadcast is a
+# single history entry rather than one per layer.
+func _write_scoped(property: String, value: Variant, gesture: String = "") -> void:
+	var scope := _scope()
+	if scope == "per_layer":
+		if gesture.is_empty():
+			MutationCommands.set_layer_property(_global.heldSprite, property, value)
+		else:
+			MutationCommands.drag_layer_property(_global.heldSprite, property, value, gesture)
+		return
+	if scope != "global":
+		return
+	var targets := _tracked_sprites()
+	var body := func():
+		var changed := false
+		for sprite in targets:
+			if sprite.get(property) != value:
+				sprite.set(property, value)
+				changed = true
+		return changed
+	if gesture.is_empty():
+		MutationCommands.structural(body)
+	else:
+		MutationCommands.drag("eyetrack:" + property, body)
+
+
 func _on_toggled(pressed: bool) -> void:
 	var scope := _scope()
 	if scope == "per_layer":
-		_undo_manager.save_state()
-		_global.heldSprite.eyeTrack = pressed
+		MutationCommands.set_layer_property(_global.heldSprite, "eyeTrack", pressed)
 	elif scope == "global":
-		_undo_manager.save_state()
-		_global.eyeTrackingGloballyEnabled = pressed
+		MutationCommands.structural(func():
+			if _global.eyeTrackingGloballyEnabled == pressed:
+				return false
+			_global.eyeTrackingGloballyEnabled = pressed
+			return true)
 
 
 func _on_distance_changed(value: float) -> void:
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state_continuous()
-		_update_amount_label()
-		_global.heldSprite.eyeTrackDistance = value
-	elif scope == "global":
-		_undo_manager.save_state_continuous()
-		_update_amount_label()
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackDistance = value
+	_update_amount_label()
+	_write_scoped("eyeTrackDistance", value, "slider")
 
 
 func _on_speed_changed(value: float) -> void:
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state_continuous()
-		_speed_label.text = "tracking speed: " + str(value)
-		_global.heldSprite.eyeTrackSpeed = value
-	elif scope == "global":
-		_undo_manager.save_state_continuous()
-		_speed_label.text = "tracking speed: " + str(value)
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackSpeed = value
+	_speed_label.text = "tracking speed: " + str(value)
+	_write_scoped("eyeTrackSpeed", value, "slider")
 
 
 func _on_invert_toggled(pressed: bool) -> void:
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state()
-		_global.heldSprite.eyeTrackInvert = pressed
-	elif scope == "global":
-		_undo_manager.save_state()
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackInvert = pressed
+	_write_scoped("eyeTrackInvert", pressed)
 
 
 func _on_type_selected(index: int) -> void:
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state()
-		_global.heldSprite.eyeTrackType = index
-	elif scope == "global":
-		_undo_manager.save_state()
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackType = index
+	_write_scoped("eyeTrackType", index)
 	refresh_ui()
 
 
 func _on_mode_selected(index: int) -> void:
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state()
-		_global.heldSprite.eyeTrackMode = index
-	elif scope == "global":
-		_undo_manager.save_state()
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackMode = index
+	_write_scoped("eyeTrackMode", index)
 	if _global.eyeTrackPickMode:
 		_global.cancel_eye_track_pick()
 	refresh_ui()
@@ -306,14 +300,7 @@ func _on_target_gui_input(event: InputEvent) -> void:
 func _clear_target() -> void:
 	if _full_target_name().is_empty():
 		return
-	var scope := _scope()
-	if scope == "per_layer":
-		_undo_manager.save_state()
-		_global.heldSprite.eyeTrackTargetId = null
-	elif scope == "global":
-		_undo_manager.save_state()
-		for sprite in _tracked_sprites():
-			sprite.eyeTrackTargetId = null
+	_write_scoped("eyeTrackTargetId", null)
 	refresh_ui()
 
 

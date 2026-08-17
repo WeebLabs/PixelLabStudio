@@ -280,3 +280,60 @@ validations, 3.88 ms for indexed eye-target lookup, and 220.58 ms for ten ribbon
 auto-fits. Complete avatar loads measured 271.15 ms for 100 layers and 465.60 ms
 for 250 layers. All smoke budgets, the 120-frame active NDI teardown test, and
 the standalone macOS pack export pass.
+
+## Phase 14 mutation, undo, and input gate
+
+> Updated: 2026-08-17 — one canonical mutation path and one input decoder
+
+Every user mutation now reaches history through `MutationCommands`. All 74
+former `save_state()` / `save_state_continuous()` call sites across the
+sidebars, physics and blend panels, animation clips, the wiggle path editor, the
+layer rows, `Global`, and the avatar/import controllers were migrated, and
+`tests/unit/test_release_contract.gd` fails the build if any production file
+outside the command layer opens a history transaction. `UndoManager` no longer
+names a sidebar, a costume change, or the light gizmo: it emits
+`state_restored(scope)` and `AvatarController.on_state_restored()` owns the
+consequences.
+
+Four defects the migration surfaced are fixed and covered:
+
+- Animation-clip **rename** captured no history at all, so the edit was silently
+  reverted by the next unrelated undo.
+- **Undo/redo un-hid every eye-hidden layer**, because restore re-derived
+  visibility from `costumeLayers` directly and never consulted `userHidden`.
+- **No-op commands left dead history entries** — unlinking an already-unparented
+  layer, and arming a visibility-toggle capture that was then cancelled, both
+  pushed snapshots before deciding there was nothing to do.
+- **Restored sprites reparented on a deferred 0.1s timer**, leaving the
+  hierarchy briefly wrong and leaking a `SceneTreeTimer` and an `Image` at exit.
+  Restore now links parents synchronously once the whole snapshot exists.
+
+Continuous edits are keyed by gesture rather than one global latch. The old
+latch reset only on a mouse release, so keyboard-driven edits merged
+indefinitely and a second control touched during the same press captured no
+history at all. Gestures are scoped to layer and property, and `end_gesture(name)`
+ends only the named gesture so a per-frame poll cannot cut short an unrelated
+drag still in flight.
+
+Foreground key commands, background capture, and Stream Deck costume keys share
+`autoload/input/input_commands.gd`, a pure decoder holding the guards as data.
+Timing-based interactions (origin tap versus hold, ribbon-path escape) stay in
+`Global`, where their state belongs.
+
+The production application runner passes 476 assertions, adding discrete,
+continuous, structural, and no-op command coverage; undo/redo round trips;
+restored-child hierarchy; hand-hidden layers surviving undo; and the history
+bound under sustained editing. The isolated suite passes 878 assertions,
+including the new `test_mutation_commands` suite that exercises the command
+layer against a recording history sink and the decoder against plain
+dictionaries — transaction counts, aborted no-ops, nested composites, gesture
+scoping, property validation, and every guard on foreground, background, and
+device decoding.
+
+On the baseline M1 Max with Godot 4.6.3, the cumulative performance run measured
+3.50 microseconds per active 100-layer animation frame, 538.88 ms for 100 schema
+validations, 3.72 ms for indexed eye-target lookup, and 217.94 ms for ten ribbon
+auto-fits. Complete avatar loads measured 284.70 ms for 100 layers and 536.17 ms
+for 250 layers. All smoke budgets, the 120-frame active NDI teardown test, and
+the standalone macOS pack export pass, and the production runner now exits with
+no leaked ObjectDB instances.

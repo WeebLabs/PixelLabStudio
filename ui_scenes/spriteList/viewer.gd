@@ -1,5 +1,7 @@
 extends Node2D
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_controller.gd")
 const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
@@ -516,19 +518,17 @@ func updateControls():
 func _on_speaking_pressed():
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
 	var f = (_speaking_spr.frame + 1) % 3
 	_speaking_spr.frame = f
-	Global.heldSprite.showOnTalk = f
+	MutationCommands.set_layer_property(Global.heldSprite, "showOnTalk", f)
 	Global.spriteEdit.setImage()
 
 func _on_blinking_pressed():
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
 	var f = (_blinking_spr.frame + 1) % 4
 	_blinking_spr.frame = f
-	Global.heldSprite.showOnBlink = f
+	MutationCommands.set_layer_property(Global.heldSprite, "showOnBlink", f)
 	Global.spriteEdit.setImage()
 
 func _on_link_pressed():
@@ -539,18 +539,20 @@ func _on_link_pressed():
 func _on_unlink_pressed():
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
 	if Global.heldSprite.parentId == null:
 		return
-	Global.unlinkSprite()
+	MutationCommands.structural(func():
+		Global.unlinkSprite()
+		return true)
 	Global.spriteEdit.setImage()
 
 func _on_trash_pressed():
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
-	Global.unlinkChildren(Global.heldSprite)
-	Global.heldSprite.queue_free()
+	MutationCommands.structural(func():
+		Global.unlinkChildren(Global.heldSprite)
+		Global.heldSprite.queue_free()
+		return true)
 	Global.clear_selection()
 	Global.spriteList.updateData()
 
@@ -559,11 +561,9 @@ func _on_trash_pressed():
 func _on_costume_btn_pressed(index: int):
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
-	if Global.heldSprite.costumeLayers[index] == 0:
-		Global.heldSprite.costumeLayers[index] = 1
-	else:
-		Global.heldSprite.costumeLayers[index] = 0
+	var layers: Array = Global.heldSprite.costumeLayers.duplicate()
+	layers[index] = 0 if layers[index] == 1 else 1
+	MutationCommands.set_layer_property(Global.heldSprite, "costumeLayers", layers)
 	Global.spriteEdit.setLayerButtons()
 
 # Keep the established sidebar API while the panel owns eye-tracking behavior.
@@ -577,7 +577,6 @@ func refreshEyePickWhip() -> void:
 
 func _on_set_toggle_pressed():
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
 	_vis_toggle_label.text = "toggle: AWAITING INPUT"
 	_vis_toggle_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.8))
 	Global.begin_visibility_key_capture()
@@ -586,14 +585,13 @@ func _on_set_toggle_pressed():
 	Global.finish_visibility_key_capture()
 	var key = keys[0]
 	if Global.heldSprite == null: return
-	Global.heldSprite.toggle = key
+	MutationCommands.set_layer_property(Global.heldSprite, "toggle", key)
 	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 
 func _on_vis_toggle_delete_pressed():
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.toggle = "null"
+	MutationCommands.set_layer_property(Global.heldSprite, "toggle", "null")
 	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 	Global.heldSprite.makeVis()
 

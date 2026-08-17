@@ -1,5 +1,7 @@
 extends Node2D
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 var light_energy: float = 3.0:
 	set(v):
 		light_energy = v
@@ -85,7 +87,7 @@ func _unhandled_input(event):
 		if event.pressed:
 			var mouse_pos = get_local_mouse_position()
 			if mouse_pos.length() <= GRAB_RADIUS:
-				UndoManager.save_state()
+				MutationCommands.drag("light-gizmo", func(): return true)
 				_dragging = true
 				_drag_offset = global_position - get_global_mouse_position()
 				get_viewport().set_input_as_handled()

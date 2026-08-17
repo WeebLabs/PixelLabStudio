@@ -1,6 +1,8 @@
 class_name AvatarController
 extends Node
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 const SpriteState = preload("res://autoload/domain/sprite_state.gd")
@@ -27,6 +29,30 @@ func setup(main: Node2D, global: Node, saving: Node, undo: Node, sprite_scene: P
 	_undo = undo
 	_sprite_scene = sprite_scene
 	_sprite_id_random.randomize()
+	if not _undo.state_restored.is_connected(on_state_restored):
+		_undo.state_restored.connect(on_state_restored)
+
+
+# UndoManager restores sprite state and then hands the scene consequences back
+# here, so history carries no UI knowledge. Order matters: rebuild the scene,
+# re-derive costume visibility, then refresh the sidebars.
+func on_state_restored(scope: Dictionary) -> void:
+	if not is_instance_valid(_main):
+		return
+	if scope.get("full_rebuild", false):
+		_main._create_light_gizmo()
+	_main.apply_light_snapshot(scope.get("light"))
+	if scope.get("full_rebuild", false):
+		change_costume(_main.costume)
+		_global.spriteList.updateData()
+		_main.onWindowSizeChange()
+		return
+	if scope.get("structure_changed", false):
+		_global.spriteList.updateData()
+	elif scope.get("hierarchy_changed", false):
+		_global.spriteList.refreshHierarchy()
+	if _global.heldSprite != null:
+		_global.spriteEdit.setImage()
 
 
 func shutdown() -> void:
@@ -50,7 +76,7 @@ func next_sprite_id() -> int:
 
 
 func add_image(path: String) -> void:
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	var sprite = _sprite_scene.instantiate()
 	sprite.path = path
 	sprite.id = next_sprite_id()
@@ -76,7 +102,7 @@ func duplicate_selected() -> void:
 	var source = _global.heldSprite
 	if source == null:
 		return
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	var sprite = _sprite_scene.instantiate()
 	SpriteState.copy_for_duplicate(source, sprite)
 	sprite.id = next_sprite_id()
@@ -99,7 +125,7 @@ func duplicate_selected() -> void:
 
 
 func apply_replacement(matched: Array, new_items: Array, orphaned: Array, remove_orphans: bool) -> Dictionary:
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	var replaced := 0
 	var added := 0
 	var removed := 0
@@ -145,7 +171,7 @@ func change_costume_from_device(costume_id: String) -> void:
 
 
 func clear_avatar() -> void:
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	_global.clear_selection()
 	_main.origin.queue_free()
 	var new_origin := Node2D.new()
@@ -167,11 +193,11 @@ func reset_avatar() -> void:
 
 
 func load_avatar(path: String) -> bool:
-	_undo.save_state()
 	var data: Variant = _saving.read_save(path)
 	if data == null:
 		_global.notify_user(_saving.last_error)
 		return false
+	MutationCommands.capture_bulk()
 
 	_global.clear_selection()
 	_main.origin.visible = false

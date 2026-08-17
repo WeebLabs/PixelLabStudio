@@ -1,5 +1,7 @@
 extends Node2D
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 const CollisionBuilder = preload("res://ui_scenes/selectedSprite/sprite_collision_builder.gd")
 const SpriteCollisionRuntime = preload("res://ui_scenes/selectedSprite/sprite_collision_runtime.gd")
 const SpriteHierarchy = preload("res://ui_scenes/selectedSprite/sprite_hierarchy.gd")
@@ -58,6 +60,7 @@ var _force_drag_snap: bool = true
 var origTick = 0
 var offset = Vector2.ZERO
 var _origin_dragging = false
+var _origin_drag_captured = false
 var _origin_drag_start_mouse_local = Vector2.ZERO
 var _origin_drag_start_offset = Vector2.ZERO
 var _origin_drag_start_pos = Vector2.ZERO
@@ -582,8 +585,8 @@ func _input(event):
 			var gizmo_center = sprite.global_position
 			var mouse_pos = get_global_mouse_position()
 			if mouse_pos.distance_to(gizmo_center) <= 24.0:
-				UndoManager.save_state()
 				_origin_dragging = true
+				_origin_drag_captured = false
 				_origin_drag_start_mouse_local = get_parent().to_local(mouse_pos)
 				_origin_drag_start_offset = offset
 				_origin_drag_start_pos = position
@@ -594,6 +597,9 @@ func _input(event):
 	elif event is InputEventMouseMotion and _origin_dragging:
 		var mouse_local = get_parent().to_local(get_global_mouse_position())
 		var delta = mouse_local - _origin_drag_start_mouse_local
+		if not _origin_drag_captured:
+			_origin_drag_captured = true
+			MutationCommands.drag("origin-gizmo", func(): return true)
 		# Snap the drag delta to a whole pixel ONCE and apply it equally/oppositely, so position
 		# and offset stay exactly coupled. Truncating each independently (int() rounds toward
 		# zero) drifted them apart by a pixel when both had the same sign — moving the artwork.
@@ -625,10 +631,11 @@ func pressingDirection():
 func moveSprite(dir):
 	if dir != Vector2.ZERO:
 		if heldTicks == 0:
-			UndoManager.save_state_continuous()
+			MutationCommands.drag("move-layer", func(): return true)
 		heldTicks += 1
 	else:
 		heldTicks = 0
+		MutationCommands.end_gesture("move-layer")
 
 	if heldTicks > 30 or heldTicks == 1:
 		var multiplier = 2
@@ -641,10 +648,11 @@ func moveSprite(dir):
 func moveOrigin(dir):
 	if dir != Vector2.ZERO:
 		if origTick == 0:
-			UndoManager.save_state_continuous()
+			MutationCommands.drag("move-origin", func(): return true)
 		origTick += 1
 	else:
 		origTick = 0
+		MutationCommands.end_gesture("move-origin")
 
 	if origTick > 30 or origTick == 1:
 		var multiplier = 2

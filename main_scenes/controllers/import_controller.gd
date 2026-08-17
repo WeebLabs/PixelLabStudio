@@ -1,6 +1,8 @@
 class_name ImportController
 extends Node
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 const PSDParserScript = preload("res://autoload/psd_parser.gd")
 const APNGParserScript = preload("res://autoload/apng_parser.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
@@ -228,7 +230,7 @@ func _process_import_thread(_delta):
 		_finalize_psd_import()
 
 func _finalize_psd_import():
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	var canvas_center = _import_canvas_size * 0.5
 	var layer_z = _avatar.next_z_index()
 	var count = _import_layers.size()
@@ -280,7 +282,7 @@ func _on_psd_import_cancelled():
 func _save_post_import_snapshot():
 	# Wait for the imported sprite instances' _ready() reparent timers (0.1s) to settle.
 	await get_tree().create_timer(0.2).timeout
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 
 # --- Animated GIF/APNG Import ---
 
@@ -384,7 +386,7 @@ func _finish_animated_import(result):
 		_add_animated_sprite(sheet, frame_count, anim_speed)
 
 func _add_animated_sprite(sheet: Image, frame_count: int, anim_speed: int):
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 
 	var id: int = int(_avatar.next_sprite_id())
 
@@ -405,7 +407,7 @@ func _replace_with_animated(sheet: Image, frame_count: int, anim_speed: int):
 	if _global.heldSprite == null:
 		return
 
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 
 	_global.heldSprite.imageData = sheet
 	var pma = sheet.duplicate()
@@ -467,7 +469,7 @@ func _on_import_files_selected(paths: PackedStringArray):
 		_import_png_files(png_paths)
 
 func _import_png_files(paths: Array):
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 
 	# Separate normal maps from diffuse files
 	var diffuse_paths = []
@@ -684,7 +686,7 @@ func _on_single_replace_confirmed():
 		return
 
 	var path = _single_replace_path
-	_undo.save_state()
+	MutationCommands.capture_bulk()
 	target.replaceSprite(path)
 	_undo.invalidate_image(target.id)
 	_global.spriteList.updateData()

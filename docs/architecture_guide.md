@@ -102,10 +102,12 @@ PNGTuberPlus/
 ├── autoload/                      Global singletons (autoloaded)
 │   ├── global.gd                  Central state: mic, selection, input, modes
 │   ├── saving.gd                  JSON persistence, settings, save/load
-│   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
+│   ├── undo_manager.gd            Transactional undo/redo (50-state history)
 │   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
 │   ├── domain/sprite_registry.gd  Canonical live layer enumeration/ID index
 │   ├── domain/selection_state.gd  Selected layer and click-cycle state
+│   ├── domain/mutation_commands.gd Canonical undoable mutation commands
+│   ├── input/input_commands.gd    Pure key/device command decoding
 │   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
 │   ├── apng_parser.gd             Bounded APNG parser and compositor
@@ -716,12 +718,66 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 - 50-state history limit
 - Snapshots store `Image` object references (not base64 PNG) — no encoding cost. PNG encoding only happens at file-save time. (Updated: 2026-02-16)
 - Handles missing parent sprites by falling back to origin; detects circular references during restore (Updated: 2026-03-07)
-- `save_state()` pushes snapshot; `save_state_continuous()` debounces within same frame
+- `begin(gesture)` / `commit()` / `abort()` open one history transaction; an empty gesture is a discrete edit, a named gesture collapses a continuous one
 
 > Updated: 2026-08-06 — `UndoManager` retains history, cache, hierarchy, and
 > scene-reconciliation ownership, but delegates sprite property capture and
 > application to `SpriteState`. Its former parallel save/restore maps were
 > removed. Image caches still hold `Image` references rather than encoding PNGs.
+
+> Updated: 2026-08-17 — **History is transactional and has no interface
+> knowledge.** `save_state()`/`save_state_continuous()` are replaced by
+> `begin(gesture)` / `commit()` / `abort()`. A command that turns out to change
+> nothing calls `abort()`, which pops the snapshot it pushed, so no-op clicks no
+> longer leave dead entries the user has to undo through. Continuous edits are
+> keyed by **gesture** rather than a single global latch: `_active_gesture` holds
+> one key at a time, `end_gesture(name)` ends only that gesture, and a mouse
+> release ends whatever is active. Keying by gesture is what makes switching
+> controls mid-drag start a new entry instead of silently dropping the second
+> control's history, and it lets keyboard-driven edits close their own burst
+> (the old latch only reset on a mouse release, so keyboard edits merged
+> indefinitely). Restore no longer calls into the sidebars: `_restore()` and
+> `_restore_full()` emit **`state_restored(scope)`** and `AvatarController.on_state_restored()`
+> owns every scene consequence (`spriteList.updateData` / `refreshHierarchy`,
+> `spriteEdit.setImage`, `changeCostume`, `onWindowSizeChange`, the light gizmo).
+> Two restore defects were fixed alongside: visibility is re-derived through
+> `applyCostumeVisibility()` instead of reading `costumeLayers` directly (the
+> direct read ignored `userHidden`, so every eye-hidden layer reappeared on
+> undo/redo), and restored sprites reparent synchronously via
+> `_link_restored_parents()` instead of relying on `spriteObject`'s deferred
+> 0.1s `_ready` timer (which left the hierarchy briefly wrong and leaked a
+> `SceneTreeTimer` at exit).
+
+### Mutation Commands (`autoload/domain/mutation_commands.gd`)
+
+The single canonical path for user-initiated mutations that belong in history.
+Production code never opens a history transaction directly; a command owns the
+before/after snapshot boundary exactly once.
+
+| Command | Use |
+|---------|-----|
+| `set_layer_property(layer, prop, value)` | discrete single-property edit (toggle, dropdown, spinbox) |
+| `drag_layer_property(layer, prop, value, gesture)` | continuous single-property edit (slider drag, held key) |
+| `set_layer_field(layer, prop, index, key, value, gesture)` | one key inside a structured field (an `animClips` entry) |
+| `structural(body)` | hierarchy, add/remove, costume, image replacement; `body` returns false to discard the entry |
+| `drag(gesture, body)` | continuous multi-field gesture (canvas drag, ribbon path editing) |
+| `capture_bulk()` | pre-state for work that awaits across frames (avatar load, PSD import) |
+
+- Property writes are validated against `SpriteState`'s persistent field map, so
+  a command naming a non-persistent property is reported rather than silently
+  failing to survive undo or a save round-trip.
+- Unchanged writes return false without touching history, which is what keeps
+  re-selecting the current dropdown entry or re-clicking a settled toggle from
+  accumulating entries.
+- Gesture keys are scoped to layer and property (`_gesture_key`), so the same
+  slider on a different layer is a separate entry.
+- The history sink is resolved at runtime (`/root/UndoManager`) rather than by
+  naming the autoload, so the command layer loads — and is unit-tested against a
+  recording sink — in workspaces that register no singletons.
+
+> Updated: 2026-08-17 — Introduced in Phase 14. `tests/unit/test_release_contract.gd`
+> enforces that no production file outside this module opens a history
+> transaction, so the canonical path cannot quietly regrow a second entrance.
 
 ### Save/Load (`saving.gd`, `main.gd`)
 
@@ -801,7 +857,7 @@ write behavior are specified in `docs/save_format.md`.
 - Review dialog shows matched sprites (will be replaced), new items (checkboxes to optionally add), orphaned sprites (option to remove)
 - Name matching: `psd://Name` → `Name`, `/path/file.png` → `file`, case-insensitive via `.to_lower()`
 - `spriteObject.replaceSpriteFromData()` replaces image data in-place, preserving all properties (position, physics, costumes, parent-child, etc.)
-- All operations are fully undoable via `UndoManager.save_state()`
+- All operations are fully undoable via `MutationCommands.capture_bulk()`
 
 ### APNG Import (`apng_parser.gd`)
 
@@ -844,6 +900,22 @@ Key bindings (edit mode, handled in `global.gd`):
 | Z / Y      | Undo / Redo                               |
 | Mouse wheel| Cycle sprite selection (only while the cursor is over the open viewport) |
 | Ctrl+Scroll| Over the viewport: zoom (10%-400%). Over a sidebar: nudge the hovered slider/spinbox by one `step`. Sliders never adjust without Ctrl, and the viewport never zooms while the cursor is over a sidebar |
+
+> Updated: 2026-08-17 — **One input command decoder.**
+> `autoload/input/input_commands.gd` holds the key/device rules as data and
+> decodes them purely: no engine polling, no scene access. `FOREGROUND` maps each
+> polled action to a command plus its guards (selection, edit mode, control
+> modifier, text focus, open file dialog), and `FOREGROUND_ORDER` fixes dispatch
+> order. `Global._run_key_commands()` builds the guard snapshot and runs whatever
+> the decoder returns; `Global._run_key_command()` is the only place the effects
+> live. Background capture (the optional OS-level hook) and Stream Deck costume
+> keys route through `decode_background()`, `decode_visibility_capture()`, and
+> `decode_device_costume()` in `main.gd`, replacing three separate inline
+> decoders. Stateful, timing-based interactions stay in `Global` where they
+> belong: the origin tap-versus-hold threshold, ribbon-path escape, and the
+> mode-clearing fallbacks are not command decodes. Focus guards and Stream Deck
+> behavior are unchanged; `Global.is_awaiting_animation_key_capture()` was added
+> so the decoder can tell an armed animation bind from a live trigger.
 
 > Updated: 2026-08-06 — The view-mode volume and sensitivity sliders now write
 > `Global`/settings from `value_changed`; they no longer rewrite unchanged

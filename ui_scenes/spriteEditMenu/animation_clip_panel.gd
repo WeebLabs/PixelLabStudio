@@ -1,6 +1,8 @@
 extends RefCounted
 class_name AnimationClipPanel
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 # The left sidebar's "Animation" tab content: a list of animation clips with
 # New/Remove, plus an inspector that edits the currently-selected clip. Operates
 # on Global.heldSprite.animClips (an Array of clip Dictionaries — see
@@ -325,24 +327,22 @@ func _set_value(field: String, value: float, is_int: bool, label: Label, prefix:
 	var spr = Global.heldSprite
 	if spr == null or _selected < 0 or _selected >= spr.animClips.size():
 		return
-	UndoManager.save_state_continuous()
 	var v = int(value) if is_int else value
-	spr.animClips[_selected][field] = v
+	MutationCommands.set_layer_field(spr, "animClips", _selected, field, v, "slider")
 	label.text = prefix + str(v) + suffix
 
 func _set_choice(field: String, value) -> void:
 	var spr = Global.heldSprite
 	if spr == null or _selected < 0 or _selected >= spr.animClips.size():
 		return
-	UndoManager.save_state()
-	spr.animClips[_selected][field] = value
+	MutationCommands.set_layer_field(spr, "animClips", _selected, field, value)
 	# Channel/shape/trigger change -> signature changes -> sync() rebuilds.
 
 func _set_name(t: String) -> void:
 	var spr = Global.heldSprite
 	if spr == null or _selected < 0 or _selected >= spr.animClips.size():
 		return
-	spr.animClips[_selected]["name"] = t
+	MutationCommands.set_layer_field(spr, "animClips", _selected, "name", t, "rename")
 	if _selected < _list.get_child_count():
 		(_list.get_child(_selected) as Button).text = _clip_label(spr.animClips[_selected])
 
@@ -350,24 +350,27 @@ func _on_new_pressed() -> void:
 	var spr = Global.heldSprite
 	if spr == null:
 		return
-	UndoManager.save_state()
-	spr.animClips.append(_new_clip())
+	MutationCommands.structural(func():
+		spr.animClips.append(_new_clip())
+		return true)
 	_selected = spr.animClips.size() - 1
 
 func _on_remove_pressed() -> void:
 	var spr = Global.heldSprite
 	if spr == null or spr.animClips.is_empty():
 		return
-	UndoManager.save_state()
-	spr.animClips.remove_at(clampi(_selected, 0, spr.animClips.size() - 1))
+	MutationCommands.structural(func():
+		spr.animClips.remove_at(clampi(_selected, 0, spr.animClips.size() - 1))
+		return true)
 	_selected = clampi(_selected, 0, max(0, spr.animClips.size() - 1))
 
 func _on_bind_pressed() -> void:
 	var spr = Global.heldSprite
 	if spr == null or _selected < 0 or _selected >= spr.animClips.size():
 		return
-	UndoManager.save_state()
-	Global.begin_animation_key_capture(spr.animClips[_selected])
+	MutationCommands.structural(func():
+		Global.begin_animation_key_capture(spr.animClips[_selected])
+		return true)
 
 func _new_clip() -> Dictionary:
 	return {

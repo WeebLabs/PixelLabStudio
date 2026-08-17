@@ -2,17 +2,35 @@ extends Node
 
 const SpriteState = preload("res://autoload/domain/sprite_state.gd")
 
-# Emitted when save_state() actually captures a snapshot (not when suppressed
+# Emitted when a transaction actually captures a snapshot (not when suppressed
 # during an undo/redo restore). Subscribers — currently main.gd's session
 # auto-save — use this to flag the rig as "dirty since last persisted save."
 signal state_saved
+
+# Emitted after a snapshot has been applied back onto the scene. Undo owns
+# sprite state only; every scene/UI consequence of a restore belongs to the
+# subscriber (AvatarController), so this history has no UI knowledge.
+# Scope keys: structure_changed, hierarchy_changed, full_rebuild, light.
+signal state_restored(scope: Dictionary)
 
 const MAX_HISTORY = 50
 
 var _undo_stack: Array = []
 var _redo_stack: Array = []
-var _continuous_saved: bool = false
 var suppressed: bool = false
+
+# Transaction bookkeeping. begin()/commit()/abort() are the only way production
+# code captures history; MutationCommands is the single caller. Nested begins
+# join the outermost transaction so a composite command still yields one entry.
+var _txn_depth: int = 0
+var _txn_pushed: Array[bool] = []
+
+# The gesture currently collapsing into one history entry ("" = none). A
+# continuous edit (slider drag, held arrow key) snapshots on its first call and
+# then suppresses until the gesture ends. Keying by gesture rather than a single
+# global latch means switching controls mid-drag starts a new entry instead of
+# silently dropping the second control's history.
+var _active_gesture: String = ""
 
 var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 
@@ -55,16 +73,12 @@ func _snapshot() -> Dictionary:
 			_image_cache.erase(sprite_id)
 			_normal_cache.erase(sprite_id)
 
-	# Snapshot light gizmo
-	if Global.main and Global.main._light_gizmo:
-		var g = Global.main._light_gizmo
-		data["_light"] = {
-			"pos": var_to_str(g.position),
-			"energy": g.light_energy,
-			"color": var_to_str(g.light_color),
-			"range": g.light_range,
-			"enabled": g.light_enabled
-		}
+	# Snapshot light gizmo through the scene's public accessor rather than
+	# reaching into its private node reference.
+	if Global.main:
+		var light_data = Global.main.light_snapshot()
+		if light_data != null:
+			data["_light"] = light_data
 
 	# Global eye-tracking kill switch
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
@@ -107,14 +121,16 @@ func _restore(data: Dictionary):
 				Global.clear_selection()
 			sprite.queue_free()
 
-	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
+	# 2. Add sprites not in current scene
+	var restored: Array = []
 	for item in data:
 		if _is_meta_key(item):
 			continue
 		var d = data[item]
 		if !current_ids.has(d["identification"]):
 			scene_changed = true
-			_add_sprite_from_data(d)
+			restored.append(_add_sprite_from_data(d))
+	_link_restored_parents(restored)
 
 	# 3. Update existing sprites' properties and reparent if needed
 	var reparented = false
@@ -152,40 +168,59 @@ func _restore(data: Dictionary):
 
 		SpriteState.apply_existing(sprite, d)
 
-	# Update costume visibility without nulling heldSprite
-	var costume = Global.main.costume
+	# Re-derive costume visibility without nulling heldSprite. This must go
+	# through applyCostumeVisibility(): reading costumeLayers directly ignores
+	# userHidden, so every eye-hidden layer used to reappear on undo/redo.
 	for node in Global.sprite_nodes():
 		if node.is_queued_for_deletion():
 			continue
-		if node.costumeLayers[costume - 1] == 1:
-			node.visible = true
-			node.changeCollision(true)
-		else:
-			node.visible = false
-			node.changeCollision(false)
-
-	if scene_changed:
-		Global.spriteList.updateData()
-	elif reparented:
-		Global.spriteList.refreshHierarchy()
-	if Global.heldSprite != null:
-		Global.spriteEdit.setImage()
-
-	# Restore light gizmo
-	if data.has("_light") and Global.main and Global.main._light_gizmo:
-		Global.main._apply_light_data(data["_light"])
+		node.applyCostumeVisibility()
 
 	# Restore global eye-tracking kill switch
 	if data.has("_eyeTrackingGloballyEnabled"):
 		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
-# Instantiate a single sprite from snapshot data and add to origin.
+	state_restored.emit({
+		"structure_changed": scene_changed,
+		"hierarchy_changed": reparented,
+		"full_rebuild": false,
+		"light": data.get("_light"),
+	})
+
+# Instantiate a single sprite from snapshot data and add to origin. Reparenting
+# is resolved by _link_restored_parents() once every sprite in the snapshot
+# exists, so the sprite's own deferred 0.1s reparent timer is skipped: that timer
+# outlives a short session (it leaks at exit) and cannot see siblings that the
+# same restore has not added yet.
 func _add_sprite_from_data(d: Dictionary):
 	var sprite = _sprite_scene.instantiate()
 	SpriteState.apply_before_ready(sprite, d)
 	SpriteState.prepare_snapshot_images(sprite, d)
+	sprite._skip_ready_reparent = true
 	Global.main.origin.add_child(sprite)
 	sprite.position = str_to_var(d["pos"])
+	return sprite
+
+
+# Attach restored sprites to their recorded parents. Runs after the whole
+# snapshot is instantiated so a parent added later in the same restore is found.
+func _link_restored_parents(restored: Array) -> void:
+	for sprite in restored:
+		if not is_instance_valid(sprite) or sprite.parentId == null:
+			continue
+		var parents = get_tree().get_nodes_in_group(str(sprite.parentId))
+		if parents.is_empty():
+			sprite.parentId = null
+			sprite.parentSprite = null
+			continue
+		var parent = parents[0]
+		if sprite.is_ancestor_of(parent):
+			continue
+		sprite.reparent(parent.sprite, false)
+		sprite.parentSprite = parent
+		sprite.set_owner(parent.sprite)
+		# Reparent changed the global transform — re-snap the top_level dragger.
+		sprite._force_drag_snap = true
 
 # Full rebuild — only used when loading a completely different avatar (no ID overlap).
 func _restore_full(data: Dictionary):
@@ -207,23 +242,23 @@ func _restore_full(data: Dictionary):
 	main.get_node("OriginMotion").add_child(new_origin)
 	main.origin = new_origin
 
+	var restored: Array = []
 	for item in data:
 		if _is_meta_key(item):
 			continue
-		_add_sprite_from_data(data[item])
-
-	# Re-create light gizmo on new origin
-	main._create_light_gizmo()
-	if data.has("_light"):
-		main._apply_light_data(data["_light"])
+		restored.append(_add_sprite_from_data(data[item]))
+	_link_restored_parents(restored)
 
 	# Restore global eye-tracking kill switch
 	if data.has("_eyeTrackingGloballyEnabled"):
 		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
-	Global.main.changeCostume(Global.main.costume)
-	Global.spriteList.updateData()
-	Global.main.onWindowSizeChange()
+	state_restored.emit({
+		"structure_changed": true,
+		"hierarchy_changed": true,
+		"full_rebuild": true,
+		"light": data.get("_light"),
+	})
 
 func invalidate_image(sprite_id):
 	_image_cache.erase(sprite_id)
@@ -231,26 +266,71 @@ func invalidate_image(sprite_id):
 func invalidate_normal(sprite_id):
 	_normal_cache.erase(sprite_id)
 
-func save_state():
-	if suppressed or Global.main == null or !Global.main.saveLoaded:
+# --- Transactions ---
+#
+# Open a history transaction. An empty gesture is a discrete edit and always
+# captures; a named gesture captures once and then collapses until the gesture
+# ends. Every begin() must be paired with commit() or abort(); abort() discards
+# the snapshot so a command that changed nothing leaves no dead history entry.
+func begin(gesture: String = "") -> void:
+	var pushed := false
+	if _txn_depth == 0:
+		if gesture.is_empty():
+			pushed = _push_snapshot()
+			_active_gesture = ""
+		elif _active_gesture != gesture:
+			pushed = _push_snapshot()
+			if pushed:
+				_active_gesture = gesture
+	_txn_pushed.push_back(pushed)
+	_txn_depth += 1
+
+func commit() -> void:
+	if _txn_depth == 0:
 		return
+	_txn_depth -= 1
+	_txn_pushed.pop_back()
+
+func abort() -> void:
+	if _txn_depth == 0:
+		return
+	_txn_depth -= 1
+	if _txn_pushed.pop_back():
+		_undo_stack.pop_back()
+		_active_gesture = ""
+
+# End the current continuous gesture so the next continuous edit starts a new
+# history entry. Called on mouse release and when a held-key burst stops.
+# Pass the gesture name to end only that gesture: a per-frame poll that ends
+# gestures unconditionally would cut short an unrelated drag still in progress.
+func end_gesture(gesture: String = "") -> void:
+	if gesture.is_empty() or _active_gesture == gesture:
+		_active_gesture = ""
+
+func in_transaction() -> bool:
+	return _txn_depth > 0
+
+func history_depth() -> int:
+	return _undo_stack.size()
+
+func redo_depth() -> int:
+	return _redo_stack.size()
+
+func _push_snapshot() -> bool:
+	if suppressed or Global.main == null or !Global.main.saveLoaded:
+		return false
 	_undo_stack.push_back(_snapshot())
 	_redo_stack.clear()
-	_continuous_saved = false
 	if _undo_stack.size() > MAX_HISTORY:
 		_undo_stack.pop_front()
 	state_saved.emit()
-
-func save_state_continuous():
-	if _continuous_saved:
-		return
-	save_state()
-	_continuous_saved = true
+	return true
 
 func undo():
 	if _undo_stack.is_empty():
 		Global.notify_user("Nothing to undo.")
 		return
+	end_gesture()
 	suppressed = true
 	_redo_stack.push_back(_snapshot())
 	var snapshot = _undo_stack.pop_back()
@@ -262,6 +342,7 @@ func redo():
 	if _redo_stack.is_empty():
 		Global.notify_user("Nothing to redo.")
 		return
+	end_gesture()
 	suppressed = true
 	_undo_stack.push_back(_snapshot())
 	var snapshot = _redo_stack.pop_back()
@@ -271,4 +352,4 @@ func redo():
 
 func _input(event):
 	if event is InputEventMouseButton and !event.pressed:
-		_continuous_saved = false
+		end_gesture()

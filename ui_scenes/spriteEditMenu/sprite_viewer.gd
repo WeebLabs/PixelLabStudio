@@ -1,5 +1,7 @@
 extends Node2D
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const NormalMapPanel = preload("res://ui_scenes/spriteEditMenu/normal_map_panel.gd")
 const RotationPreviewRenderer = preload("res://ui_scenes/spriteEditMenu/rotation_preview_renderer.gd")
@@ -629,34 +631,30 @@ func _process(delta):
 
 func _on_drag_slider_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "dragSpeed", value, "slider")
 	_drag_label.text = "drag: " + str(value)
-	Global.heldSprite.dragSpeed = value
 
 
 
 func _on_r_drag_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "rdragStr", value, "slider")
 	_rdrag_label.text = "rotational drag: " + str(value)
-	Global.heldSprite.rdragStr = value
 	Global.main.ndi_mark_dirty()
 
 
 func _on_rot_limit_min_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "rLimitMin", value, "slider")
 	_rot_min_label.text = "rotational limit min: " + str(value)
-	Global.heldSprite.rLimitMin = value
 	Global.main.ndi_mark_dirty()
 
 	changeRotLimit()
 
 func _on_rot_limit_max_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "rLimitMax", value, "slider")
 	_rot_max_label.text = "rotational limit max: " + str(value)
-	Global.heldSprite.rLimitMax = value
 	Global.main.ndi_mark_dirty()
 
 	changeRotLimit()
@@ -677,21 +675,18 @@ func layerSelected() -> void:
 
 func _on_squash_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "stretchAmount", value, "slider")
 	_squash_label.text = "squash: " + str(value)
-	Global.heldSprite.stretchAmount = value
 
 
 func _on_anim_speed_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "animSpeed", value, "slider")
 	_anim_speed_label.text = "animation speed: " + str(value)
-	Global.heldSprite.animSpeed = value
 
 func _on_anim_frames_value_changed(value):
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
+	MutationCommands.drag_layer_property(Global.heldSprite, "frames", value, "slider")
 	_anim_frames_label.text = "sprite frames: " + str(value)
-	Global.heldSprite.frames = value
 	Global.heldSprite.changeFrames()
 	setImage()

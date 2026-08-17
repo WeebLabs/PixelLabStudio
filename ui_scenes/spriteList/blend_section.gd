@@ -1,6 +1,8 @@
 class_name BlendOpacitySection
 extends RefCounted
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 # Per-layer Opacity + Blend on a single row, à la Photoshop / Affinity:
 #   [ 100% ▾ ]  [ Blend dropdown .......... ]
 # Opacity (left) is a compact editable text box ("100%") joined to a ▾ button that pops a
@@ -139,8 +141,7 @@ func _style_arrow_box(state: String, color: Color):
 func _on_blend_selected(idx: int):
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state()
-	Global.heldSprite.blendMode = idx
+	MutationCommands.set_layer_property(Global.heldSprite, "blendMode", idx)
 	Global.heldSprite.applyBlendMode()
 
 func _open_opacity_popup():
@@ -156,8 +157,8 @@ func _open_opacity_popup():
 func _on_opacity_slider_changed(value: float):
 	if Global.heldSprite == null:
 		return
-	UndoManager.save_state_continuous()
-	Global.heldSprite.opacity = value  # applied each frame via talkBlink()
+	# applied each frame via talkBlink()
+	MutationCommands.drag_layer_property(Global.heldSprite, "opacity", value, "slider")
 	if not _opacity_edit.has_focus():
 		_set_edit_text(value)
 
@@ -173,9 +174,7 @@ func _commit_opacity_text():
 	var raw = _opacity_edit.text.strip_edges().trim_suffix("%").strip_edges()
 	if raw.is_valid_float():
 		var newop = clampf(float(raw) / 100.0, 0.0, 1.0)
-		if not is_equal_approx(newop, Global.heldSprite.opacity):
-			UndoManager.save_state()
-			Global.heldSprite.opacity = newop
+		MutationCommands.set_layer_property(Global.heldSprite, "opacity", newop)
 	_refresh_opacity_display()
 
 # Keep the controls in step with the selected layer; disabled + neutral when none.

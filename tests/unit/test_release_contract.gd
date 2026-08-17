@@ -32,6 +32,7 @@ func run(t) -> void:
 	_test_cleanup_contract(t, source_root)
 	_test_terminology_and_optional_native_input(t, source_root)
 	_test_maintainer_documentation(t, source_root)
+	_test_mutation_boundary_contract(t, source_root)
 
 
 func _test_product_metadata(t, source_root: String) -> void:
@@ -160,6 +161,47 @@ func _test_maintainer_documentation(t, source_root: String) -> void:
 	var architecture := FileAccess.get_file_as_string(source_root.path_join("docs/architecture_guide.md"))
 	t.assert_true(architecture.contains("visibility_binding_armed"), "architecture map documents the renamed signal")
 	t.assert_true(architecture.contains("User-facing file extension: `.save`"), "architecture map distinguishes avatar and internal persistence extensions")
+
+
+# Phase 14: user mutations are undoable through one canonical path, and the
+# history itself carries no UI knowledge. Both are structural properties, so
+# they are asserted against the source rather than left to convention.
+func _test_mutation_boundary_contract(t, source_root: String) -> void:
+	var command_path := "autoload/domain/mutation_commands.gd"
+	t.assert_true(FileAccess.file_exists(source_root.path_join(command_path)), "the canonical mutation command layer exists")
+
+	var offenders: Array[String] = []
+	for root in SOURCE_ROOTS:
+		for path in _collect_files(source_root.path_join(root), ["gd"]):
+			var relative := path.trim_prefix(source_root).trim_prefix("/")
+			if relative == command_path or relative == "autoload/undo_manager.gd":
+				continue
+			var source := FileAccess.get_file_as_string(path)
+			for opener in ["UndoManager.begin(", "UndoManager.commit(", "UndoManager.abort(", "save_state("]:
+				if source.contains(opener):
+					offenders.append("%s (%s)" % [relative, opener])
+	t.assert_equal(offenders, [] as Array[String], "history transactions are opened only by the command layer")
+
+	var undo_source := FileAccess.get_file_as_string(source_root.path_join("autoload/undo_manager.gd"))
+	t.assert_true(undo_source.contains("signal state_restored"), "history reports restores instead of refreshing the interface itself")
+	for ui_call in [
+		"spriteList.updateData", "spriteList.refreshHierarchy", "spriteEdit.setImage",
+		"changeCostume(", "onWindowSizeChange(", "_light_gizmo", "_apply_light_data",
+	]:
+		t.assert_false(undo_source.contains(ui_call), "undo history has no interface knowledge: %s" % ui_call)
+	t.assert_true(undo_source.contains("applyCostumeVisibility()"), "restore re-derives visibility through the layer policy so eye-hidden layers survive undo")
+
+	var controller := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/avatar_controller.gd"))
+	t.assert_true(controller.contains("func on_state_restored"), "the scene coordinator owns the consequences of a restore")
+	t.assert_true(controller.contains("state_restored.connect"), "the scene coordinator subscribes to history restores")
+
+	var decoder_path := "autoload/input/input_commands.gd"
+	t.assert_true(FileAccess.file_exists(source_root.path_join(decoder_path)), "the input command decoder exists")
+	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
+	t.assert_true(global_source.contains("InputCommands.decode_foreground"), "foreground key commands route through the decoder")
+	var main_source := FileAccess.get_file_as_string(source_root.path_join("main_scenes/main.gd"))
+	t.assert_true(main_source.contains("InputCommands.decode_background"), "background key commands route through the decoder")
+	t.assert_true(main_source.contains("InputCommands.decode_device_costume"), "Stream Deck costume keys route through the decoder")
 
 
 func _collect_files(root: String, extensions: Array[String]) -> Array[String]:

@@ -1,6 +1,8 @@
 extends RefCounted
 class_name WigglePhysicsTab
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 # Builds and drives the Physics tab in the right sidebar. Controls edit the
 # selected layer's wiggle parameters (Global.heldSprite). Layout is fully
 # container-based and reuses the sidebar's shared slider styling, so it matches
@@ -343,10 +345,13 @@ func _on_preset_pressed(pname: String) -> void:
 	var data: Dictionary = _BUILTIN_PRESETS.get(pname, _custom_presets.get(pname, {}))
 	if data.is_empty():
 		return
-	UndoManager.save_state()
-	for k in _PRESET_KEYS:
-		if data.has(k):
-			Global.heldSprite.set(k, data[k])
+	MutationCommands.structural(func():
+		var changed := false
+		for k in _PRESET_KEYS:
+			if data.has(k) and Global.heldSprite.get(k) != data[k]:
+				Global.heldSprite.set(k, data[k])
+				changed = true
+		return changed)
 	Global.notify_user("Wiggle preset: " + pname)
 
 func _on_chip_gui_input(event: InputEvent, pname: String) -> void:
@@ -404,15 +409,17 @@ func _update_label(prop: String) -> void:
 
 func _on_enabled_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
 	if not pressed:
 		Global.set_wiggle_path_editing(false) # ribbon controls disable with wiggle
-	Global.heldSprite.setWiggle(pressed)
+	MutationCommands.structural(func():
+		if Global.heldSprite.wiggleEnabled == pressed:
+			return false
+		Global.heldSprite.setWiggle(pressed)
+		return true)
 
 func _on_wag_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.wiggleWagEnabled = pressed
+	MutationCommands.set_layer_property(Global.heldSprite, "wiggleWagEnabled", pressed)
 
 func _on_edit_path_pressed() -> void:
 	if Global.heldSprite == null: return
@@ -421,13 +428,13 @@ func _on_edit_path_pressed() -> void:
 
 func _on_autofit_pressed() -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.wiggle_auto_fit_path()
+	MutationCommands.structural(func():
+		Global.heldSprite.wiggle_auto_fit_path()
+		return true)
 
 func _on_slider_changed(value: float, prop: String) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	Global.heldSprite.set(prop, value)
+	MutationCommands.drag_layer_property(Global.heldSprite, prop, value, "slider")
 	# Thickness scales the captured band, so it needs a re-bake to take effect.
 	if prop == "wiggleThickness":
 		Global.heldSprite.apply_wiggle_path_changed()
