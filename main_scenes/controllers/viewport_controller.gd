@@ -111,7 +111,7 @@ func swap_mode() -> void:
 func set_layer_collision(active: bool) -> void:
 	if not is_instance_valid(_main) or _main.get_tree() == null:
 		return
-	for node in _main.get_tree().get_nodes_in_group("saved"):
+	for node in _global.sprite_nodes():
 		if node.is_queued_for_deletion() or not node.has_method("setCollisionActive"):
 			continue
 		node.setCollisionActive(active)
@@ -132,7 +132,7 @@ func _update_resize_state() -> void:
 		_resize_cooldown -= 1
 		if _resize_cooldown == 0:
 			_main.resize_active = false
-			for sprite in _main.get_tree().get_nodes_in_group("saved"):
+			for sprite in _global.sprite_nodes():
 				sprite._force_drag_snap = true
 
 

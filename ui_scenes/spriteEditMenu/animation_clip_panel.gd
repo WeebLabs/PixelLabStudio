@@ -367,8 +367,7 @@ func _on_bind_pressed() -> void:
 	if spr == null or _selected < 0 or _selected >= spr.animClips.size():
 		return
 	UndoManager.save_state()
-	Global.awaitingAnimKeyBind = true
-	Global.animKeyBindClip = spr.animClips[_selected]
+	Global.begin_animation_key_capture(spr.animClips[_selected])
 
 func _new_clip() -> Dictionary:
 	return {

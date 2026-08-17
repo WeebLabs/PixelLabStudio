@@ -215,13 +215,13 @@ func _on_device_selected(device: String) -> void:
 	if Global.selectMicrophone(device, 1.0):
 		Saving.settings["audioDevice"] = device
 	else:
-		Global.pushUpdate("Microphone is no longer available.")
+		Global.notify_user("Microphone is no longer available.")
 	_refresh_audio()
 
 
 func _on_mute_toggled(pressed: bool) -> void:
 	Global.micMuted = pressed
-	Global.pushUpdate("Microphone muted." if pressed else "Microphone unmuted.")
+	Global.notify_user("Microphone muted." if pressed else "Microphone unmuted.")
 
 
 # --- Display -------------------------------------------------------------------
@@ -276,16 +276,16 @@ func _apply_background(color: Color) -> void:
 	Global.backgroundColor = color
 	Saving.settings["backgroundColor"] = var_to_str(color)
 	RenderingServer.set_default_clear_color(color)
-	Global.pushUpdate("Background colour updated.")
+	Global.notify_user("Background colour updated.")
 
 
 func _on_filtering_toggled(pressed: bool) -> void:
 	var mode := 2 if pressed else 0
-	for sprite in get_tree().get_nodes_in_group("saved"):
+	for sprite in Global.sprite_nodes():
 		sprite.sprite.texture_filter = mode
 	Global.filtering = pressed
 	Saving.settings["filtering"] = pressed
-	Global.pushUpdate("Texture filtering set to: " + str(pressed))
+	Global.notify_user("Texture filtering set to: " + str(pressed))
 
 
 # Applied on demand rather than per slider step: retargeting the frame limit
@@ -294,7 +294,7 @@ func _on_apply_fps() -> void:
 	var value := int(_fps_slider.value)
 	Engine.max_fps = 0 if value == UNLIMITED_FPS else value
 	Saving.settings["maxFPS"] = Engine.max_fps
-	Global.pushUpdate("Max fps set to " + ("unlimited" if Engine.max_fps == 0 else str(Engine.max_fps)) + ".")
+	Global.notify_user("Max fps set to " + ("unlimited" if Engine.max_fps == 0 else str(Engine.max_fps)) + ".")
 
 
 # --- Motion --------------------------------------------------------------------
@@ -415,7 +415,7 @@ func _on_hotkey_rebind(slot: int) -> void:
 func _on_hotkey_cleared(slot: int) -> void:
 	Global.main.costumeKeys[slot - 1] = "null"
 	_write_hotkey_label(slot)
-	Global.pushUpdate("Deleted costume hotkey " + str(slot) + ".")
+	Global.notify_user("Deleted costume hotkey " + str(slot) + ".")
 
 
 # --- Output --------------------------------------------------------------------
@@ -515,14 +515,14 @@ func _on_ndi_toggle(pressed: bool) -> void:
 		ndi.set_crop_visible(pressed)
 	# NDI disables window transparency for performance, so re-derive it.
 	Global.main.updateWindowTransparency()
-	Global.pushUpdate("NDI output enabled." if pressed else "NDI output disabled.")
+	Global.notify_user("NDI output enabled." if pressed else "NDI output disabled.")
 
 
 func _on_ndi_width_selected(index: int) -> void:
 	var ndi = Global.main.ndi_manager
 	if ndi != null:
 		ndi.set_width(NDI_WIDTHS[index])
-	Global.pushUpdate("NDI width set to " + str(NDI_WIDTHS[index]) + ".")
+	Global.notify_user("NDI width set to " + str(NDI_WIDTHS[index]) + ".")
 
 
 func _on_ndi_mode_selected(index: int) -> void:
@@ -531,7 +531,7 @@ func _on_ndi_mode_selected(index: int) -> void:
 	if ndi != null:
 		ndi.set_mode(mode)
 	_ndi_manual_row.visible = mode == "manual"
-	Global.pushUpdate("NDI mode set to " + mode + ".")
+	Global.notify_user("NDI mode set to " + mode + ".")
 
 
 func _on_ndi_manual_size_changed(_value: float) -> void:
@@ -558,7 +558,7 @@ func _apply_ndi_source_name(new_text: String) -> void:
 	var applied: String = Saving.settings.get("ndiSourceName", "PixelLab Studio")
 	_ndi_source_name.text = applied
 	if applied != previous:
-		Global.pushUpdate("NDI source name set to \"" + applied + "\".")
+		Global.notify_user("NDI source name set to \"" + applied + "\".")
 
 
 func _on_recording_format_selected(index: int) -> void:
@@ -567,9 +567,9 @@ func _on_recording_format_selected(index: int) -> void:
 	# Still frames are expensive per frame, so drop the default rate for them.
 	Saving.settings["recordingFPS"] = 15 if format != "webm" else 30
 	_refresh_recording()
-	Global.pushUpdate("Recording format set to " + RECORDING_FORMAT_NAMES[index] + ".")
+	Global.notify_user("Recording format set to " + RECORDING_FORMAT_NAMES[index] + ".")
 
 
 func _on_recording_fps_selected(index: int) -> void:
 	Saving.settings["recordingFPS"] = RECORDING_FPS[index]
-	Global.pushUpdate("Recording FPS set to " + str(RECORDING_FPS[index]) + ".")
+	Global.notify_user("Recording FPS set to " + str(RECORDING_FPS[index]) + ".")

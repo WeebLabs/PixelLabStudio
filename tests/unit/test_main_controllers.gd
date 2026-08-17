@@ -96,7 +96,7 @@ func _test_idle_mode_contract(t) -> void:
 	# set_layer_collision drives every layer, so it has to tolerate a rig whose
 	# members are mid-deletion or predate the method.
 	var apply := _function_body(viewport_source, "func set_layer_collision")
-	t.assert_true(apply.contains("get_nodes_in_group(\"saved\")"), "every layer in the rig is covered")
+	t.assert_true(apply.contains("_global.sprite_nodes()"), "every layer is obtained through the canonical registry boundary")
 	t.assert_true(apply.contains("is_queued_for_deletion"), "layers being deleted are skipped")
 	t.assert_true(apply.contains("has_method(\"setCollisionActive\")"), "the call is guarded for group members without it")
 

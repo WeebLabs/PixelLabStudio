@@ -33,7 +33,7 @@ func _is_meta_key(item) -> bool:
 
 func _snapshot() -> Dictionary:
 	var data = {}
-	var nodes = get_tree().get_nodes_in_group("saved")
+	var nodes = Global.sprite_nodes()
 	var live_ids := {}
 	var idx = 0
 	for child in nodes:
@@ -72,7 +72,7 @@ func _snapshot() -> Dictionary:
 	return data
 
 func _restore(data: Dictionary):
-	var nodes = get_tree().get_nodes_in_group("saved")
+	var nodes = Global.sprite_nodes()
 	var current_ids = {}
 	for node in nodes:
 		current_ids[node.id] = node
@@ -104,7 +104,7 @@ func _restore(data: Dictionary):
 			scene_changed = true
 			var sprite = current_ids[id]
 			if Global.heldSprite == sprite:
-				Global.heldSprite = null
+				Global.clear_selection()
 			sprite.queue_free()
 
 	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
@@ -154,7 +154,7 @@ func _restore(data: Dictionary):
 
 	# Update costume visibility without nulling heldSprite
 	var costume = Global.main.costume
-	for node in get_tree().get_nodes_in_group("saved"):
+	for node in Global.sprite_nodes():
 		if node.is_queued_for_deletion():
 			continue
 		if node.costumeLayers[costume - 1] == 1:
@@ -189,7 +189,7 @@ func _add_sprite_from_data(d: Dictionary):
 
 # Full rebuild — only used when loading a completely different avatar (no ID overlap).
 func _restore_full(data: Dictionary):
-	Global.heldSprite = null
+	Global.clear_selection()
 
 	_image_cache.clear()
 	_normal_cache.clear()
@@ -249,25 +249,25 @@ func save_state_continuous():
 
 func undo():
 	if _undo_stack.is_empty():
-		Global.pushUpdate("Nothing to undo.")
+		Global.notify_user("Nothing to undo.")
 		return
 	suppressed = true
 	_redo_stack.push_back(_snapshot())
 	var snapshot = _undo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
-	Global.pushUpdate("Undo.")
+	Global.notify_user("Undo.")
 
 func redo():
 	if _redo_stack.is_empty():
-		Global.pushUpdate("Nothing to redo.")
+		Global.notify_user("Nothing to redo.")
 		return
 	suppressed = true
 	_undo_stack.push_back(_snapshot())
 	var snapshot = _redo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
-	Global.pushUpdate("Redo.")
+	Global.notify_user("Redo.")
 
 func _input(event):
 	if event is InputEventMouseButton and !event.pressed:

@@ -205,3 +205,16 @@ took 475.82 ms; exact time and static-memory observations are stored in
 microseconds per active 100-layer animation frame, 0.25 idle, 1,219.65 ms for
 100 schema validations, and 3.85 ms for the indexed 250-layer eye-target
 workload). Five consecutive 120-frame active NDI teardown repetitions passed.
+
+## Phase 10 boundary gate
+
+> Updated: 2026-08-17 — explicit application-state boundaries
+
+The production-scene runner now makes 390 assertions, including the canonical
+Area2D-to-layer resolver and selection API before and after a persisted round
+trip. The isolated suite makes 686 assertions, including deterministic
+selection cycling and source contracts that prevent feature scripts from
+assigning held selection, calling private `Global` methods, or duplicating the
+three-parent scene traversal. The full Godot 4.6.3 compile, behavioral, and NDI
+teardown gates pass after routing production enumeration through the live sprite
+registry.

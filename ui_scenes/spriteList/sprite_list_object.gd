@@ -220,7 +220,7 @@ func _select():
 	# Eye-tracking pick mode: consume the click as a target assignment, don't
 	# change selection.
 	if Global.eyeTrackPickMode:
-		Global._finish_eye_track_pick(sprite)
+		Global.finish_eye_track_pick(sprite)
 		return
 
 	if Global.heldSprite != null and Global.reparentMode:
@@ -228,10 +228,10 @@ func _select():
 		Global.linkSprite(Global.heldSprite, sprite)
 		Global.chain.enable(false)
 
-	Global.heldSprite = sprite
+	Global.select_sprite(sprite)
 	Global.spriteEdit.setImage()
 
-	Global.pushUpdate("Selected sprite \"" + _display_name(sprite.path) + "\".")
+	Global.notify_user("Selected sprite \"" + _display_name(sprite.path) + "\".")
 
 	sprite.set_physics_process(true)
 

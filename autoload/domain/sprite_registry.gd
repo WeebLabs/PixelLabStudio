@@ -1,9 +1,9 @@
 class_name SpriteRegistry
 extends RefCounted
 
-## Live sprite index for hot runtime lookups. Scene-tree groups remain the
-## compatibility/enumeration boundary, while ID resolution and target badges
-## avoid repeated group-array construction and O(layer²) scans.
+## Canonical live sprite index for enumeration and hot runtime lookups. Sprite
+## nodes retain the `saved` group for scene/debugging compatibility, while
+## consumers avoid repeated group-array construction and O(layer²) ID scans.
 var _by_id: Dictionary = {}
 var _ordered: Array = []
 var _eye_target_ids: Dictionary = {}

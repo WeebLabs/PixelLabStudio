@@ -90,7 +90,8 @@ PNGTuberPlus/
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
 │   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
-│   ├── domain/sprite_registry.gd  Live ID/target index for runtime hot paths
+│   ├── domain/sprite_registry.gd  Canonical live layer enumeration/ID index
+│   ├── domain/selection_state.gd  Selected layer and click-cycle state
 │   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
 │   ├── apng_parser.gd             Bounded APNG parser and compositor
@@ -168,14 +169,22 @@ Additional parsers (not autoloaded, instantiated on demand):
 > references and interaction modes are cleared during shutdown or scene swaps.
 > Pure transition tests live in `tests/unit/test_runtime_services.gd`.
 
-> Updated: 2026-08-06 — `Global` owns a `SpriteRegistry` populated by each
-> sprite's ready/exit lifecycle. Scene-tree groups remain the compatibility
-> enumeration mechanism, but per-frame eye-target resolution, target badges,
-> ID collision checks, maximum-Z lookup, post-load reparenting, and descendant
-> traversal use direct indexes. The registry prunes invalid objects, atomically
-> handles reused IDs, and rebuilds the set of eye-target IDs at most once per
-> process frame. This removes the layer list's former all-sprites scan from
-> every row on every frame.
+> Updated: 2026-08-17 — `Global` owns a `SpriteRegistry` populated by each
+> sprite's ready/exit lifecycle. It is now the canonical enumeration and lookup
+> boundary for production code; the `"saved"` group remains on sprite roots for
+> scene/debugging compatibility. The registry prunes invalid objects,
+> atomically handles reused IDs, and rebuilds the set of eye-target IDs at most
+> once per process frame. `SelectionState` separately owns the held layer and
+> repeated-hit cycling. Feature scripts read the compatible
+> `Global.heldSprite` property but mutate it only through
+> `select_sprite()`/`clear_selection()`, and selected nodes are invalidated when
+> they leave the registry. `Global.main`, `spriteEdit`, `spriteList`, `mouse`,
+> and `chain` remain the canonical shared node references, now registered and
+> cleared through paired attach/detach methods. Notifications use
+> `notify_user()` and the existing lifecycle-safe signal; text-focus, Z-index
+> capture, reparent, wiggle-path, eye-target, and key-capture state expose
+> purpose-named methods rather than private-field calls. Boundary contracts live
+> in `tests/unit/test_application_boundaries.gd`.
 
 ---
 
@@ -500,12 +509,18 @@ Selection in edit mode flows through these components:
 
 1. **`mouse_cursor.gd`** — listens for left-click via `_unhandled_input`, sets `_click_pending`
 2. **`_process()`** in mouse_cursor — when `_click_pending` is true, performs a direct physics space query using `PhysicsDirectSpaceState2D.intersect_point()` at the current mouse position
-3. **`Global.select(areas)`** — receives the array of Area2D hits, resolves parent chain (3 levels up from Area2D to sprite root), handles cycling when clicking the same spot repeatedly, sets `Global.heldSprite`
+3. **`Global.select(areas)`** — receives the array of Area2D hits, resolves each through `sprite_from_hit_area()` (the single owner of the required three-level parent walk), and delegates repeated-hit cycling and the held layer to `SelectionState`
 4. **UI panels update** — SpriteViewer and SpriteList read `Global.heldSprite` each frame to show/hide controls. When `heldSprite` is null, the SpriteViewer disables all sliders/buttons and dims the panel to 35% opacity; all signal handlers also have null guards as a safety net. (Updated: 2026-02-16)
 
 ### Selection lifecycle
 
-`Global.heldSprite` must be nulled before freeing sprites to avoid dangling references. Both `_on_clear_avatar_pressed()` and `_on_load_dialog_file_selected()` set `Global.heldSprite = null` before calling `origin.queue_free()`. The undo system's `_restore_full()` does the same. (Updated: 2026-02-16)
+> Updated: 2026-08-17 — Call `Global.select_sprite()` and
+> `Global.clear_selection()` rather than assigning the held-layer property.
+> `unregister_sprite()` automatically clears a selected sprite during its exit
+> lifecycle, while avatar load, clear, costume, and undo paths clear selection
+> before freeing or replacing scene nodes. `SelectionState.changed` is re-emitted
+> as `Global.selection_changed` for consumers that need event-driven behavior;
+> the existing UI remains intentionally polling-based.
 
 ### Mouse filter configuration
 
@@ -574,7 +589,9 @@ Each sprite layer is an instance with:
 - **Visibility**: costume layers (10 slots), toggle key binding, speaking/blinking frames
 - **Eye tracking**: enable flag, distance, speed, invert. In edit mode, tracking is suppressed only for the selected sprite (`Global.heldSprite`) so unselected sprites stay lively; in view mode tracking always runs. (Updated: 2026-02-16)
 
-Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"` group for enumeration.
+Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
+`"saved"` group for scene/debugger compatibility and register with
+`Global.sprite_nodes()`'s backing registry for production enumeration.
 
 > Updated: 2026-08-06 — Persistent sprite state is centralized in
 > `autoload/domain/sprite_state.gd`. Its compatibility map is shared by manual
@@ -1040,7 +1057,16 @@ The old free-running wobble (`xFrq/xAmp/yFrq/yAmp`, a free sine on `wob.position
 `sprite_viewer.gd` gained a `SidebarTabBar` (reused from the right sidebar) below the sprite-sheet section: **Animation** and **Reactive**. Preview / Position / Normal-map / sprite-sheet frames+speed stay always-visible above the tabs. **Animation** content is built by `ui_scenes/spriteEditMenu/animation_clip_panel.gd` (`AnimationClipPanel`, RefCounted): a clip **list** with **+ New** / **Remove**, and an **inspector** for the selected clip (name, channel, shape, motion params, trigger → chance slider *or* Bind-key button, **▶ Test**). It rebuilds on a structural signature change (sprite / clip count / selection / channel / shape / trigger) and otherwise only refreshes live values (so undo of a slider edit shows without rebuilding mid-drag). **Reactive** holds drag / rotational-drag + limits / squash. `_layout_panel()` lays out the header sections, the tab strip, then the active tab's sections (re-run on tab switch, freeing prior dividers first); the active tab persists in `Saving.settings["leftSidebarTab"]`.
 
 ### Triggers (keys) & persistence
-Key binding mirrors the costume-hotkey flow: the inspector's Bind button sets `Global.awaitingAnimKeyBind` + `Global.animKeyBindClip` (a reference to the live clip dict); `main.gd`'s `_on_background_input_capture_bg_key_pressed` writes the next captured key into it. At runtime that same handler scans the `"saved"` group and calls `spriteObject.triggerAnimationKey(key)` (guarded by `Global._is_any_field_focused()` and the costume-bind state, so it doesn't fire while typing or binding). `animClips` persists as **one field** via `var_to_str` / `str_to_var` across all sites — `main.gd` save / load / duplicate and `undo_manager.gd` snapshot / `_restore` / `_add_sprite_from_data` — deep-copied (`.duplicate(true)`) in dup + undo so snapshots don't alias the live array.
+Key binding mirrors the costume-hotkey flow: the inspector passes its live clip
+dictionary through `Global.begin_animation_key_capture()`; `main.gd` gives the
+next captured key to `apply_animation_key_capture()`. At runtime that handler
+enumerates `Global.sprite_nodes()` and calls
+`spriteObject.triggerAnimationKey(key)`, guarded by
+`Global.has_text_entry_focus()` and the costume-bind state so it does not fire
+while typing or binding. `animClips` persists as **one field** via `var_to_str` /
+`str_to_var` across all sites — `main.gd` save / load / duplicate and
+`undo_manager.gd` snapshot / `_restore` / `_add_sprite_from_data` — deep-copied
+(`.duplicate(true)`) in dup + undo so snapshots do not alias the live array.
 
 ### Curves & preview graph
 > Updated: 2026-06-10 — A twitch clip carries a **`curve`** field selecting its easing envelope from `LayerAnimator.envelope(curve, ph)` (a `static func`, the single source of truth): `smooth` (half-sine), `ease` (rounded plateau), `snap` (fast attack/slow release), `spring` (overshoot + damped bounce through rest), `pulse` (linear triangle). The runtime (`_eval_twitch`) and the inspector preview both call it, so the preview is exact. Append-only (add a `match` case + a `_CURVES`/`_CURVE_LABELS` entry). The animator tracks live per-clip state in `_rt[i]` (`active` + normalized `ph`) for **both** shapes (twitch: progress 0→1; oscillate: phase within one period) and exposes it via `LayerAnimator.sample(i)` → `spriteObject.getAnimSample(i)`. The inspector adds a **Curve** dropdown (twitch only) and an `AnimationCurveGraph` (`ui_scenes/spriteEditMenu/animation_curve_graph.gd`, `Control` + `_draw`): it plots the curve (value vs normalized time) and a **dot that rides it** whenever the clip plays — Test or organic trigger — by polling `getAnimSample` each frame (only while `is_visible_in_tree()`, so the hidden Reactive tab costs nothing). `curve` rides in `animClips` (no new persistence sites) and is part of the inspector's structural signature so changing it rebuilds the preview.

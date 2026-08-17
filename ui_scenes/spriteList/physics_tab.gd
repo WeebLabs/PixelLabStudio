@@ -347,14 +347,14 @@ func _on_preset_pressed(pname: String) -> void:
 	for k in _PRESET_KEYS:
 		if data.has(k):
 			Global.heldSprite.set(k, data[k])
-	Global.pushUpdate("Wiggle preset: " + pname)
+	Global.notify_user("Wiggle preset: " + pname)
 
 func _on_chip_gui_input(event: InputEvent, pname: String) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		_custom_presets.erase(pname)
 		_persist_presets()
 		_rebuild_preset_chips()
-		Global.pushUpdate("Removed preset: " + pname)
+		Global.notify_user("Removed preset: " + pname)
 
 func _on_save_preset_pressed() -> void:
 	if Global.heldSprite == null:
@@ -369,12 +369,12 @@ func _on_name_submitted(text: String) -> void:
 	if pname == "" or Global.heldSprite == null:
 		return
 	if _BUILTIN_PRESETS.has(pname):
-		Global.pushUpdate("'" + pname + "' is a built-in preset name.")
+		Global.notify_user("'" + pname + "' is a built-in preset name.")
 		return
 	# Cap the total (built-ins + customs). Overwriting an existing custom is fine
 	# (count unchanged); only a brand-new name past the limit is refused.
 	if not _custom_presets.has(pname) and _BUILTIN_PRESETS.size() + _custom_presets.size() >= _MAX_PRESETS:
-		Global.pushUpdate("Preset limit reached (" + str(_MAX_PRESETS) + ") — remove one first.")
+		Global.notify_user("Preset limit reached (" + str(_MAX_PRESETS) + ") — remove one first.")
 		return
 	var data = {}
 	for k in _PRESET_KEYS:
@@ -382,7 +382,7 @@ func _on_name_submitted(text: String) -> void:
 	_custom_presets[pname] = data
 	_persist_presets()
 	_rebuild_preset_chips()
-	Global.pushUpdate("Saved preset: " + pname)
+	Global.notify_user("Saved preset: " + pname)
 
 func _box(col: Color) -> StyleBoxFlat:
 	var b = StyleBoxFlat.new()
@@ -406,7 +406,7 @@ func _on_enabled_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	if not pressed:
-		Global.wigglePathMode = false    # ribbon controls disable with wiggle
+		Global.set_wiggle_path_editing(false) # ribbon controls disable with wiggle
 	Global.heldSprite.setWiggle(pressed)
 
 func _on_wag_toggled(pressed: bool) -> void:
@@ -416,8 +416,8 @@ func _on_wag_toggled(pressed: bool) -> void:
 
 func _on_edit_path_pressed() -> void:
 	if Global.heldSprite == null: return
-	Global.wigglePathMode = not Global.wigglePathMode
-	Global.pushUpdate("Editing ribbon path." if Global.wigglePathMode else "Finished editing ribbon path.")
+	Global.set_wiggle_path_editing(not Global.wigglePathMode)
+	Global.notify_user("Editing ribbon path." if Global.wigglePathMode else "Finished editing ribbon path.")
 
 func _on_autofit_pressed() -> void:
 	if Global.heldSprite == null: return

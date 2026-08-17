@@ -4,7 +4,11 @@ extends Node2D
 @onready var plug = $Plug
 
 func _ready():
-	Global.chain = self
+	Global.attach_chain(self)
+
+
+func _exit_tree() -> void:
+	Global.detach_chain(self)
 
 func _process(delta):
 	ohYeah()

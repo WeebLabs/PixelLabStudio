@@ -235,7 +235,7 @@ func _rebuild_sprite_texture():
 
 func setNormalMap(img: Image, nrml_path: String):
 	if imageData != null and img.get_size() != imageData.get_size():
-		Global.pushUpdate("Normal map size mismatch. Must match diffuse dimensions.")
+		Global.notify_user("Normal map size mismatch. Must match diffuse dimensions.")
 		return
 	normalImageData = img
 	normalPath = nrml_path
@@ -393,7 +393,7 @@ func replaceSprite(pathNew):
 	# Clear normal if new diffuse has different dimensions
 	if hasNormalMap() and normalImageData.get_size() != img.get_size():
 		clearNormalMap()
-		Global.pushUpdate("Normal map cleared (size mismatch after replace).")
+		Global.notify_user("Normal map cleared (size mismatch after replace).")
 	else:
 		_rebuild_sprite_texture()
 	
@@ -419,7 +419,7 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 	# Clear normal if new diffuse has different dimensions
 	if hasNormalMap() and normalImageData.get_size() != img.get_size():
 		clearNormalMap()
-		Global.pushUpdate("Normal map cleared (size mismatch after replace).")
+		Global.notify_user("Normal map cleared (size mismatch after replace).")
 	else:
 		_rebuild_sprite_texture()
 

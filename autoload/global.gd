@@ -5,6 +5,7 @@ const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
 const BlinkSchedulerService = preload("res://autoload/runtime/blink_scheduler.gd")
 const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
+const SelectionStateService = preload("res://autoload/domain/selection_state.gd")
 
 # Shared UI layout constants used by both sidebar panels. ROW_GAP is the
 # baseline vertical distance between adjacent widgets; DIVIDER_PAD is the
@@ -21,6 +22,7 @@ var mouse = null
 var spriteList = null
 var chain = null
 var _sprite_registry := SpriteRegistryService.new()
+var _selection_state := SelectionStateService.new()
 
 var animationTick = 0
 
@@ -39,10 +41,12 @@ var _suppress_keys_frame: int = -1
 var _screenshot_key_held: bool = false
 var _screenshot_press_time: int = 0
 
-#Object Selection
-var heldSprite = null
-var lastArray = []
-var i = 0
+# Object selection remains readable through the long-standing Global property,
+# but writes go through select_sprite()/clear_selection() so invalidation and
+# click-cycle state cannot diverge.
+var heldSprite:
+	get:
+		return _selection_state.current
 
 var reparentMode = false
 
@@ -97,6 +101,7 @@ var senseLimit = 0.0
 signal startSpeaking
 signal stopSpeaking
 signal notification_requested(text: String)
+signal selection_changed(current: Object, previous: Object)
 
 var _microphone_monitor = null
 var _blink_scheduler = BlinkSchedulerService.new()
@@ -121,12 +126,13 @@ func make_slider_resettable(slider: Range, default_value):
 		# Skip if already at default so we don't push a redundant undo snapshot via
 		# the slider's value_changed handler
 		if is_equal_approx(slider.value, default):
-			pushUpdate("Already at default.")
+			notify_user("Already at default.")
 			return
 		slider.value = default
-		pushUpdate("Reset to default."))
+		notify_user("Reset to default."))
 
 func _ready():
+	_selection_state.changed.connect(_on_selection_changed)
 	_microphone_monitor = MicrophoneMonitorService.new()
 	_microphone_monitor.name = "MicrophoneMonitor"
 	add_child(_microphone_monitor)
@@ -143,12 +149,52 @@ func attach_main(main_node: Node) -> void:
 	main = main_node
 
 
+func attach_failure_overlay(overlay: CanvasItem) -> void:
+	fail = overlay
+
+
+func attach_mouse(mouse_node: Node2D) -> void:
+	mouse = mouse_node
+
+
+func detach_mouse(mouse_node: Node2D) -> void:
+	if mouse == mouse_node:
+		mouse = null
+
+
+func attach_sprite_edit(editor: CanvasItem) -> void:
+	spriteEdit = editor
+
+
+func detach_sprite_edit(editor: CanvasItem) -> void:
+	if spriteEdit == editor:
+		spriteEdit = null
+
+
+func attach_sprite_list(list_node: CanvasItem) -> void:
+	spriteList = list_node
+
+
+func detach_sprite_list(list_node: CanvasItem) -> void:
+	if spriteList == list_node:
+		spriteList = null
+
+
+func attach_chain(chain_node: Node2D) -> void:
+	chain = chain_node
+
+
+func detach_chain(chain_node: Node2D) -> void:
+	if chain == chain_node:
+		chain = null
+
+
 func detach_main(main_node: Node) -> void:
 	if main != main_node:
 		return
 	main = null
 	fail = null
-	heldSprite = null
+	clear_selection()
 	spriteEdit = null
 	spriteList = null
 	mouse = null
@@ -167,6 +213,8 @@ func register_sprite(sprite: Object) -> void:
 
 
 func unregister_sprite(sprite: Object) -> void:
+	if heldSprite == sprite:
+		clear_selection()
 	_sprite_registry.unregister(sprite)
 
 
@@ -188,6 +236,100 @@ func maximum_sprite_z() -> int:
 
 func is_eye_track_target(sprite_id: Variant) -> bool:
 	return _sprite_registry.is_eye_target(sprite_id)
+
+
+func select_sprite(sprite: Object) -> Object:
+	return _selection_state.select(sprite)
+
+
+func clear_selection() -> Object:
+	return _selection_state.clear()
+
+
+func is_sprite_selected(sprite: Object) -> bool:
+	return heldSprite == sprite
+
+
+func sprite_from_hit_area(area: Area2D) -> Node:
+	## Sprite selection Area2Ds are nested exactly three levels below the sprite
+	## root. Keep that scene-shape knowledge here rather than duplicating fragile
+	## parent chains in input and selection consumers.
+	var current: Node = area
+	for _level in range(3):
+		if current == null:
+			return null
+		current = current.get_parent()
+	return current
+
+
+func is_text_entry_active() -> bool:
+	return _text_field_active
+
+
+func has_text_entry_focus() -> bool:
+	return _is_any_field_focused()
+
+
+func is_z_index_editor_active() -> bool:
+	return _z_input_active
+
+
+func begin_reparenting() -> bool:
+	if heldSprite == null:
+		return false
+	reparentMode = true
+	originMode = false
+	wigglePathMode = false
+	if is_instance_valid(chain):
+		chain.enable(true)
+	return true
+
+
+func set_wiggle_path_editing(enabled: bool) -> void:
+	wigglePathMode = enabled and heldSprite != null
+	if wigglePathMode:
+		reparentMode = false
+		originMode = false
+
+
+func begin_eye_track_pick(source: Object = null, broadcast: bool = false) -> void:
+	eyeTrackPickMode = true
+	eyeTrackPickSource = source
+	eyeTrackPickBroadcast = broadcast
+
+
+func cancel_eye_track_pick() -> void:
+	_clear_eye_track_pick()
+
+
+func finish_eye_track_pick(target: Object) -> void:
+	_finish_eye_track_pick(target)
+
+
+func begin_animation_key_capture(clip: Dictionary) -> void:
+	awaitingAnimKeyBind = true
+	animKeyBindClip = clip
+
+
+func apply_animation_key_capture(key: String) -> bool:
+	if not awaitingAnimKeyBind or animKeyBindClip == null:
+		return false
+	animKeyBindClip["key"] = key
+	awaitingAnimKeyBind = false
+	animKeyBindClip = null
+	return true
+
+
+func begin_visibility_key_capture() -> void:
+	awaitingToggleBind = true
+
+
+func finish_visibility_key_capture() -> void:
+	awaitingToggleBind = false
+
+
+func _on_selection_changed(current: Object, previous: Object) -> void:
+	selection_changed.emit(current, previous)
 
 
 func _exit_tree() -> void:
@@ -227,16 +369,16 @@ func _process(delta):
 			UndoManager.save_state()
 			heldSprite.z -= 1
 			heldSprite.setZIndex()
-			pushUpdate("Moved sprite layer.")
+			notify_user("Moved sprite layer.")
 		if Input.is_action_just_pressed("zUp"):
 			UndoManager.save_state()
 			heldSprite.z += 1
 			heldSprite.setZIndex()
-			pushUpdate("Moved sprite layer.")
+			notify_user("Moved sprite layer.")
 		if main.editMode:
 			if wigglePathMode and Input.is_action_just_pressed("ui_cancel"):
 				wigglePathMode = false
-				pushUpdate("Finished editing ribbon path.")
+				notify_user("Finished editing ribbon path.")
 			if Input.is_action_just_pressed("reparent"):
 				reparentMode = !reparentMode
 				originMode = false
@@ -252,17 +394,17 @@ func _process(delta):
 					wigglePathMode = false
 					if is_instance_valid(chain):
 						chain.enable(false)
-					pushUpdate("Origin adjustment mode.")
+					notify_user("Origin adjustment mode.")
 			if Input.is_action_just_released("origin"):
 				if Time.get_ticks_msec() - _origin_press_time < 300:
 					if heldSprite != null:
 						UndoManager.save_state()
 						heldSprite.snapOriginToMouse()
-						pushUpdate("Snapped origin to cursor.")
+						notify_user("Snapped origin to cursor.")
 				else:
 					if originMode:
 						originMode = false
-						pushUpdate("Exited origin adjustment mode.")
+						notify_user("Exited origin adjustment mode.")
 
 	else:
 		reparentMode = false
@@ -424,7 +566,7 @@ func _apply_z_input():
 	UndoManager.save_state()
 	heldSprite.z = text.to_int()
 	heldSprite.setZIndex()
-	pushUpdate("Set z-index to " + str(heldSprite.z) + ".")
+	notify_user("Set z-index to " + str(heldSprite.z) + ".")
 	spriteList.updateData()
 	_z_input.select_all()
 	_flash_z_confirm()
@@ -487,12 +629,12 @@ func _input(event):
 			reparentMode = false
 			if is_instance_valid(chain):
 				chain.enable(false)
-			pushUpdate("Linking cancelled.")
+			notify_user("Linking cancelled.")
 			get_viewport().set_input_as_handled()
 			return
 		if eyeTrackPickMode:
 			_clear_eye_track_pick()
-			pushUpdate("Eye target pick cancelled.")
+			notify_user("Eye target pick cancelled.")
 			get_viewport().set_input_as_handled()
 			return
 	# Wheel while the cursor is over a sidebar (left/right panel or top bar):
@@ -573,33 +715,24 @@ func select(areas):
 	# doesn't accidentally deselect the source sprite mid-pick. Right-click cancels.
 	if eyeTrackPickMode:
 		if areas.size() > 0:
-			var picked = areas[0].get_parent().get_parent().get_parent()
+			var picked = sprite_from_hit_area(areas[0])
 			_finish_eye_track_pick(picked)
 		return
 
 	var prevSpr = heldSprite
 	if areas.size() <= 0:
-		heldSprite = null
+		clear_selection()
 		originMode = false
 		wigglePathMode = false
-		i = 0
-		lastArray = []
 		return
-	
-	if areas != lastArray:
-		heldSprite = areas[0].get_parent().get_parent().get_parent()
-		i = 0
-	else:
-		i += 1
-		
-		if i >= areas.size():
-			i = 0
-		
-		heldSprite = areas[i].get_parent().get_parent().get_parent()
+
+	_selection_state.choose_from_hits(areas, sprite_from_hit_area)
+	if heldSprite == null:
+		return
 	
 	var count = heldSprite.path.get_slice_count("/") - 1
 	var i1 = heldSprite.path.get_slice("/",count)
-	pushUpdate("Selected sprite \"" + i1 + "\"" + ".")
+	notify_user("Selected sprite \"" + i1 + "\"" + ".")
 	
 	heldSprite.set_physics_process(true)
 	
@@ -615,8 +748,6 @@ func select(areas):
 		if is_instance_valid(chain):
 			chain.enable(reparentMode)
 	
-	lastArray = areas.duplicate()
-	
 	spriteEdit.setImage()
 
 func _finish_eye_track_pick(target):
@@ -624,20 +755,20 @@ func _finish_eye_track_pick(target):
 		_clear_eye_track_pick()
 		return
 	if not eyeTrackPickBroadcast and target == eyeTrackPickSource:
-		pushUpdate("A sprite can't eye-track itself.")
+		notify_user("A sprite can't eye-track itself.")
 		_clear_eye_track_pick()
 		return
 	UndoManager.save_state()
 	if eyeTrackPickBroadcast:
 		var assigned = 0
-		for spr in get_tree().get_nodes_in_group("saved"):
+		for spr in sprite_nodes():
 			if spr.eyeTrack and spr != target:
 				spr.eyeTrackTargetId = target.id
 				assigned += 1
-		pushUpdate("Eye target set on " + str(assigned) + " layer(s).")
+		notify_user("Eye target set on " + str(assigned) + " layer(s).")
 	else:
 		eyeTrackPickSource.eyeTrackTargetId = target.id
-		pushUpdate("Eye target set to \"" + target.path.get_file() + "\".")
+		notify_user("Eye target set to \"" + target.path.get_file() + "\".")
 	_flash_pink(target)
 	_clear_eye_track_pick()
 	if spriteList != null:
@@ -669,7 +800,7 @@ func linkSprite(sprite,newParent):
 		return
 
 	if sprite.is_ancestor_of(newParent):
-		pushUpdate("Can't link to own child sprite!")
+		notify_user("Can't link to own child sprite!")
 		reparentMode = false
 		return
 
@@ -715,7 +846,7 @@ func linkSprite(sprite,newParent):
 	count = newParent.path.get_slice_count("/") - 1
 	var i2 = newParent.path.get_slice("/",count)
 	
-	pushUpdate("Linked sprite \"" + i1 + "\" to sprite \"" + i2 + "\".")
+	notify_user("Linked sprite \"" + i1 + "\" to sprite \"" + i2 + "\".")
 	newParent.set_physics_process(true)
 
 func scrollSprites():
@@ -744,7 +875,7 @@ func scrollSprites():
 		return
 	
 	
-	var obj = get_tree().get_nodes_in_group("saved")
+	var obj = sprite_nodes()
 	
 	if obj.size() <= 0:
 		return
@@ -755,11 +886,11 @@ func scrollSprites():
 	elif scrollSelection < 0:
 		scrollSelection = obj.size() - 1
 	
-	heldSprite = obj[scrollSelection]
+	select_sprite(obj[scrollSelection])
 	
 	var count = heldSprite.path.get_slice_count("/") - 1
 	var i1 = heldSprite.path.get_slice("/",count)
-	pushUpdate("Selected sprite \"" + i1 + "\"" + ".")
+	notify_user("Selected sprite \"" + i1 + "\"" + ".")
 	
 	heldSprite.set_physics_process(true)
 
@@ -805,12 +936,12 @@ func epicFail(err):
 	fail.visible = false
 
 func refresh():
-	var objs = get_tree().get_nodes_in_group("saved")
+	var objs = sprite_nodes()
 	for object in objs:
 		object.replaceSprite(object.path)
 		object.sprite.frame = 0
 		object.remadePolygon = false
-	pushUpdate("Refreshed all sprites.")
+	notify_user("Refreshed all sprites.")
 
 func unlinkChildren(parentSpr):
 	var children = parentSpr.getAllLinkedSprites()
@@ -853,10 +984,10 @@ func unlinkSprite():
 		entry[0].wob.position = entry[1]
 
 	Global.spriteList.refreshHierarchy()
-	pushUpdate("Unlinked sprite.")
+	notify_user("Unlinked sprite.")
 
 func saveImagesFromData():
-	var sprites = get_tree().get_nodes_in_group("saved")
+	var sprites = sprite_nodes()
 	if sprites.size() <= 0:
 		return
 	for sprite in sprites:
@@ -867,7 +998,13 @@ func saveImagesFromData():
 		DirAccess.make_dir_recursive_absolute(sprite.path.left(length-1))
 		img.save_png(sprite.path)
 	
-	pushUpdate("Saved all avatar images to computer.")
+	notify_user("Saved all avatar images to computer.")
 	
-func pushUpdate(text: String):
+func notify_user(text: String) -> void:
 	notification_requested.emit(text)
+
+
+func pushUpdate(text: String) -> void:
+	## Compatibility facade for older feature scripts. New coordination code
+	## should use notify_user(), which names the user-facing effect explicitly.
+	notify_user(text)

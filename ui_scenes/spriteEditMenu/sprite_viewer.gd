@@ -123,8 +123,13 @@ var _rot_max_slider: HSlider
 # current panel-width factor to get the actual scale.
 var _preview_base_scale: float = 1.0
 
+
+func _exit_tree() -> void:
+	Global.detach_sprite_edit(self)
+
+
 func _ready():
-	Global.spriteEdit = self
+	Global.attach_sprite_edit(self)
 	# Legacy icon sprites — kept hidden because the .tscn still has them at
 	# fixed positions that would overlap the wobble sliders. Real controls
 	# moved to viewer.gd's right sidebar.
@@ -966,7 +971,7 @@ func setLayerButtons():
 	$Layers/Layer9.self_modulate = active_mod if a[8] == 1 else inactive_mod
 	$Layers/Layer10.self_modulate = active_mod if a[9] == 1 else inactive_mod
 	
-	var nodes = get_tree().get_nodes_in_group("saved")
+	var nodes = Global.sprite_nodes()
 	for sprite in nodes:
 		sprite.applyCostumeVisibility()   # costume membership, honoring a manual hide
 		
@@ -1115,11 +1120,11 @@ func _on_set_toggle_pressed():
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	$VisToggle/setToggle/Label.text = "toggle: AWAITING INPUT"
-	Global.awaitingToggleBind = true
+	Global.begin_visibility_key_capture()
 	await Global.main.visibility_binding_armed
 
 	var keys = await Global.main.spriteVisToggles
-	Global.awaitingToggleBind = false
+	Global.finish_visibility_key_capture()
 	var key = keys[0]
 	if Global.heldSprite == null: return
 	Global.heldSprite.toggle = key
@@ -1179,7 +1184,7 @@ func _on_normal_file_selected(path: String):
 		return
 	var img = Image.new()
 	if img.load(path) != OK:
-		Global.pushUpdate("Failed to load normal map.")
+		Global.notify_user("Failed to load normal map.")
 		return
 	UndoManager.save_state()
 	Global.heldSprite.setNormalMap(img, path)

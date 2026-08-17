@@ -8,7 +8,7 @@ save compatibility and user-facing behavior unless its change is explicitly
 documented. A phase is complete only after targeted tests, the full test gate,
 performance review where relevant, documentation updates, and a focused commit.
 
-Progress: Phases 0–9 are complete. Phase 10 is next. Completed phases remain
+Progress: Phases 0–10 are complete. Phase 11 is next. Completed phases remain
 covered by the cumulative production-scene, isolated, native, performance, and
 standalone export gates.
 
@@ -165,6 +165,16 @@ standalone export gates.
 - Keep `Global` as the canonical owner of shared scene-node references while
   moving feature behavior behind focused methods and services.
 - Centralize the required three-level Area2D-to-sprite traversal in one helper.
+
+> Completed: 2026-08-17 — `SelectionState` owns selected-layer and repeated-hit
+> state behind `Global.select_sprite()`/`clear_selection()`, while
+> `SpriteRegistry` is now the production enumeration boundary as well as the ID
+> index. All shared scene references use paired attach/detach methods without
+> changing their established `Global` location. The Area2D parent walk exists
+> only in `sprite_from_hit_area()`, and input modes, key capture, and user
+> notifications expose purpose-named public methods. Pure/source contracts and
+> production-scene assertions cover the boundaries; the cumulative gate passes
+> 390 application assertions and 686 isolated assertions on Godot 4.6.3.
 
 ## Phase 11 — Main-scene completion
 

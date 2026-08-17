@@ -153,7 +153,7 @@ func _unhandled_input(event):
 			if _dragging != H_NONE:
 				_dragging = H_NONE
 				_set_freeze(false)
-				Global.pushUpdate("NDI crop box updated.")
+				Global.notify_user("NDI crop box updated.")
 				get_viewport().set_input_as_handled()
 
 	elif event is InputEventMouseMotion and _dragging != H_NONE:

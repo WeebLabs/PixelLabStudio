@@ -106,8 +106,13 @@ var _divider_ratio: float = 0.50
 var _divider_dragging = false
 var _hover_divider = false
 
+
+func _exit_tree() -> void:
+	Global.detach_sprite_list(self)
+
+
 func _ready():
-	Global.spriteList = self
+	Global.attach_sprite_list(self)
 	container.add_theme_constant_override("separation", 2)
 	$Area2D2/CollisionShape2D.disabled = false
 	$NinePatchRect.visible = false
@@ -773,7 +778,7 @@ func _on_trash_pressed():
 	UndoManager.save_state()
 	Global.unlinkChildren(Global.heldSprite)
 	Global.heldSprite.queue_free()
-	Global.heldSprite = null
+	Global.clear_selection()
 	Global.spriteList.updateData()
 
 # --- Costume button handlers ---
@@ -812,7 +817,7 @@ func _on_details_ndi_ref_toggled(pressed):
 	if Global.heldSprite == null: return
 	UndoManager.save_state()
 	if pressed:
-		for spr in get_tree().get_nodes_in_group("saved"):
+		for spr in Global.sprite_nodes():
 			if spr != Global.heldSprite:
 				spr.ndiRefLayer = false
 	Global.heldSprite.ndiRefLayer = pressed
@@ -882,14 +887,14 @@ func _on_eye_track_speed_changed(value):
 func _eye_scope() -> String:
 	if Global.heldSprite != null:
 		return "per_layer"
-	for spr in get_tree().get_nodes_in_group("saved"):
+	for spr in Global.sprite_nodes():
 		if spr.eyeTrack:
 			return "global"
 	return "dead"
 
 func _eye_tracked_sprites() -> Array:
 	var out = []
-	for spr in get_tree().get_nodes_in_group("saved"):
+	for spr in Global.sprite_nodes():
 		if spr.eyeTrack:
 			out.append(spr)
 	return out
@@ -941,21 +946,17 @@ func _on_eye_track_mode_selected(idx):
 			spr.eyeTrackMode = idx
 	# Switching mode while a pick is in progress cancels the pick
 	if Global.eyeTrackPickMode:
-		Global._clear_eye_track_pick()
+		Global.cancel_eye_track_pick()
 	refreshEyeUI()
 
 func _on_eye_track_pick_pressed():
 	var scope = _eye_scope()
 	if scope == "per_layer":
-		Global.eyeTrackPickMode = true
-		Global.eyeTrackPickSource = Global.heldSprite
-		Global.eyeTrackPickBroadcast = false
-		Global.pushUpdate("Click a layer to track (right-click to cancel).")
+		Global.begin_eye_track_pick(Global.heldSprite)
+		Global.notify_user("Click a layer to track (right-click to cancel).")
 	elif scope == "global":
-		Global.eyeTrackPickMode = true
-		Global.eyeTrackPickSource = null
-		Global.eyeTrackPickBroadcast = true
-		Global.pushUpdate("Click a layer to broadcast as target (right-click to cancel).")
+		Global.begin_eye_track_pick(null, true)
+		Global.notify_user("Click a layer to broadcast as target (right-click to cancel).")
 	refreshEyePickWhip()
 
 func _on_eye_track_target_clear():
@@ -1067,7 +1068,7 @@ func _refresh_eye_ui_global(_reset_values: bool):
 func _agreed_eye_value(prop: String):
 	var first = true
 	var agreed = null
-	for s in get_tree().get_nodes_in_group("saved"):
+	for s in Global.sprite_nodes():
 		if not s.eyeTrack:
 			continue
 		if first:
@@ -1116,7 +1117,7 @@ func _full_eye_target_name() -> String:
 	# same target. Mixed targets or any null target → no unambiguous label.
 	var target_id = null
 	var initialized = false
-	for s in get_tree().get_nodes_in_group("saved"):
+	for s in Global.sprite_nodes():
 		if not s.eyeTrack:
 			continue
 		if not initialized:
@@ -1199,10 +1200,10 @@ func _on_set_toggle_pressed():
 	UndoManager.save_state()
 	_vis_toggle_label.text = "toggle: AWAITING INPUT"
 	_vis_toggle_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.8))
-	Global.awaitingToggleBind = true
+	Global.begin_visibility_key_capture()
 	await Global.main.visibility_binding_armed
 	var keys = await Global.main.spriteVisToggles
-	Global.awaitingToggleBind = false
+	Global.finish_visibility_key_capture()
 	var key = keys[0]
 	if Global.heldSprite == null: return
 	Global.heldSprite.toggle = key

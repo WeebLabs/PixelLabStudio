@@ -13,7 +13,11 @@ var _click_pending = false
 @onready var area = $Area2D
 
 func _ready():
-	Global.mouse = self
+	Global.attach_mouse(self)
+
+
+func _exit_tree() -> void:
+	Global.detach_mouse(self)
 
 func _unhandled_input(event):
 	if event.is_action_pressed("mouse_left"):
@@ -62,8 +66,8 @@ func _world_mouse_position() -> Vector2:
 	return vp.get_canvas_transform().affine_inverse() * vp.get_mouse_position()
 
 func _compare_z_descending(a: Area2D, b: Area2D) -> bool:
-	var obj_a = a.get_parent().get_parent().get_parent()
-	var obj_b = b.get_parent().get_parent().get_parent()
+	var obj_a = Global.sprite_from_hit_area(a)
+	var obj_b = Global.sprite_from_hit_area(b)
 	var spr_a = obj_a.get("sprite") if obj_a != null else null
 	var spr_b = obj_b.get("sprite") if obj_b != null else null
 	# Visible (alpha > 0.5) before faded/hidden
@@ -77,7 +81,7 @@ func _compare_z_descending(a: Area2D, b: Area2D) -> bool:
 	return z_a > z_b
 
 func _is_pixel_opaque(hit_area: Area2D, world_pos: Vector2) -> bool:
-	var sprite_obj = hit_area.get_parent().get_parent().get_parent()
+	var sprite_obj = Global.sprite_from_hit_area(hit_area)
 	if sprite_obj == null or !sprite_obj.visible:
 		return false
 	var spr = sprite_obj.get("sprite")

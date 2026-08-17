@@ -47,6 +47,12 @@ func _run() -> void:
 	if is_instance_valid(_main):
 		_main.queue_free()
 		await get_tree().process_frame
+	assert_true(Global.main == null, "main scene detaches from the application context")
+	assert_true(Global.spriteEdit == null, "edit sidebar detaches from the application context")
+	assert_true(Global.spriteList == null, "layer sidebar detaches from the application context")
+	assert_true(Global.mouse == null, "mouse coordinator detaches from the application context")
+	assert_true(Global.chain == null, "reparenting chain detaches from the application context")
+	assert_equal(Global.sprite_count(), 0, "avatar-session teardown clears the live sprite registry")
 	_remove_temp_file(_materialized_fixture_path)
 	print("[AVATAR SCENE] %d assertions, %d failures" % [assertions, failures])
 	get_tree().quit(1 if failures > 0 else 0)
@@ -87,6 +93,11 @@ func _test_loaded_avatar(context: String) -> void:
 	if base == null or costume_one == null or costume_two == null or nested == null:
 		return
 
+	assert_true(Global.sprite_from_hit_area(base.grabArea) == base, context + ": grab-area traversal resolves the sprite root")
+	Global.select_sprite(base)
+	assert_true(Global.heldSprite == base, context + ": selection changes through the application boundary")
+	Global.clear_selection()
+	assert_true(Global.heldSprite == null, context + ": selection clearing changes through the application boundary")
 	assert_equal(costume_one.parentId, BASE_ID, context + ": first child retains its parent ID")
 	assert_true(costume_one.parentSprite == base, context + ": first child resolves its parent object")
 	assert_true(costume_one.get_parent() == base.sprite, context + ": first child is reparented under the base Sprite2D")
