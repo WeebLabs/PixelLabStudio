@@ -473,6 +473,8 @@ When a sprite is selected (canvas click, keyboard scroll, or any path through `s
 
 The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `Area2D.get_overlapping_areas()` because the latter returns cached results from the previous physics step, creating a one-frame timing mismatch with the cursor position updated in `_process()`.
 
+> Updated: 2026-08-17 — the layer `Grab` area sets `collision_mask = 0` in `spriteObject.tscn`, and must keep it. A point query matches an area's `collision_layer`, so clearing the mask leaves selection working while telling the physics server this area detects nothing. With the default mask of 1 every layer paired with every other overlapping layer and solved SAT against their traced outline polygons at 60 Hz: measured 198.8 ms/frame for 25 layers versus 16.0 ms cleared, on a 16.1 ms no-pairs floor, and about 43% of a live session's CPU sat in `GodotArea2Pair2D::setup`. `monitoring = false` does not substitute for this; the pair is gated by the *other* area's `monitorable`, which `changeCollision()` drives from costume visibility. `test_performance_memory` guards the mask.
+
 ### Scroll wheel routing (cycle / zoom / slider nudge)
 
 > Updated: 2026-06-12. Ctrl+scroll nudges the hovered sidebar slider; the viewport never zooms or cycles over a sidebar.
