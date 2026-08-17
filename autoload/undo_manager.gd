@@ -1,6 +1,7 @@
 extends Node
 
 const SpriteState = preload("res://autoload/domain/sprite_state.gd")
+const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 
 # Emitted when a transaction actually captures a snapshot (not when suppressed
 # during an undo/redo restore). Subscribers — currently main.gd's session
@@ -198,7 +199,7 @@ func _add_sprite_from_data(d: Dictionary):
 	SpriteState.prepare_snapshot_images(sprite, d)
 	sprite._skip_ready_reparent = true
 	Global.main.origin.add_child(sprite)
-	sprite.position = str_to_var(d["pos"])
+	sprite.position = ValueCodec.vector2_value(d["pos"], Vector2.ZERO)
 	return sprite
 
 
@@ -307,14 +308,8 @@ func end_gesture(gesture: String = "") -> void:
 	if gesture.is_empty() or _active_gesture == gesture:
 		_active_gesture = ""
 
-func in_transaction() -> bool:
-	return _txn_depth > 0
-
 func history_depth() -> int:
 	return _undo_stack.size()
-
-func redo_depth() -> int:
-	return _redo_stack.size()
 
 func _push_snapshot() -> bool:
 	if suppressed or Global.main == null or !Global.main.saveLoaded:

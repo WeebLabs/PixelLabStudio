@@ -72,11 +72,11 @@ func cancel_psd_import() -> void:
 
 
 func show_import_dialog() -> void:
-	_on_import_button_pressed()
+	open_import_dialog()
 
 
 func show_replace_dialog() -> void:
-	_on_replace_button_pressed()
+	open_replace_dialog()
 
 
 func apply_replace_review(matched: Array, new_items: Array, orphaned: Array, canvas_size: Vector2, remove_orphans: bool) -> void:
@@ -440,7 +440,7 @@ func _create_import_dialog():
 	_import_dialog.files_selected.connect(_on_import_files_selected)
 	_main.add_child(_import_dialog)
 
-func _on_import_button_pressed():
+func open_import_dialog():
 	if _import_dialog == null:
 		_create_import_dialog()
 	_import_dialog.popup_centered(Vector2i(600, 400))
@@ -542,7 +542,7 @@ func _create_replace_dialog():
 	_replace_dialog.file_selected.connect(_on_replace_file_selected)
 	_main.add_child(_replace_dialog)
 
-func _on_replace_button_pressed():
+func open_replace_dialog():
 	if _replace_dialog == null:
 		_create_replace_dialog()
 	_replace_dialog.popup_centered(Vector2i(600, 400))

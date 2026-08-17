@@ -96,6 +96,8 @@ PNGTuberPlus/
 │   ├── settings/
 │   │   ├── settings_menu.gd      Constructed settings scene facade
 │   │   └── *_settings_tab.gd     Audio/display/motion/hotkey/output components
+│   ├── zIndex/
+│   │   └── z_index_editor.gd     On-canvas z-index entry overlay
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
 │
@@ -168,7 +170,7 @@ Registered in `project.godot` under `[autoload]`:
 |--------------------|--------------------------------|------------------------------------------------------|
 | `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                         |
 | `Saving`           | `autoload/saving.gd`          | Avatar persistence (JSON + base64 images), settings  |
-| `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input    |
+| `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input routing |
 | `UndoManager`      | `autoload/undo_manager.gd`    | Snapshot-based undo/redo with image caching           |
 
 Additional parsers (not autoloaded, instantiated on demand):
@@ -303,7 +305,7 @@ Key child nodes:
 > `SelectionPresenter`, normal-map file actions to `NormalMapPanel`, and
 > one-time circle textures to `RotationPreviewRenderer`, alongside the existing
 > animation component. `Global.spriteEdit` and its `setImage()`,
-> `setLayerButtons()`, and `layerSelected()` surface remain stable. The left
+> `setLayerButtons()` surface remains stable. The left
 > scene no longer instantiates its replaced 3D viewports, old top buttons,
 > legacy wobble sliders, costume strip, visibility controls, or eye controls;
 > old saves still migrate legacy wobble data in the sprite runtime. Extracted
@@ -793,7 +795,6 @@ before/after snapshot boundary exactly once.
 - User-facing file extension: `.save`
 - PNG encoding for file saves runs on a background thread to avoid stalling the main loop (Updated: 2026-02-16)
 - Settings stored separately: volume, sensitivity, window size, background color, costume key bindings, etc.
-- Web build support via localStorage
 
 > Updated: 2026-08-06 — Persistence boundaries are versioned and validated before live scene state is changed. `autoload/persistence/avatar_save_schema.gd` migrates legacy unversioned avatars, supplies typed compatibility defaults, rejects unsupported future versions, duplicate IDs, invalid layers, and hierarchy cycles, and selects sprite entries by their validated shape rather than a fixed metadata allowlist. `settings_schema.gd` owns the complete canonical settings defaults and typed/ranged migration (including legacy NDI ruler-to-crop conversion). `value_codec.gd` is the only persistence-boundary parser for legacy Variant strings. `json_file_store.gd` bounds reads, reports JSON line errors, writes through a same-directory temporary file, and retains/reloads a previous complete `.bak` if replacement is interrupted. Manual saves only update `lastAvatar` after the avatar write succeeds; failed session saves re-arm the dirty flag. The `Saving` singleton remains the compatibility-facing API and exposes `last_error` plus `persistence_error` for actionable UI reporting.
 
@@ -881,9 +882,18 @@ write behavior are specified in `docs/save_format.md`.
 
 > Updated: 2026-02-28 — Added unified Replace flow
 
-- Uses `DisplayServer.file_dialog_show()` with `FILE_DIALOG_MODE_OPEN_ANY` to select PSD, PNG, or folder
+> Updated: 2026-08-17 — **Folder replace is unreachable.** The Replace dialog is
+> a `FileDialog` in `FILE_MODE_OPEN_FILE` filtered to `*.psd` and `*.png`, so a
+> folder can never be selected and `_on_replace_file_selected()` only ever
+> dispatches to the PSD or single-PNG handler. `_handle_replace_from_folder()`
+> and `_show_replace_review_from_items()` are complete and correct but have no
+> caller. The Phase 16 audit left the implementation in place rather than
+> deleting a documented feature: re-exposing it needs a directory dialog (or
+> `FILE_MODE_OPEN_ANY`) and is a product decision, not a refactor.
+
+- Uses a `FileDialog` in `FILE_MODE_OPEN_FILE` with `*.psd` and `*.png` filters
 - **PSD replace**: Parses PSD (reuses PSD parser thread), matches layer names to existing sprite names (case-insensitive), shows review dialog
-- **Folder replace**: Scans folder for PNGs, matches filenames to sprite names, shows review dialog
+- **Folder replace**: implemented in `_handle_replace_from_folder()` but **not currently reachable** — the Replace dialog only accepts a single PSD or PNG file, so nothing dispatches to it (see the 2026-08-17 note below)
 - **Single PNG replace**: If a sprite is selected, replaces that sprite directly (preserves APNG detection)
 - Review dialog shows matched sprites (will be replaced), new items (checkboxes to optionally add), orphaned sprites (option to remove)
 - Name matching: `psd://Name` → `Name`, `/path/file.png` → `file`, case-insensitive via `.to_lower()`
@@ -918,6 +928,17 @@ write behavior are specified in `docs/save_format.md`.
 ---
 
 ## Input Handling
+
+> Updated: 2026-08-17 — **The z-index overlay is a component, not singleton
+> state.** `ui_scenes/zIndex/z_index_editor.gd` (a `Node2D` added under `main` on
+> first use) owns the panel construction, styling, confirm-flash tween, and the
+> click-outside hit test. `Global` keeps only what input routing needs:
+> `is_z_index_editor_active()`, `_show_z_input()`, and `_hide_z_input()`. The
+> editor commits through `MutationCommands`, so an entered depth is one undoable
+> command and re-entering the current value adds no history.
+> `Global.detach_main()` drops the reference because the component lives under
+> the scene it was created in.
+
 
 Key bindings (edit mode, handled in `global.gd`):
 
@@ -1039,7 +1060,7 @@ block grabs (same screen-space guard as before). While dragging, bounce/wobble
 freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in
 `main._process` and `spriteObject.wobble`).
 
-> Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `_on_load_dialog_file_selected()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
+> Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `load_avatar_file()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
 
 ### Settings (`Saving.settings`)
 

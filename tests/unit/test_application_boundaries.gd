@@ -72,7 +72,11 @@ func _test_global_boundary_contract(t) -> void:
 				duplicate_traversal.append(path)
 			if source.contains("get_nodes_in_group(\"saved\")"):
 				group_enumeration.append(path)
-			if source.contains("Global.pushUpdate("):
+			# Match the call, not one spelling of the receiver: the controllers
+			# reach Global through an injected reference, so a check for the
+			# literal "Global.pushUpdate(" passed while thirteen call sites used
+			# "_global.pushUpdate(".
+			if source.contains(".pushUpdate("):
 				legacy_notifications.append(path)
 	t.assert_true(duplicate_traversal.is_empty(), "production code has no duplicated three-parent sprite traversal: " + str(duplicate_traversal))
 	t.assert_true(group_enumeration.is_empty(), "production code enumerates layers through the sprite registry: " + str(group_enumeration))

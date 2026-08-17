@@ -300,11 +300,6 @@ func _update_eye_track_badge():
 	if on:
 		_eye_track_badge.modulate = Color(0.78, 0.78, 0.82) if Global.eyeTrackingGloballyEnabled else Color(0.4, 0.4, 0.45)
 
-func updateChildren():
-	if childrenTags.size() > 0:
-		_collapse_btn.text = "▼"
-		_collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-
 func updateIndent():
 	_indent_spacer.custom_minimum_size.x = indent * 19
 	_update_vis_display()

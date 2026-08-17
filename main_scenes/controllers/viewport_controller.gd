@@ -82,7 +82,7 @@ func swap_mode() -> void:
 		return
 	_global.heldSprite = null
 	_main.editMode = not _main.editMode
-	_global.pushUpdate("Toggled editing mode.")
+	_global.notify_user("Toggled editing mode.")
 	update_window_transparency()
 	_main.editControls.set_process(_main.editMode)
 	_main.editControls.visible = _main.editMode
@@ -116,9 +116,6 @@ func set_layer_collision(active: bool) -> void:
 			continue
 		node.setCollisionActive(active)
 
-
-func scale_percent() -> int:
-	return _scale_percent
 
 
 func _update_resize_state() -> void:
@@ -156,7 +153,7 @@ func _apply_zoom() -> void:
 	_main.lines.scale = Vector2.ONE / _main.camera.zoom
 	# The readout owns its own fade; this just says what to show.
 	_main.controlPanel.show_zoom(_scale_percent)
-	_global.pushUpdate("Set zoom to %d%%" % _scale_percent)
+	_global.notify_user("Set zoom to %d%%" % _scale_percent)
 	window_size_changed()
 
 

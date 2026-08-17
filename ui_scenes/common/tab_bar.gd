@@ -77,9 +77,6 @@ func set_active(index: int, emit: bool = false) -> void:
 	if emit:
 		tab_changed.emit(index)
 
-func get_active() -> int:
-	return _active
-
 # Size the strip to a width and reflow. Called from the owner's layout pass.
 func set_bar_size(width: float) -> void:
 	size = Vector2(width, BAR_HEIGHT)

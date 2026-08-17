@@ -2,10 +2,91 @@
 
 Comprehensive code quality analysis covering all major subsystems: autoload scripts, sprite objects, main scene/UI, data persistence, PSD parsing, and project configuration.
 
+> **Status: historical baseline.** This document is the pre-refactor audit. Its
+> file/line references describe the codebase *before* Phases 9 through 16 and no
+> longer resolve. It is kept as the record of what the refactor set out to fix.
+> For the current state, read [Refactor outcome](#0-refactor-outcome-2026-08-17)
+> below, then `docs/architecture_guide.md` for how the code is organized now and
+> `docs/quality_baseline.md` for the measured gates.
+
+---
+
+## 0. Refactor outcome (2026-08-17)
+
+Verified against the code at the close of Phase 16, not carried forward from the
+phase notes.
+
+### Critical issues: resolved
+
+| Finding | Current state |
+|---|---|
+| C1 `str_to_var()` on save data | Every persistence-boundary parse goes through `autoload/persistence/value_codec.gd`, which parses, type-checks, and range-clamps. No production file outside that codec calls `str_to_var()`. |
+| C2 Null dereference in `Global._process` | `_process` returns early on `not is_instance_valid(main)` before any `main` access. |
+| C3 `write_save()` / `write_settings()` crash on null `FileAccess` | Both normalize through a schema, then write via `json_file_store.gd`, which bounds reads, writes through a same-directory temporary file, and retains a reloadable `.bak` if replacement is interrupted. Failures are reported through `last_error` and `persistence_error`. |
+| C4 `deleteAllMics()` frees all children of `Global` | The function no longer exists; microphone state is owned by `autoload/runtime/microphone_monitor.gd`. |
+
+### Structural findings: resolved
+
+- **God objects.** `main.gd` fell from a single scene script to a coordinator over
+  five controllers. `spriteObject.gd` fell from 1,573 to 954 lines behind
+  `SpriteVisualRuntime`, `SpriteCollisionRuntime`, `SpriteHierarchy`, and
+  `SpriteVisibilityPolicy`. The three UI hotspots fell to 690, 686, and 123 lines
+  behind nine extracted components.
+- **Duplicated policy.** Sprite property capture/apply is stated once in
+  `SpriteState`; layer enumeration once in `SpriteRegistry`; visibility once in
+  `SpriteVisibilityPolicy`; mutation history once in `MutationCommands`; key and
+  device decoding once in `InputCommands`.
+- **Undo coupled to the interface.** `UndoManager` emits `state_restored(scope)`;
+  `AvatarController.on_state_restored()` owns every scene consequence.
+- **No regression safety net.** The gate is now 476 real-scene assertions, 900
+  isolated assertions, source contracts, seven lifecycle workloads with ceilings
+  and trend artifacts, an active NDI teardown smoke, and a standalone pack export.
+
+### Findings closed by deletion (Phase 16 audit)
+
+Dead code removed after a repository-wide caller search: the browser
+`localStorage` persistence path and its `key` (no web export preset exists, and
+the release contract pins the three desktop presets), `clearSave()`,
+`open_site()`, `switchToSite()` (m9 in this document), `Global.pushUpdate()` and
+its thirteen call sites, `Global.is_sprite_selected()`,
+`SpriteRegistry.contains_id()`, `PsdParser._read_bytes()`,
+`CaptureController.is_recording()` / `is_encoding()`,
+`ViewportController.scale_percent()`, `main._next_z_index()`,
+`TabBar.get_active()`, `spriteObject.setWiggleChildrenFollow()`,
+`sprite_list_object.updateChildren()`, `viewer.clearContainer()`,
+`sprite_viewer.layerSelected()` (an empty body with one caller),
+`AvatarController.change_costume_from_device()`, and
+`UndoManager.in_transaction()` / `redo_depth()`.
+
+The menu command surface on `main.gd` was renamed out of signal-handler spelling:
+`open_import_dialog()`, `open_save_dialog()`, `open_load_dialog()`,
+`load_avatar_file()`, `begin_link_mode()`, `open_replace_dialog()`,
+`duplicate_selected_layer()`, `clear_avatar()`, and `reset_avatar()` replace the
+`_on_*_button_pressed` names that menus and controllers were calling directly.
+
+### Known remaining items
+
+- **Lighting is dormant, not removed.** `main._create_light_gizmo()` returns
+  before it loads `ui_scenes/light/light_gizmo.gd`, so `_light_gizmo` is always
+  null and the `"_light"` key never appears in a save or an undo snapshot. The
+  surrounding accessors (`light_snapshot()`, `apply_light_snapshot()`) and the
+  gizmo script are retained because this is paused feature work, not an accident.
+- **Folder replace is unreachable.** `_handle_replace_from_folder()` is complete
+  but nothing dispatches to it; the Replace dialog accepts a single PSD or PNG.
+  Re-exposing it is a product decision.
+- **`eyeTrackForward` is persisted but never read.** Kept at its default so older
+  application builds reading the same save keep working.
+- **Hierarchy rebuild costs 82 ms for a 100-layer rig**, the slowest measured
+  user-facing workload. Recorded as a baseline in `docs/quality_baseline.md`
+  rather than optimized, under Phase 15's rule of optimizing only regressions.
+- **Cross-platform release matrix is unverified locally.** Only macOS hosts were
+  available; Windows and Linux exports and native lifecycle smokes remain for CI.
+
 ---
 
 ## Table of Contents
 
+0. [Refactor outcome (2026-08-17)](#0-refactor-outcome-2026-08-17)
 1. [Critical Issues](#1-critical-issues)
 2. [Major Issues](#2-major-issues)
 3. [Minor Issues](#3-minor-issues)

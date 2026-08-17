@@ -40,7 +40,7 @@ func _run() -> void:
 	if _materialized_fixture_path.is_empty():
 		get_tree().quit(1)
 		return
-	await _main._on_load_dialog_file_selected(_materialized_fixture_path)
+	await _main.load_avatar_file(_materialized_fixture_path)
 	await get_tree().process_frame
 	_test_loaded_avatar("fixture load")
 	await _test_sidebar_selection_state()
@@ -48,6 +48,7 @@ func _run() -> void:
 	await _test_idle_motion()
 	await _test_costumes()
 	await _test_command_history()
+	await _test_z_index_editor()
 	await _test_rejected_load_preserves_avatar()
 	await _test_save_load_round_trip()
 
@@ -179,7 +180,7 @@ func _test_edit_commands() -> void:
 	if source == null:
 		return
 	Global.select_sprite(source)
-	_main._on_duplicate_button_pressed()
+	_main.duplicate_selected_layer()
 	await get_tree().process_frame
 	var duplicate = Global.heldSprite
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES + 1, "duplicate command registers exactly one new layer")
@@ -378,10 +379,60 @@ func _test_command_history() -> void:
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "the command history walk leaves the avatar intact")
 
 
+# Phase 16: the z-index overlay moved out of the state singleton into its own
+# component, so it is exercised as the real on-canvas widget it is.
+func _test_z_index_editor() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	Global.select_sprite(sprite)
+	await get_tree().process_frame
+
+	assert_false(Global.is_z_index_editor_active(), "the z-index overlay starts closed")
+	Global._show_z_input()
+	await get_tree().process_frame
+	assert_true(Global.is_z_index_editor_active(), "the z-index overlay opens for a selected layer")
+	assert_not_null(Global._z_editor, "opening the overlay constructs the real component")
+	assert_true(Global._z_editor.visible, "the opened overlay is visible on the canvas")
+
+	# A click well outside the panel dismisses it; a click on it does not.
+	var centre: Vector2 = Global._z_editor.global_position
+	assert_false(Global._z_editor.is_click_outside(centre), "a click on the panel is not a dismissal")
+	assert_true(Global._z_editor.is_click_outside(centre + Vector2(400, 400)), "a click away from the panel dismisses it")
+
+	# The field commits through the command layer, so the edit is undoable.
+	var original_z: int = sprite.z
+	var depth_before := UndoManager.history_depth()
+	Global._z_editor._input_field.text = str(original_z + 3)
+	Global._z_editor._apply()
+	await get_tree().process_frame
+	assert_equal(sprite.z, original_z + 3, "the overlay applies the entered depth")
+	# The history may already sit at its bound from the command-history test, in
+	# which case a new entry replaces the oldest rather than growing the stack.
+	assert_equal(
+		UndoManager.history_depth(), mini(depth_before + 1, UndoManager.MAX_HISTORY),
+		"the overlay commits one undoable command",
+	)
+	UndoManager.undo()
+	await get_tree().process_frame
+	assert_equal(sprite.z, original_z, "undo restores the previous depth")
+
+	# Re-entering the same value is not a change and must not add history.
+	depth_before = UndoManager.history_depth()
+	Global._z_editor._input_field.text = str(sprite.z)
+	Global._z_editor._apply()
+	assert_equal(UndoManager.history_depth(), depth_before, "re-entering the current depth adds no history")
+
+	Global._hide_z_input()
+	await get_tree().process_frame
+	assert_false(Global.is_z_index_editor_active(), "the overlay closes on request")
+	assert_false(Global._z_editor.visible, "the closed overlay leaves the canvas")
+
+
 func _test_rejected_load_preserves_avatar() -> void:
 	var previous_origin = _main.origin
 	var previous_base = Global.sprite_by_id(BASE_ID)
-	await _main._on_load_dialog_file_selected(INVALID_FIXTURE)
+	await _main.load_avatar_file(INVALID_FIXTURE)
 	await get_tree().process_frame
 	assert_true(_main.origin == previous_origin, "schema rejection preserves the current avatar root")
 	assert_true(Global.sprite_by_id(BASE_ID) == previous_base, "schema rejection preserves the current sprite instances")
@@ -399,7 +450,7 @@ func _test_save_load_round_trip() -> void:
 		_fail("round-trip avatar file was not created")
 		return
 
-	await _main._on_load_dialog_file_selected(round_trip_path)
+	await _main.load_avatar_file(round_trip_path)
 	await get_tree().process_frame
 	_test_loaded_avatar("save/load round trip")
 	_main.changeCostume(10)

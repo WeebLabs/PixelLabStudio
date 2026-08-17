@@ -8,8 +8,8 @@ extends RefCounted
 # separator so each bar decides how the group joins what precedes it. Clear is
 # marked danger because it discards the rig; Reset only reloads the last save.
 static func add_avatar_file_actions(bar: AppMenuBar, zone: Container) -> void:
-	bar.add_button(zone, "Save", func(): Global.main._on_save_button_pressed())
-	bar.add_button(zone, "Load", func(): Global.main._on_load_button_pressed())
+	bar.add_button(zone, "Save", func(): Global.main.open_save_dialog())
+	bar.add_button(zone, "Load", func(): Global.main.open_load_dialog())
 	bar.add_separator(zone)
-	bar.add_button(zone, "Clear", func(): Global.main._on_clear_avatar_pressed(), true)
-	bar.add_button(zone, "Reset", func(): Global.main._on_reset_avatar_pressed())
+	bar.add_button(zone, "Clear", func(): Global.main.clear_avatar(), true)
+	bar.add_button(zone, "Reset", func(): Global.main.reset_avatar())

@@ -73,7 +73,7 @@ func _run() -> void:
 		_failures.append("could not create the lifecycle fixture")
 		await _finish()
 		return
-	await _main._on_load_dialog_file_selected(fixture)
+	await _main.load_avatar_file(fixture)
 	await get_tree().process_frame
 	if Global.sprite_count() != LAYER_COUNT:
 		_failures.append("lifecycle fixture registered %d of %d layers" % [Global.sprite_count(), LAYER_COUNT])
@@ -351,7 +351,7 @@ func _measure_cancelled_load_teardown() -> Dictionary:
 
 	# Start a load and deliberately do not await it, then cancel through the
 	# production shutdown path while its worker group is still decoding.
-	_main._on_load_dialog_file_selected(fixture)
+	_main.load_avatar_file(fixture)
 	await get_tree().process_frame
 	var was_loading: bool = _main.avatar_controller.is_loading()
 

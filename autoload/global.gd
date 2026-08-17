@@ -2,6 +2,7 @@ extends Node
 
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const InputCommands = preload("res://autoload/input/input_commands.gd")
+const ZIndexEditor = preload("res://ui_scenes/zIndex/z_index_editor.gd")
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 
@@ -34,11 +35,9 @@ var _cursorScreenToWorldOffset: Vector2 = Vector2.ZERO
 
 var filtering = true
 var _text_field_active: bool = false
-var _z_overlay: Node2D = null
-var _z_input: LineEdit = null
+var _z_editor: Node2D = null
 var _z_style_normal: StyleBoxFlat = null
 var _z_style_focus: StyleBoxFlat = null
-var _z_input_active: bool = false
 var _suppress_keys_frame: int = -1
 
 var _screenshot_key_held: bool = false
@@ -197,6 +196,7 @@ func detach_main(main_node: Node) -> void:
 		return
 	main = null
 	fail = null
+	_z_editor = null
 	clear_selection()
 	spriteEdit = null
 	spriteList = null
@@ -249,9 +249,6 @@ func clear_selection() -> Object:
 	return _selection_state.clear()
 
 
-func is_sprite_selected(sprite: Object) -> bool:
-	return heldSprite == sprite
-
 
 func sprite_from_hit_area(area: Area2D) -> Node:
 	## Sprite selection Area2Ds are nested exactly three levels below the sprite
@@ -274,7 +271,7 @@ func has_text_entry_focus() -> bool:
 
 
 func is_z_index_editor_active() -> bool:
-	return _z_input_active
+	return _z_editor != null and _z_editor.is_active()
 
 
 func begin_reparenting() -> bool:
@@ -503,138 +500,28 @@ func _nudge_z(step: int) -> void:
 	notify_user("Moved sprite layer.")
 
 
+# The z-index overlay is a UI component; Global keeps only the routing surface.
+func _show_z_input() -> void:
+	if heldSprite == null or main == null:
+		return
+	if _z_editor == null or not is_instance_valid(_z_editor):
+		_z_editor = ZIndexEditor.new()
+		main.add_child(_z_editor)
+		_z_editor.setup(self)
+	_z_editor.open()
+
+
+func _hide_z_input() -> void:
+	if _z_editor != null and is_instance_valid(_z_editor):
+		_z_editor.close()
+	_suppress_keys_frame = Engine.get_process_frames()
+
+
 func _is_any_field_focused() -> bool:
 	if _suppress_keys_frame == Engine.get_process_frames():
 		return true
 	var focused = get_viewport().gui_get_focus_owner()
 	return focused is LineEdit or focused is TextEdit
-
-# --- Z-Index input overlay ---
-
-func _build_z_overlay():
-	_z_overlay = Node2D.new()
-	_z_overlay.z_index = 4095
-	_z_overlay.visible = false
-	main.add_child(_z_overlay)
-
-	var panel = Panel.new()
-	var panel_style = StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.13, 0.13, 0.15, 0.97)
-	panel_style.set_corner_radius_all(8)
-	panel_style.border_color = Color(0.3, 0.3, 0.35, 0.6)
-	panel_style.set_border_width_all(1)
-	panel.add_theme_stylebox_override("panel", panel_style)
-	panel.position = Vector2(-110, -40)
-	panel.size = Vector2(220, 80)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_z_overlay.add_child(panel)
-
-	var title = Label.new()
-	title.text = "Set Z-Index"
-	title.position = Vector2(-100, -32)
-	title.size = Vector2(200, 22)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_z_overlay.add_child(title)
-
-	_z_input = LineEdit.new()
-	_z_input.position = Vector2(-90, -4)
-	_z_input.size = Vector2(180, 32)
-	_z_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_z_input.add_theme_font_size_override("font_size", 16)
-	_z_input.caret_blink = true
-	_z_input.caret_blink_interval = 0.5
-	var fs_normal = StyleBoxFlat.new()
-	fs_normal.bg_color = Color(0.08, 0.08, 0.08)
-	fs_normal.set_corner_radius_all(4)
-	fs_normal.content_margin_left = 8
-	fs_normal.content_margin_right = 8
-	fs_normal.content_margin_top = 4
-	fs_normal.content_margin_bottom = 4
-	var fs_focus = fs_normal.duplicate()
-	fs_focus.border_color = Color(0.45, 0.45, 0.5)
-	fs_focus.set_border_width_all(1)
-	_z_input.add_theme_stylebox_override("normal", fs_normal)
-	_z_input.add_theme_stylebox_override("focus", fs_focus)
-	_z_input.text_submitted.connect(_on_z_input_submitted)
-	_z_input.gui_input.connect(func(event):
-		if event is InputEventKey and event.pressed:
-			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-				_on_z_input_submitted(_z_input.text)
-				_z_input.accept_event()
-	)
-	_z_overlay.add_child(_z_input)
-
-	# Store normal style for flash effect
-	_z_style_normal = fs_normal
-	_z_style_focus = fs_focus
-
-func _show_z_input():
-	if heldSprite == null or main == null:
-		return
-	if _z_overlay == null:
-		_build_z_overlay()
-	var vp_size = get_viewport().get_visible_rect().size / main.camera.zoom
-	_z_overlay.position = main.camera.position + Vector2(0, vp_size.y * 0.5 - 80)
-	_z_overlay.visible = true
-	_z_input.text = str(heldSprite.z)
-	_z_input.select_all()
-	_z_input.grab_focus()
-	_z_input_active = true
-
-func _hide_z_input():
-	if _z_overlay != null:
-		_z_overlay.visible = false
-		_z_input.release_focus()
-	_z_input_active = false
-	_suppress_keys_frame = Engine.get_process_frames()
-
-func _on_z_input_submitted(_text: String):
-	_apply_z_input()
-
-func _apply_z_input():
-	var text = _z_input.text.strip_edges()
-	if heldSprite == null or !text.is_valid_int():
-		return
-	MutationCommands.structural(func():
-		if heldSprite.z == text.to_int():
-			return false
-		heldSprite.z = text.to_int()
-		heldSprite.setZIndex()
-		return true)
-	notify_user("Set z-index to " + str(heldSprite.z) + ".")
-	spriteList.updateData()
-	_z_input.select_all()
-	_flash_z_confirm()
-
-var _z_flash_tween: Tween = null
-
-func _flash_z_confirm():
-	if _z_flash_tween != null and _z_flash_tween.is_valid():
-		_z_flash_tween.kill()
-	var flash_style = _z_style_focus.duplicate()
-	_z_input.add_theme_stylebox_override("normal", flash_style)
-	_z_input.add_theme_stylebox_override("focus", flash_style)
-	var bg_from = _z_style_focus.bg_color
-	var bg_peak = Color(0.22, 0.12, 0.15)
-	var border_from = _z_style_focus.border_color
-	var border_peak = Color(1.0, 0.7, 0.8)
-	_z_flash_tween = create_tween()
-	_z_flash_tween.tween_method(func(t: float):
-		flash_style.bg_color = bg_from.lerp(bg_peak, t)
-		flash_style.border_color = border_from.lerp(border_peak, t)
-	, 0.0, 1.0, 0.15)
-	_z_flash_tween.tween_method(func(t: float):
-		flash_style.bg_color = bg_peak.lerp(bg_from, t)
-		flash_style.border_color = border_peak.lerp(border_from, t)
-	, 0.0, 1.0, 0.35)
-	_z_flash_tween.tween_callback(_reset_z_style)
-
-func _reset_z_style():
-	if _z_input != null:
-		_z_input.add_theme_stylebox_override("normal", _z_style_normal)
-		_z_input.add_theme_stylebox_override("focus", _z_style_focus)
 
 func _input(event):
 	# Refresh screen-to-world offset whenever the cursor is inside the window,
@@ -644,7 +531,7 @@ func _input(event):
 
 	# Z-index overlay: Escape to cancel, click outside to dismiss, N to open
 	if event is InputEventKey and event.pressed and !event.echo:
-		if _z_input_active:
+		if is_z_index_editor_active():
 			if event.physical_keycode == KEY_ESCAPE or event.keycode == KEY_ESCAPE:
 				_hide_z_input()
 				get_viewport().set_input_as_handled()
@@ -654,9 +541,8 @@ func _input(event):
 				_show_z_input()
 				get_viewport().set_input_as_handled()
 				return
-	if _z_input_active and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var local = _z_overlay.to_local(main.get_global_mouse_position())
-		if abs(local.x) > 110 or abs(local.y) > 40:
+	if is_z_index_editor_active() and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if _z_editor.is_click_outside(main.get_global_mouse_position()):
 			_hide_z_input()
 			get_viewport().set_input_as_handled()
 			return
@@ -905,7 +791,7 @@ func scrollSprites():
 	if main.fileSystemOpen:
 		return
 
-	if get_viewport().gui_get_hovered_control() != null and !_z_input_active:
+	if get_viewport().gui_get_hovered_control() != null and !is_z_index_editor_active():
 		return
 
 	if heldSprite == null:
@@ -936,10 +822,8 @@ func scrollSprites():
 
 	spriteEdit.setImage()
 
-	if _z_input_active and heldSprite != null:
-		_z_input.text = str(heldSprite.z)
-		_z_input.grab_focus()
-		_z_input.select_all()
+	if _z_editor != null and is_instance_valid(_z_editor):
+		_z_editor.sync_to_selection()
 
 func blinking():
 	_blink_scheduler.speed = maxf(blinkSpeed, 0.0)
@@ -1043,8 +927,3 @@ func saveImagesFromData():
 func notify_user(text: String) -> void:
 	notification_requested.emit(text)
 
-
-func pushUpdate(text: String) -> void:
-	## Compatibility facade for older feature scripts. New coordination code
-	## should use notify_user(), which names the user-facing effect explicitly.
-	notify_user(text)

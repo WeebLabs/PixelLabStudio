@@ -41,7 +41,7 @@ func _run() -> void:
 			continue
 		var memory_before := int(Performance.get_monitor(Performance.MEMORY_STATIC))
 		var started := Time.get_ticks_usec()
-		await _main._on_load_dialog_file_selected(fixture_path)
+		await _main.load_avatar_file(fixture_path)
 		await get_tree().process_frame
 		var elapsed_ms := float(Time.get_ticks_usec() - started) / 1000.0
 		var memory_after := int(Performance.get_monitor(Performance.MEMORY_STATIC))

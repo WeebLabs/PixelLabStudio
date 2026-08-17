@@ -169,20 +169,11 @@ func change_costume(new_costume: int) -> void:
 	_global.clear_selection()
 	for sprite in _global.sprite_nodes():
 		sprite.applyCostumeVisibility()
-	_global.spriteEdit.layerSelected()
 	_main.spriteList.updateAllVisible()
 	if _main.bounceOnCostumeChange:
 		_main.onSpeak()
 	_main.ndi_mark_dirty()
 	_global.notify_user("Change costume: " + str(new_costume))
-
-
-func change_costume_from_device(costume_id: String) -> void:
-	if not costume_id.is_valid_int():
-		return
-	var requested := costume_id.to_int()
-	if requested >= 1 and requested <= 10:
-		change_costume(requested)
 
 
 func clear_avatar() -> void:
@@ -304,8 +295,7 @@ func load_avatar(path: String) -> bool:
 		sprite.set_process(true)
 
 	_main._create_light_gizmo()
-	if data.has("_light"):
-		_main._apply_light_data(data["_light"])
+	_main.apply_light_snapshot(data.get("_light"))
 	_global.eyeTrackingGloballyEnabled = bool(data.get("_eyeTrackingGloballyEnabled", true))
 	_restore_crop(data)
 	change_costume(1)
@@ -346,14 +336,9 @@ func build_save_data() -> Dictionary:
 		if child.type == "sprite":
 			data[index] = SpriteState.capture_save(child)
 			index += 1
-	if _main._light_gizmo != null:
-		data["_light"] = {
-			"pos": var_to_str(_main._light_gizmo.position),
-			"energy": _main._light_gizmo.light_energy,
-			"color": var_to_str(_main._light_gizmo.light_color),
-			"range": _main._light_gizmo.light_range,
-			"enabled": _main._light_gizmo.light_enabled,
-		}
+	var light_data: Variant = _main.light_snapshot()
+	if light_data != null:
+		data["_light"] = light_data
 	data["_eyeTrackingGloballyEnabled"] = _global.eyeTrackingGloballyEnabled
 	data["_schemaVersion"] = AvatarSave.CURRENT_VERSION
 	var crop: Array = _saving.settings.get("ndiCropRect", [-500.0, -800.0, 500.0, 200.0])

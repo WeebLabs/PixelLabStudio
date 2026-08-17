@@ -667,12 +667,6 @@ func setLayerButtons() -> void:
 		sprite.applyCostumeVisibility()
 
 
-# Retained for AvatarController compatibility; the visible selection indicator
-# now lives in the right sidebar and follows Global.main.costume there.
-func layerSelected() -> void:
-	pass
-
-
 func _on_squash_value_changed(value):
 	if Global.heldSprite == null: return
 	MutationCommands.drag_layer_property(Global.heldSprite, "stretchAmount", value, "slider")

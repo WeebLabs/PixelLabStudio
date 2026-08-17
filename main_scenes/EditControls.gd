@@ -38,9 +38,9 @@ func _process(_delta):
 
 
 func _on_exit(): Global.main.swapMode()
-func _on_import(): Global.main._on_import_button_pressed()
-func _on_replace(): Global.main._on_replace_button_pressed()
-func _on_duplicate(): Global.main._on_duplicate_button_pressed()
+func _on_import(): Global.main.open_import_dialog()
+func _on_replace(): Global.main.open_replace_dialog()
+func _on_duplicate(): Global.main.duplicate_selected_layer()
 
 
 func _notification(what):

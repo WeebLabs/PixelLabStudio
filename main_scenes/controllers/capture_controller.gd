@@ -127,12 +127,6 @@ func take_screenshot() -> void:
 	_screenshot_dialog.popup_centered(Vector2i(600, 400))
 
 
-func is_recording() -> bool:
-	return _recording
-
-
-func is_encoding() -> bool:
-	return _encoding
 
 
 func is_dialog_open() -> bool:
@@ -162,7 +156,7 @@ func _on_screenshot_dialog_file_selected(path: String) -> void:
 		path += ".png"
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var error := _screenshot_image.save_png(path)
-	_global.pushUpdate("Screenshot saved: " + path.get_file() if error == OK else "Failed to save screenshot.")
+	_global.notify_user("Screenshot saved: " + path.get_file() if error == OK else "Failed to save screenshot.")
 	_screenshot_image = null
 
 
@@ -174,7 +168,7 @@ func _start_recording() -> void:
 	if _recording or _encoding:
 		return
 	if _find_ffmpeg().is_empty():
-		_global.pushUpdate("FFmpeg not found. Install FFmpeg to record video.")
+		_global.notify_user("FFmpeg not found. Install FFmpeg to record video.")
 		return
 
 	_recording = true
@@ -190,7 +184,7 @@ func _start_recording() -> void:
 	_recording_file = FileAccess.open(_recording_temp_path, FileAccess.WRITE)
 	if _recording_file == null:
 		_recording = false
-		_global.pushUpdate("Could not create the temporary recording file.")
+		_global.notify_user("Could not create the temporary recording file.")
 		_cleanup_recording_temp()
 		return
 
@@ -214,7 +208,7 @@ func _start_recording() -> void:
 		_recording_camera.position = _main.camera.position
 		_recording_camera.zoom = _main.camera.zoom
 	_recording_camera.make_current()
-	_global.pushUpdate("Recording...")
+	_global.notify_user("Recording...")
 
 
 func _stop_recording() -> void:
@@ -230,11 +224,11 @@ func _stop_recording() -> void:
 		_recording_camera = null
 
 	if _recording_frame_count == 0:
-		_global.pushUpdate("No frames captured.")
+		_global.notify_user("No frames captured.")
 		_cleanup_recording_temp()
 		return
 
-	_global.pushUpdate("Encoding... (%d frames)" % _recording_frame_count)
+	_global.notify_user("Encoding... (%d frames)" % _recording_frame_count)
 	if _record_dialog == null:
 		_create_record_dialog()
 	var format := String(_saving.settings.get("recordingFormat", "webm"))
@@ -318,12 +312,12 @@ func _encode_worker(raw_path: String, size: Vector2i, output_path: String, progr
 
 
 func _on_encode_done(success: bool) -> void:
-	_global.pushUpdate("Recording saved!" if success else "FFmpeg encoding failed.")
+	_global.notify_user("Recording saved!" if success else "FFmpeg encoding failed.")
 
 
 func _on_record_dialog_canceled() -> void:
 	_cleanup_recording_temp()
-	_global.pushUpdate("Recording discarded.")
+	_global.notify_user("Recording discarded.")
 
 
 func _cleanup_recording_temp() -> void:

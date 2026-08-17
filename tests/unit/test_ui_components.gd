@@ -326,7 +326,7 @@ func _test_shared_menu_actions(t) -> void:
 	var actions := FileAccess.get_file_as_string(source_root.path_join("main_scenes/menu_actions.gd"))
 	for label in ["Save", "Load", "Clear", "Reset"]:
 		t.assert_true(actions.contains('"%s"' % label), "the shared file actions include %s" % label)
-	t.assert_true(actions.contains('"Clear", func(): Global.main._on_clear_avatar_pressed(), true'), "Clear is marked danger in the shared file actions")
+	t.assert_true(actions.contains('"Clear", func(): Global.main.clear_avatar(), true'), "Clear is marked danger in the shared file actions")
 
 	for relative_path in ["main_scenes/EditControls.gd", "main_scenes/ControlPanel.gd"]:
 		var source := FileAccess.get_file_as_string(source_root.path_join(relative_path))

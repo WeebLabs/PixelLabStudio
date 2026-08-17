@@ -75,7 +75,7 @@ func startup_restore() -> void:
 	if _has_recoverable_session(last_avatar_path):
 		_show_session_recovery_dialog(last_avatar_path)
 	elif not last_avatar_path.is_empty():
-		_main._on_load_dialog_file_selected(last_avatar_path)
+		_main.load_avatar_file(last_avatar_path)
 
 
 func show_save_dialog() -> void:
@@ -127,7 +127,7 @@ func _create_file_dialogs() -> void:
 	load_dialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
 	load_dialog.use_native_dialog = true
 	load_dialog.current_dir = user_dir
-	load_dialog.file_selected.connect(_main._on_load_dialog_file_selected)
+	load_dialog.file_selected.connect(_main.load_avatar_file)
 	_main.add_child(load_dialog)
 
 
@@ -163,14 +163,14 @@ func _on_save_finished(path: String, data: Dictionary, result: Dictionary) -> vo
 		_save_progress_dialog.queue_free()
 		_save_progress_dialog = null
 	if not result["ok"]:
-		_global.pushUpdate("Save failed: " + result["error"])
+		_global.notify_user("Save failed: " + result["error"])
 		_session_dirty = true
 		return
 	_saving.data = data
 	_saving.settings["lastAvatar"] = path
 	if not _saving.write_settings(_saving.settingsPath):
-		_global.pushUpdate(_saving.last_error)
-	_global.pushUpdate("Save complete: " + path.get_file())
+		_global.notify_user(_saving.last_error)
+	_global.notify_user("Save complete: " + path.get_file())
 	_show_save_confirmation(path.get_file())
 	discard_session_file()
 	_session_dirty = false
@@ -231,11 +231,11 @@ func _on_session_recovery_choice(restore: bool, last_avatar_path: String) -> voi
 		_session_recovery_dialog.queue_free()
 		_session_recovery_dialog = null
 	if restore:
-		_main._on_load_dialog_file_selected(SESSION_SAVE_PATH)
+		_main.load_avatar_file(SESSION_SAVE_PATH)
 	else:
 		discard_session_file()
 		if not last_avatar_path.is_empty() and FileAccess.file_exists(last_avatar_path):
-			_main._on_load_dialog_file_selected(last_avatar_path)
+			_main.load_avatar_file(last_avatar_path)
 
 
 func _show_save_confirmation(filename: String) -> void:

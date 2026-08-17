@@ -534,7 +534,7 @@ func _on_blinking_pressed():
 func _on_link_pressed():
 	if Global.heldSprite == null:
 		return
-	Global.main._on_link_button_pressed()
+	Global.main.begin_link_mode()
 
 func _on_unlink_pressed():
 	if Global.heldSprite == null:
@@ -682,9 +682,6 @@ func refreshHierarchy():
 	var pending_target = _pending_scroll_target
 	_pending_scroll_target = null
 	await _layer_tree.refresh_hierarchy(pending_target)
-
-func clearContainer():
-	_layer_tree.clear()
 
 func _on_filter_changed(text: String):
 	_layer_tree.filter(text)

@@ -194,7 +194,7 @@ func _test_main_decomposition_contract(t) -> void:
 	t.assert_false(main_source.contains("var _psd_thread"), "PSD worker ownership no longer lives in main")
 	t.assert_false(main_source.contains("var _anim_thread"), "animated-image worker ownership no longer lives in main")
 	t.assert_false(main_source.contains("var _replace_dialog"), "replace-dialog ownership no longer lives in main")
-	t.assert_true(_function_body(main_source, "func _on_load_dialog_file_selected").contains("avatar_controller.load_avatar"), "main keeps only the stable avatar-load facade")
+	t.assert_true(_function_body(main_source, "func load_avatar_file").contains("avatar_controller.load_avatar"), "main keeps only the stable avatar-load facade")
 	t.assert_true(_function_body(main_source, "func _build_avatar_save_data").contains("avatar_controller.build_save_data"), "save snapshots delegate to the avatar boundary")
 	t.assert_false(main_source.contains("func _update_resize_state"), "viewport resize bookkeeping no longer lives in main")
 	t.assert_false(main_source.contains("func _session_save_worker"), "session worker implementation no longer lives in main")

@@ -60,9 +60,6 @@ func maximum_z(fallback: int = -1) -> int:
 			result = maxi(result, int(sprite.get("z")))
 	return result
 
-func contains_id(sprite_id: Variant) -> bool:
-	return by_id(sprite_id) != null
-
 func is_eye_target(sprite_id: Variant) -> bool:
 	var frame := Engine.get_process_frames()
 	if frame != _eye_target_cache_frame:

@@ -77,9 +77,6 @@ func _read_s32() -> int:
 		val -= 0x100000000
 	return val
 
-func _read_bytes(count: int) -> PackedByteArray:
-	return _file.get_buffer(count)
-
 # PackBits RLE decompression
 func _decode_packbits(data: PackedByteArray, expected_size: int) -> PackedByteArray:
 	var result = PackedByteArray()

@@ -838,11 +838,6 @@ func setWiggle(on: bool):
 	wiggleEnabled = on
 	_set_wiggle_active(on)   # _set_wiggle_active(false) releases linked children
 
-func setWiggleChildrenFollow(on: bool):
-	wiggleChildrenFollow = on
-	if not on:
-		_wiggleRuntime.release_children()
-
 func _set_wiggle_active(on: bool):
 	_wiggleRuntime.set_active(on)
 

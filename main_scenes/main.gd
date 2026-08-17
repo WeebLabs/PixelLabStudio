@@ -418,9 +418,6 @@ func swapMode() -> void:
 	viewport_controller.swap_mode()
 
 
-func _next_z_index() -> int:
-	return avatar_controller.next_z_index()
-
 
 func _next_sprite_id() -> int:
 	return avatar_controller.next_sprite_id()
@@ -445,18 +442,18 @@ func _on_psd_import_cancelled():
 	import_controller.cancel_psd_import()
 
 
-func _on_import_button_pressed():
+func open_import_dialog():
 	import_controller.show_import_dialog()
 
-func _on_save_button_pressed():
+func open_save_dialog():
 	save_controller.show_save_dialog()
 
-func _on_load_button_pressed():
+func open_load_dialog():
 	save_controller.show_load_dialog()
 
 # Avatar loading remains scene-signal compatible while the controller owns
 # validation, worker state, transactional assembly, and post-load policy.
-func _on_load_dialog_file_selected(path):
+func load_avatar_file(path):
 	return await avatar_controller.load_avatar(path)
 
 # The one progress dialog: save, load, PSD/APNG import, video encoding. Layout,
@@ -484,14 +481,14 @@ func onScreenshotReleased() -> void:
 func _build_avatar_save_data() -> Dictionary:
 	return avatar_controller.build_save_data()
 
-func _on_link_button_pressed():
+func begin_link_mode():
 	if Global.begin_reparenting():
 		Global.notify_user("Linking sprite...")
 
 
 # --- Unified Replace Flow ---
 
-func _on_replace_button_pressed():
+func open_replace_dialog():
 	import_controller.show_replace_dialog()
 
 
@@ -502,7 +499,7 @@ func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: A
 func _on_replace_cancelled():
 	import_controller.cancel_replace_review()
 
-func _on_duplicate_button_pressed() -> void:
+func duplicate_selected_layer() -> void:
 	avatar_controller.duplicate_selected()
 
 
@@ -604,8 +601,8 @@ func _key_strings(keys_pressed) -> Array:
 	return names
 
 
-func _on_clear_avatar_pressed():
+func clear_avatar():
 	avatar_controller.clear_avatar()
 
-func _on_reset_avatar_pressed():
+func reset_avatar():
 	await avatar_controller.reset_avatar()
