@@ -84,6 +84,13 @@ func _test_optimized_call_sites(t) -> void:
 		_function_body(viewer_bar_source, "func _process").contains("Saving."),
 		"the viewer bar no longer writes settings every frame",
 	)
+	# Layer grab areas are only ever found by the cursor's intersect_point query,
+	# which matches an area's LAYER. Leaving their mask at the default 1 makes the
+	# physics server pair every overlapping layer with every other one and solve
+	# SAT against their traced polygons at 60 Hz: measured 198.8 ms/frame for 25
+	# layers versus 16.0 ms with the mask cleared, on a 16.1 ms no-pairs floor.
+	var sprite_scene := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/selectedSprite/spriteObject.tscn"))
+	t.assert_true(sprite_scene.contains("collision_mask = 0"), "layer grab areas detect nothing, so the physics server never pairs them")
 	t.assert_true(undo_source.contains("if not live_ids.has(sprite_id)"), "undo image caches prune sprites no longer in the live rig")
 	t.assert_true(undo_source.contains("_normal_cache.erase(child.id)"), "undo normal-image cache releases cleared maps")
 
