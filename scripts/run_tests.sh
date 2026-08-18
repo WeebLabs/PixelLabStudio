@@ -53,6 +53,8 @@ cp "$PROJECT_ROOT/ui_scenes/selectedSprite/sprite_hierarchy.gd" "$TEST_WORKSPACE
 cp "$PROJECT_ROOT/ui_scenes/selectedSprite/sprite_visibility_policy.gd" "$TEST_WORKSPACE/ui_scenes/selectedSprite/"
 mkdir -p "$TEST_WORKSPACE/ui_scenes"
 cp -R "$PROJECT_ROOT/ui_scenes/common" "$TEST_WORKSPACE/ui_scenes/common"
+mkdir -p "$TEST_WORKSPACE/ui_scenes/psdImport"
+cp "$PROJECT_ROOT/ui_scenes/psdImport/legacy_replace_prompt.gd" "$TEST_WORKSPACE/ui_scenes/psdImport/"
 mkdir -p "$TEST_WORKSPACE/ui_scenes/spriteList"
 cp "$PROJECT_ROOT/ui_scenes/spriteList/layer_tree_controller.gd" "$TEST_WORKSPACE/ui_scenes/spriteList/"
 cp "$PROJECT_ROOT/ui_scenes/spriteList/eye_tracking_panel.gd" "$TEST_WORKSPACE/ui_scenes/spriteList/"

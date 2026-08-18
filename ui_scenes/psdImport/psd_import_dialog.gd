@@ -1,6 +1,7 @@
 extends Node2D
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
 
 signal import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary)
 signal import_cancelled
@@ -142,8 +143,8 @@ func setup(psd):
 			continue
 
 		# Detect normal map layers — don't show in selection, track for pairing
-		if layer.name.to_lower().ends_with("_nrml"):
-			var base = layer.name.substr(0, layer.name.length() - 5)
+		if ImportMatcher.is_normal_layer(layer.name):
+			var base = layer.name.substr(0, layer.name.length() - ImportMatcher.NORMAL_SUFFIX.length())
 			normal_layers[base.to_lower()] = layer
 			nrml_count += 1
 			continue

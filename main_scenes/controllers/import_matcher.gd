@@ -5,6 +5,16 @@ extends RefCounted
 ## unmatched layers, and orphan calculation deterministic and testable.
 
 
+# Normal maps pair onto a diffuse layer by name suffix rather than importing as
+# layers of their own. The import dialog hides them the same way; both paths ask
+# here so the rule has one definition.
+const NORMAL_SUFFIX := "_nrml"
+
+
+static func is_normal_layer(layer_name: String) -> bool:
+	return layer_name.to_lower().ends_with(NORMAL_SUFFIX)
+
+
 static func sprite_name(sprite_path: String) -> String:
 	if sprite_path.begins_with("psd://"):
 		return sprite_path.substr(6)
@@ -21,6 +31,10 @@ static func items_from_psd(layers: Array, canvas_size: Vector2) -> Array:
 	var by_name := {}
 	for layer in layers:
 		if layer.width <= 0 or layer.height <= 0 or layer.image == null:
+			continue
+		# Without this a replace PSD's normal maps arrive as ordinary layers and
+		# are added to the rig as visible artwork.
+		if is_normal_layer(String(layer.name)):
 			continue
 		by_name[String(layer.name).to_lower()] = layer
 	var items: Array = []
@@ -51,7 +65,14 @@ static func match_items(sprites: Array, items: Array) -> Dictionary:
 		if not sprites_by_name.has(normalized_name):
 			continue
 		for sprite in sprites_by_name[normalized_name]:
-			matched.append({"sprite": sprite, "name": item["name"], "image": item["image"]})
+			matched.append({
+				"sprite": sprite,
+				"name": item["name"],
+				"image": item["image"],
+				# Carried for legacy full-canvas rigs, where the replacement's
+				# placement inside the source canvas is what re-anchors the layer.
+				"position": item.get("position", Vector2.ZERO),
+			})
 			matched_sprite_ids[sprite.get_instance_id()] = true
 		matched_item_names[normalized_name] = true
 

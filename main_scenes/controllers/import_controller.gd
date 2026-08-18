@@ -7,6 +7,8 @@ const PSDParserScript = preload("res://autoload/psd_parser.gd")
 const APNGParserScript = preload("res://autoload/apng_parser.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
+const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
+const LegacyReplacePrompt = preload("res://ui_scenes/psdImport/legacy_replace_prompt.gd")
 
 var _main: Node2D
 var _global: Node
@@ -531,6 +533,10 @@ func _import_png_files(paths: Array):
 
 
 var _replace_dialog: FileDialog = null
+# Non-zero only while a legacy full-canvas replacement is awaiting confirmation:
+# the canvas size those layers were authored against.
+var _replace_legacy_canvas: Vector2 = Vector2.ZERO
+var _legacy_prompt: ModalDialogUI = null
 
 func _create_replace_dialog():
 	_replace_dialog = FileDialog.new()
@@ -561,8 +567,55 @@ static func _extract_sprite_name(sprite_path: String) -> String:
 func _handle_replace_from_psd(path: String):
 	_begin_psd_parse(path, true)
 
+# Rigs imported before PSD support carry one full-canvas image per layer, and
+# cropped PSD layers cannot replace those in place without recalculating where
+# each one sat in the canvas. Detect that shape before the review dialog opens,
+# because the answer changes what the replacement does to every matched layer.
 func _show_replace_review_from_psd(psd_result):
+	_close_legacy_prompt()
 	var canvas_size := Vector2(psd_result.width, psd_result.height)
+	var verdict := LegacyCompat.evaluate(_global.sprite_nodes(), canvas_size)
+
+	if verdict["mismatch"]:
+		_legacy_prompt = LegacyReplacePrompt.show_canvas_mismatch(
+			_main.get_node("UILayer"), verdict["canvas"], canvas_size, _close_legacy_prompt
+		)
+		_global.notify_user("Replace cancelled: the PSD canvas does not match this avatar.")
+		return
+
+	if verdict["legacy"]:
+		var rig_canvas: Vector2 = verdict["canvas"]
+		_legacy_prompt = LegacyReplacePrompt.show_compat_prompt(
+			_main.get_node("UILayer"),
+			rig_canvas,
+			canvas_size,
+			int(verdict["layers"]),
+			func(choice: String): _on_legacy_compat_choice(choice, psd_result, canvas_size, rig_canvas),
+		)
+		return
+
+	_open_replace_review(psd_result, canvas_size, Vector2.ZERO)
+
+
+func _on_legacy_compat_choice(choice: String, psd_result, canvas_size: Vector2, rig_canvas: Vector2) -> void:
+	_close_legacy_prompt()
+	match choice:
+		LegacyReplacePrompt.CHOICE_COMPAT:
+			_open_replace_review(psd_result, canvas_size, rig_canvas)
+		LegacyReplacePrompt.CHOICE_PLAIN:
+			_open_replace_review(psd_result, canvas_size, Vector2.ZERO)
+		_:
+			_global.notify_user("Replace cancelled.")
+
+
+func _close_legacy_prompt() -> void:
+	if is_instance_valid(_legacy_prompt):
+		_legacy_prompt.queue_free()
+	_legacy_prompt = null
+
+
+func _open_replace_review(psd_result, canvas_size: Vector2, legacy_canvas: Vector2) -> void:
+	_replace_legacy_canvas = legacy_canvas
 	var items := ImportMatcher.items_from_psd(psd_result.layers, canvas_size)
 	var review := ImportMatcher.match_items(_global.sprite_nodes(), items)
 	_main.replaceReviewDialog.setup(review["matched"], review["new_items"], review["orphaned"], canvas_size)
@@ -593,6 +646,7 @@ func _handle_replace_from_folder(folder_path: String):
 	_show_replace_review_from_items(items, Vector2.ZERO)
 
 func _show_replace_review_from_items(items: Array, canvas_size: Vector2):
+	_replace_legacy_canvas = Vector2.ZERO
 	var review := ImportMatcher.match_items(_global.sprite_nodes(), items)
 	_main.replaceReviewDialog.setup(review["matched"], review["new_items"], review["orphaned"], canvas_size)
 	_main.replaceReviewDialog.visible = true
@@ -702,13 +756,19 @@ func _on_single_replace_cancelled():
 # --- Replace Review Dialog Handlers ---
 
 func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, _canvas_size: Vector2, remove_orphans: bool):
-	var result: Dictionary = _avatar.apply_replacement(matched, new_items, orphaned_sprites, remove_orphans)
+	var legacy_canvas := _replace_legacy_canvas
+	_replace_legacy_canvas = Vector2.ZERO
+	var result: Dictionary = _avatar.apply_replacement(matched, new_items, orphaned_sprites, remove_orphans, legacy_canvas)
 	var message := "Replaced " + str(result["replaced"]) + " layers"
 	if result["added"] > 0:
 		message += ", added " + str(result["added"]) + " new"
 	if result["removed"] > 0:
 		message += ", removed " + str(result["removed"]) + " orphaned"
-	_global.notify_user(message + ".")
+	message += "."
+	if legacy_canvas != Vector2.ZERO:
+		message += " Placed against the original " + str(int(legacy_canvas.x)) + " x " + str(int(legacy_canvas.y)) + " canvas."
+	_global.notify_user(message)
 
 func _on_replace_cancelled():
+	_replace_legacy_canvas = Vector2.ZERO
 	_global.notify_user("Replace cancelled.")

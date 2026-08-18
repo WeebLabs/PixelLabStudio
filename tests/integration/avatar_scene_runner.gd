@@ -49,6 +49,7 @@ func _run() -> void:
 	await _test_costumes()
 	await _test_command_history()
 	await _test_z_index_editor()
+	await _test_legacy_canvas_replacement()
 	await _test_rejected_load_preserves_avatar()
 	await _test_save_load_round_trip()
 
@@ -491,3 +492,63 @@ func assert_not_null(value: Variant, message: String) -> void:
 func _fail(message: String) -> void:
 	failures += 1
 	printerr("  Avatar scene assertion failed: ", message)
+
+
+# Legacy full-canvas rigs: a padded layer replaced by a cropped PSD layer has to
+# keep its artwork on exactly the same screen pixels. Verified through a marker
+# pixel rather than through `offset`, so the assertion fails if any part of the
+# pivot, origin or crop arithmetic drifts.
+func _test_legacy_canvas_replacement() -> void:
+	var canvas := Vector2(64, 48)
+	var marker := Vector2i(40, 12)
+	var full := Image.create(int(canvas.x), int(canvas.y), false, Image.FORMAT_RGBA8)
+	full.fill(Color(0, 0, 0, 0))
+	full.set_pixelv(marker, Color.WHITE)
+
+	var layer = _main.avatar_controller.add_image_from_data(full, "Legacy Canvas Layer", Vector2(30, -12))
+	await get_tree().process_frame
+	assert_not_null(layer, "the legacy placement fixture layer enters the rig")
+	if layer == null:
+		return
+	assert_equal(Vector2(layer.size), canvas, "the fixture layer carries the full legacy canvas")
+
+	# A user-placed origin: the correction has to survive one, since it is exactly
+	# what the pivot arithmetic is anchored on.
+	layer.offset = Vector2(5, -7)
+	layer.sprite.offset = layer.offset
+	var placed_position: Vector2 = layer.position
+	var before: Vector2 = layer.dragOrigin.to_global(layer._tex_to_local(Vector2(marker)))
+
+	# The same marker, cropped to its own bounds the way a PSD layer arrives.
+	var crop_origin := Vector2i(36, 8)
+	var crop := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	crop.fill(Color(0, 0, 0, 0))
+	crop.set_pixelv(marker - crop_origin, Color.WHITE)
+	var item_position := Vector2(crop_origin) + Vector2(4, 4) - canvas * 0.5
+	var entry := {"sprite": layer, "name": "Legacy Canvas Layer", "image": crop, "position": item_position}
+
+	_main.avatar_controller.apply_replacement([entry], [], [], false, canvas)
+	var after: Vector2 = layer.dragOrigin.to_global(layer._tex_to_local(Vector2(marker - crop_origin)))
+	assert_true(
+		before.distance_to(after) < 0.001,
+		"legacy compatibility placement holds the artwork on the same screen position (%s vs %s)" % [before, after],
+	)
+	assert_equal(layer.position, placed_position, "legacy compatibility placement never moves the layer node itself")
+	assert_equal(Vector2(layer.size), Vector2(8, 8), "the replaced layer adopts the cropped image")
+
+	# Without the compatibility canvas the same replacement collapses toward the
+	# layer origin: the correction is opt-in, not a silent behaviour change.
+	var plain := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	plain.fill(Color(0, 0, 0, 0))
+	plain.set_pixelv(marker - crop_origin, Color.WHITE)
+	var plain_offset: Vector2 = layer.offset
+	_main.avatar_controller.apply_replacement(
+		[{"sprite": layer, "name": "Legacy Canvas Layer", "image": plain, "position": item_position}],
+		[], [], false, Vector2.ZERO,
+	)
+	assert_equal(layer.offset, plain_offset, "a replacement without the compatibility canvas leaves the origin untouched")
+
+	layer.queue_free()
+	Global.clear_selection()
+	await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "the legacy placement fixture layer is released")

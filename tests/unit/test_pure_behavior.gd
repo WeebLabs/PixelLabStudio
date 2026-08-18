@@ -6,6 +6,16 @@ const Settings = preload("res://autoload/persistence/settings_schema.gd")
 const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
 const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 const SpriteHierarchy = preload("res://ui_scenes/selectedSprite/sprite_hierarchy.gd")
+const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
+
+class FakeCanvasLayer extends RefCounted:
+	var path: String
+	var size: Vector2
+	var frames: int
+	func _init(layer_path: String, layer_size: Vector2, frame_count: int = 1) -> void:
+		path = layer_path
+		size = layer_size
+		frames = frame_count
 
 class FakeLayer extends RefCounted:
 	var id: int
@@ -21,6 +31,7 @@ func run(t) -> void:
 	_test_wiggle_geometry(t)
 	_test_sprite_policies(t)
 	_test_settings_source_contract(t)
+	_test_legacy_canvas_compat(t)
 
 func _test_animation_curves(t) -> void:
 	t.assert_approx(Animator.envelope("smooth", 0.0), 0.0, 0.00001, "smooth curve starts at rest")
@@ -107,3 +118,68 @@ func _test_settings_source_contract(t) -> void:
 	for key in ["volume", "sense", "maxFPS", "costumeKeys", "ndiEnabled", "ndiCropRect", "recordingFormat", "recordingFPS"]:
 		t.assert_true(defaults.has(key), "settings schema declares %s" % key)
 	t.assert_equal(defaults["costumeKeys"].size(), 10, "ten costume binding slots remain available")
+
+
+# Rigs imported before PSD support carry one full-canvas image per layer. The
+# replace path has to recognise that shape and re-anchor each cropped layer onto
+# the canvas coordinate its predecessor occupied.
+func _test_legacy_canvas_compat(t) -> void:
+	var canvas := Vector2(1000, 800)
+	var legacy_rig := [
+		FakeCanvasLayer.new("/avatars/Head.png", canvas),
+		FakeCanvasLayer.new("/avatars/Body.png", canvas),
+	]
+	var verdict := LegacyCompat.evaluate(legacy_rig, canvas)
+	t.assert_true(verdict["legacy"], "a rig of equally sized file-backed layers reads as a full-canvas import")
+	t.assert_equal(verdict["canvas"], canvas, "the shared layer size is reported as the rig's canvas")
+	t.assert_false(verdict["mismatch"], "a PSD authored at the rig's canvas size is accepted")
+	t.assert_equal(verdict["layers"], 2, "every full-canvas layer is counted as affected")
+
+	t.assert_true(
+		LegacyCompat.evaluate(legacy_rig, Vector2(1200, 800))["mismatch"],
+		"a PSD authored at other dimensions is reported as a mismatch",
+	)
+
+	var cropped_rig := [
+		FakeCanvasLayer.new("psd://Head", Vector2(200, 180)),
+		FakeCanvasLayer.new("psd://Body", Vector2(400, 520)),
+	]
+	t.assert_false(LegacyCompat.evaluate(cropped_rig, canvas)["legacy"], "a rig of cropped PSD layers is left alone")
+	t.assert_false(
+		LegacyCompat.evaluate([FakeCanvasLayer.new("psd://Head", canvas)], canvas)["legacy"],
+		"uniform sizing alone does not convict a rig imported from a PSD",
+	)
+
+	# Animated layers hold a horizontal sheet, so their raw size is not a canvas
+	# and the placement never applies to them.
+	var animated := FakeCanvasLayer.new("animated://Mouth", Vector2(3000, 800), 3)
+	t.assert_equal(LegacyCompat.layer_size(animated), Vector2(1000, 800), "sheet layers report their frame footprint")
+	t.assert_false(LegacyCompat.is_legacy_layer(animated, canvas), "sheet layers are excluded from the placement")
+	t.assert_true(
+		LegacyCompat.evaluate([legacy_rig[0], legacy_rig[1], animated], canvas)["legacy"],
+		"a sheet layer does not break detection for the still layers around it",
+	)
+
+	# A layer whose replacement sits at canvas pixels (300, 200) with a 200x180
+	# crop: its centre is 100 left and 210 above the canvas centre.
+	var item_position := Vector2(300 + 100, 200 + 90) - canvas * 0.5
+	t.assert_equal(
+		LegacyCompat.offset_after_replace(Vector2(40, -20), item_position),
+		Vector2(40, -20) + item_position,
+		"the pivot correction is the replacement's placement inside the source canvas",
+	)
+	t.assert_equal(
+		LegacyCompat.texture_origin_shift(canvas, Vector2(200, 180), item_position),
+		Vector2(300, 200),
+		"texture-space data moves by the replacement's top-left inside the texture it supersedes",
+	)
+	t.assert_equal(
+		LegacyCompat.texture_origin_shift(canvas, canvas, Vector2.ZERO),
+		Vector2.ZERO,
+		"a replacement that spans the whole canvas leaves texture-space data untouched",
+	)
+	t.assert_equal(
+		LegacyCompat.offset_after_replace(Vector2(40, -20), Vector2.ZERO),
+		Vector2(40, -20),
+		"a replacement that spans the whole canvas is a no-op",
+	)

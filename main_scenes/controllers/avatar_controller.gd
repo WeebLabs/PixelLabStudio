@@ -6,6 +6,7 @@ const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 const SpriteState = preload("res://autoload/domain/sprite_state.gd")
+const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
 const SaveCoordinator = preload("res://main_scenes/controllers/save_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 
@@ -139,14 +140,21 @@ func duplicate_selected() -> void:
 	_global.notify_user("Duplicated sprite.")
 
 
-func apply_replacement(matched: Array, new_items: Array, orphaned: Array, remove_orphans: bool) -> Dictionary:
+# `legacy_canvas` is non-zero only when the user accepted the compatibility
+# placement for a rig imported as full-canvas PNGs. It is applied per layer, so a
+# rig that mixes legacy layers with later cropped ones corrects only the former.
+func apply_replacement(matched: Array, new_items: Array, orphaned: Array, remove_orphans: bool, legacy_canvas: Vector2 = Vector2.ZERO) -> Dictionary:
 	MutationCommands.capture_bulk()
 	var replaced := 0
 	var added := 0
 	var removed := 0
 	for entry in matched:
-		entry["sprite"].replaceSpriteFromData(entry["image"], entry["name"])
-		_undo.invalidate_image(entry["sprite"].id)
+		var sprite = entry["sprite"]
+		var canvas_shift: Variant = null
+		if LegacyCompat.is_legacy_layer(sprite, legacy_canvas):
+			canvas_shift = entry.get("position", Vector2.ZERO)
+		sprite.replaceSpriteFromData(entry["image"], entry["name"], canvas_shift)
+		_undo.invalidate_image(sprite.id)
 		replaced += 1
 	for item in new_items:
 		add_image_from_data(item["image"], item["name"], item["position"])

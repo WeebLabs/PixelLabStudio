@@ -91,6 +91,7 @@ PNGTuberPlus/
 │   │   ├── physics_tab.gd        Physics tab — wiggle controls
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
+│   │   ├── legacy_replace_prompt.gd Legacy full-canvas compatibility prompts
 │   │   ├── psd_import_dialog.gd     PSD layer selection dialog (import flow)
 │   │   └── replace_review_dialog.gd Unified replace review dialog (PSD/folder/PNG)
 │   ├── settings/
@@ -109,6 +110,7 @@ PNGTuberPlus/
 │   ├── domain/sprite_registry.gd  Canonical live layer enumeration/ID index
 │   ├── domain/selection_state.gd  Selected layer and click-cycle state
 │   ├── domain/mutation_commands.gd Canonical undoable mutation commands
+│   ├── domain/legacy_canvas_compat.gd Full-canvas rig detection and replace placement
 │   ├── input/input_commands.gd    Pure key/device command decoding
 │   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
@@ -254,6 +256,40 @@ Key child nodes:
 > reparent timer and can move the clone unexpectedly. Production-scene tests
 > exercise load/save, duplicate, replacement, costume, hierarchy, and shutdown
 > through the real controller graph.
+
+> Updated: 2026-08-18 — **Legacy full-canvas replace compatibility.** Rigs built
+> before PSD import existed carry one full-canvas PNG per layer: the artwork sits
+> inside its own transparent padding, so layers line up by construction. PSD
+> layers are cropped to their own bounds, so replacing a legacy layer with one
+> drops the padding that was carrying its placement. `ImportController` now runs
+> `LegacyCanvasCompat.evaluate()` on the live rig before the review dialog opens.
+> Uniform still-layer sizing plus at least one filesystem-backed layer path
+> identifies the legacy shape; a PSD authored at other dimensions is refused
+> outright through `legacy_replace_prompt.gd`, since cropped layers cannot be
+> re-aligned to a canvas of a different size. Otherwise the user chooses
+> compatibility placement, a plain replace, or cancel, and the answer rides to
+> `AvatarController.apply_replacement()` as `legacy_canvas`.
+>
+> The placement is arithmetic, not re-padding: padding every layer back out costs
+> a full-canvas texture and alpha scan per layer and leaves the rig permanently in
+> the legacy shape. The layer's Sprite2D is centred, so its artwork centre sits at
+> local `offset` and the node origin (the rotation/drag pivot) lands at texture
+> pixel `size/2 - offset`. Holding `position` still and re-deriving
+> `offset = offset + (layer centre - canvas centre)` keeps that pivot on the canvas
+> coordinate it already occupied. Compensating with `position` instead would drag
+> the pivot onto a different part of the artwork and carry every linked child
+> layer with it. The correction is applied per layer (`is_legacy_layer`), so a rig
+> that mixes legacy layers with later cropped ones corrects only the former, and
+> it degenerates to a no-op when the replacement spans the whole canvas.
+> `replaceSpriteFromData()` takes the shift as an optional third argument and also
+> moves the wiggle rest path, which is stored in texture pixels
+> (`WiggleRuntime.remap_path`). `ImportMatcher.items_from_psd()` now drops `_NRML`
+> layers, which previously entered a replace as ordinary visible artwork;
+> `psd_import_dialog` asks `ImportMatcher.is_normal_layer()` for the same rule.
+> Normal maps are still cleared on a size change, so a legacy replace drops them.
+> Placement math and detection are covered in `tests/unit/test_pure_behavior.gd`;
+> the production runner verifies a marker pixel lands on the same screen position
+> across a cropped replacement.
 
 > Updated: 2026-08-06 — Global background capture is a dynamically instantiated
 > optional boundary. `main.gd` checks for `BackgroundInputCapture` through

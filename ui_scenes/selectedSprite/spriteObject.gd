@@ -7,6 +7,7 @@ const SpriteCollisionRuntime = preload("res://ui_scenes/selectedSprite/sprite_co
 const SpriteHierarchy = preload("res://ui_scenes/selectedSprite/sprite_hierarchy.gd")
 const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 const SpriteVisualRuntime = preload("res://ui_scenes/selectedSprite/sprite_visual_runtime.gd")
+const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
 const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
 const WiggleRuntime = preload("res://effects/wiggle/wiggle_runtime.gd")
 
@@ -378,11 +379,18 @@ func replaceSprite(pathNew):
 	if not has_collision:
 		remakePolygon()
 
-func replaceSpriteFromData(img: Image, layer_name: String):
+# `canvasShift` is set only for a legacy full-canvas layer being replaced by a
+# cropped PSD layer: it is that layer's centre relative to the source canvas
+# centre, and applying it to `offset` keeps the artwork where it already sat.
+# See LegacyCanvasCompat for the derivation.
+func replaceSpriteFromData(img: Image, layer_name: String, canvasShift = null):
+	var previousSize = size
 	path = "psd://" + layer_name
 	imageData = img
 	imageSize = img.get_size()
 	size = imageSize
+	if canvasShift != null:
+		_applyCanvasShift(previousSize, canvasShift)
 	invalidate_used_rect_cache()
 	tex = _make_premultiplied_texture(img)
 
@@ -402,6 +410,12 @@ func replaceSpriteFromData(img: Image, layer_name: String):
 	remadePolygon = false
 	if not has_collision:
 		remakePolygon()
+
+func _applyCanvasShift(previousSize, shift: Vector2):
+	offset = LegacyCompat.offset_after_replace(offset, shift)
+	# The wiggle rest path is texture-space data, so it moves with the crop.
+	_wiggleRuntime.remap_path(-LegacyCompat.texture_origin_shift(Vector2(previousSize), Vector2(size), shift))
+
 
 func _process(delta):
 	# While the window is being resized, freeze the avatar entirely: don't

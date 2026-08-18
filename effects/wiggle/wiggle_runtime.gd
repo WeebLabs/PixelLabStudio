@@ -157,6 +157,19 @@ func rebuild_chain() -> void:
 	appendage.set_geometry(relative_rest, clampi(int(_owner.wiggleSegments), 2, 48))
 
 
+# The rest path is stored in texture pixels, so recropping the layer's texture
+# moves it: a legacy full-canvas layer replaced by a cropped PSD layer shifts the
+# whole path by the replacement's top-left inside the texture it supersedes.
+func remap_path(delta: Vector2) -> void:
+	if delta == Vector2.ZERO or _owner.wigglePath.is_empty():
+		return
+	var moved := PackedVector2Array()
+	for point in _owner.wigglePath:
+		moved.append(point + delta)
+	_owner.wigglePath = moved
+	apply_path_changed()
+
+
 func sync_to_offset() -> void:
 	if appendage != null and not smooth_path.is_empty():
 		appendage.position = _owner._tex_to_local(smooth_path[0])
