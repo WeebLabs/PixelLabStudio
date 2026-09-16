@@ -748,6 +748,15 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
 > there from the row, so the layer and its row read one implementation).
 >
+> **Replace image** (`import_controller.replace_layer`) swaps one layer's artwork.
+> The menu bar's Replace takes a PSD or a folder and matches layers by name; this
+> one is aimed at a layer the user has already picked, so it offers PNG files only
+> and hands straight to the existing single-image path, which names and acts on
+> the held layer (the target is selected before the dialog opens, and APNGs still
+> route to the animated import). Its dialog is reported by
+> `is_replace_dialog_open()`, so `main.isFileSystemOpen()` stops canvas selection
+> while it is up.
+>
 > **Delete** asks first, through a `ModalDialogUI` prompt. "Also delete the layers
 > under it" is always on the prompt and always starts unchecked, greyed out when
 > nothing is linked under the layer, so the choice reads the same way every time.

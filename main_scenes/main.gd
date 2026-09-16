@@ -493,6 +493,10 @@ func open_replace_dialog():
 	import_controller.show_replace_dialog()
 
 
+func replace_layer(sprite) -> void:
+	import_controller.replace_layer(sprite)
+
+
 func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_size: Vector2, remove_orphans: bool):
 	import_controller.apply_replace_review(matched, new_items, orphaned_sprites, canvas_size, remove_orphans)
 

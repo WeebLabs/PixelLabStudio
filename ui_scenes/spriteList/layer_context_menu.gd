@@ -13,7 +13,8 @@ const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 
 const ITEM_DUPLICATE := 0
 const ITEM_RENAME := 1
-const ITEM_DELETE := 2
+const ITEM_REPLACE := 2
+const ITEM_DELETE := 3
 
 const RENAME_PANEL := Vector2(360, 0)
 const DELETE_PANEL := Vector2(420, 0)
@@ -26,6 +27,7 @@ static func open(list: Node, sprite) -> PopupMenu:
 	var menu := PopupMenu.new()
 	menu.add_item("Duplicate", ITEM_DUPLICATE)
 	menu.add_item("Rename...", ITEM_RENAME)
+	menu.add_item("Replace image...", ITEM_REPLACE)
 	menu.add_separator()
 	menu.add_item("Delete...", ITEM_DELETE)
 	menu.id_pressed.connect(func(id: int): _activate(list, sprite, id))
@@ -57,6 +59,8 @@ static func _activate(list: Node, sprite, id: int) -> void:
 			Global.main.duplicate_selected_layer()
 		ITEM_RENAME:
 			confirm_rename(list, sprite)
+		ITEM_REPLACE:
+			Global.main.replace_layer(sprite)
 		ITEM_DELETE:
 			confirm_delete(list, sprite)
 

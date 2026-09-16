@@ -54,6 +54,8 @@ func is_import_dialog_open() -> bool:
 
 
 func is_replace_dialog_open() -> bool:
+	if _layer_replace_dialog != null and _layer_replace_dialog.visible:
+		return true
 	return _replace_dialog != null and _replace_dialog.visible
 
 
@@ -538,6 +540,29 @@ var _replace_dialog: FileDialog = null
 var _replace_legacy_canvas: Vector2 = Vector2.ZERO
 var _legacy_prompt: ModalDialogUI = null
 
+# Replace one layer's artwork, from the layer's own context menu. The whole-rig
+# Replace takes a PSD or a folder and matches layers by name; this one is aimed
+# at a layer the user has already picked, so it offers image files only and hands
+# straight to the single-image path. That path names and acts on the held layer,
+# so the target is selected before the dialog opens.
+func replace_layer(sprite) -> void:
+	if sprite == null or not is_instance_valid(sprite):
+		return
+	_global.select_sprite(sprite)
+	if _global.spriteEdit != null:
+		_global.spriteEdit.setImage()
+	if _layer_replace_dialog == null:
+		_layer_replace_dialog = FileDialog.new()
+		_layer_replace_dialog.title = "Replace layer image"
+		_layer_replace_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		_layer_replace_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_layer_replace_dialog.filters = PackedStringArray(["*.png;PNG Files"])
+		_layer_replace_dialog.use_native_dialog = true
+		_layer_replace_dialog.file_selected.connect(_handle_replace_single_png)
+		_main.add_child(_layer_replace_dialog)
+	_layer_replace_dialog.popup_centered(Vector2i(600, 400))
+
+
 func _create_replace_dialog():
 	_replace_dialog = FileDialog.new()
 	_replace_dialog.title = "Replace"
@@ -666,6 +691,7 @@ func _handle_replace_single_png(path: String):
 	var file_name = path.get_file()
 	_show_single_replace_confirm(path, sprite_name, file_name)
 
+var _layer_replace_dialog: FileDialog = null
 var _single_replace_dialog: Node2D = null
 var _single_replace_path: String = ""
 # The prompt names one layer, so it has to act on that layer. Reading the live

@@ -53,6 +53,7 @@ func _run() -> void:
 	await _test_layer_deletion_children()
 	await _test_layer_rename()
 	await _test_layer_context_menu()
+	await _test_layer_replace_target()
 	await _test_duplicate_placement()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
@@ -523,7 +524,11 @@ func _test_layer_context_menu() -> void:
 	assert_not_null(menu, "right-clicking a layer opens its menu")
 	if menu == null:
 		return
-	assert_equal(menu.item_count, 4, "the layer menu offers duplicate, rename and delete")
+	assert_equal(menu.item_count, 5, "the layer menu offers duplicate, rename, replace and delete")
+	var labels := []
+	for index in menu.item_count:
+		labels.append(menu.get_item_text(index))
+	assert_true(labels.has("Replace image..."), "the layer menu can replace this layer's image")
 	# Subwindows are embedded by default, and an embedded popup is positioned in
 	# viewport coordinates. Screen coordinates put the menu off the right edge of
 	# the viewport, where it was clamped into the corner.
@@ -551,6 +556,23 @@ func _test_layer_context_menu() -> void:
 			)
 		_dismiss_prompt()
 		await get_tree().process_frame
+
+
+# Replacing from the menu targets the layer that was right-clicked, which the
+# single-image path reads as the held layer.
+func _test_layer_replace_target() -> void:
+	var sprite = Global.sprite_by_id(NESTED_ID)
+	if sprite == null:
+		return
+	Global.clear_selection()
+	_main.replace_layer(sprite)
+	await get_tree().process_frame
+	assert_true(Global.heldSprite == sprite, "replacing from the menu selects that layer first")
+	assert_true(_main.import_controller.is_replace_dialog_open(), "replacing from the menu opens a file dialog")
+	assert_true(_main.isFileSystemOpen(), "the layer replace dialog blocks canvas selection while it is open")
+	_main.import_controller._layer_replace_dialog.hide()
+	await get_tree().process_frame
+	assert_false(_main.import_controller.is_replace_dialog_open(), "dismissing it releases the canvas")
 
 
 func _prompt_checkbox() -> CheckBox:
