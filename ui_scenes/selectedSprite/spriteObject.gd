@@ -170,6 +170,7 @@ var _wiggleRuntime = WiggleRuntime.new()
 var _wiggleRestPos = Vector2.ZERO
 var _wiggleRestRot = 0.0
 var _wiggleFollowing = false
+var _wiggleBind = {}
 
 #Blink Animation
 var _blinkAnimPlaying = false
@@ -603,7 +604,7 @@ func _input(event):
 				_origin_drag_captured = false
 				_origin_drag_start_mouse_local = get_parent().to_local(mouse_pos)
 				_origin_drag_start_offset = offset
-				_origin_drag_start_pos = position
+				_origin_drag_start_pos = authoredPosition()
 				get_viewport().set_input_as_handled()
 		else:
 			_origin_dragging = false
@@ -618,7 +619,7 @@ func _input(event):
 		# and offset stay exactly coupled. Truncating each independently (int() rounds toward
 		# zero) drifted them apart by a pixel when both had the same sign — moving the artwork.
 		var idelta = Vector2(roundi(delta.x), roundi(delta.y))
-		position = _origin_drag_start_pos + idelta
+		setAuthoredPosition(_origin_drag_start_pos + idelta)
 		offset = _origin_drag_start_offset - idelta
 		sprite.offset = offset
 		grabArea.position = (size * -0.5) + offset
@@ -651,13 +652,26 @@ func moveSprite(dir):
 		heldTicks = 0
 		MutationCommands.end_gesture("move-layer")
 
+	var moved = authoredPosition()
 	if heldTicks > 30 or heldTicks == 1:
 		var multiplier = 2
 		if heldTicks == 1:
 			multiplier = 1
-		position -= dir * multiplier
-	
-	position = Vector2(int(position.x),int(position.y))
+		moved -= dir * multiplier
+
+	setAuthoredPosition(Vector2(int(moved.x),int(moved.y)))
+
+# A layer riding a wiggle parent has its live position rewritten every frame, so
+# moves, saves, and undo act on its authored rest position instead.
+func authoredPosition() -> Vector2:
+	return _wiggleRestPos if _wiggleFollowing else position
+
+func setAuthoredPosition(value: Vector2) -> void:
+	if not _wiggleFollowing:
+		position = value
+	elif _wiggleRestPos != value:
+		_wiggleRestPos = value
+		_wiggleBind = {}
 
 func moveOrigin(dir):
 	if dir != Vector2.ZERO:
@@ -674,7 +688,7 @@ func moveOrigin(dir):
 			multiplier = 1
 
 		offset += dir * multiplier
-		position -= dir * multiplier
+		setAuthoredPosition(authoredPosition() - dir * multiplier)
 
 	offset = Vector2(int(offset.x),int(offset.y))
 
@@ -687,7 +701,7 @@ func snapOriginToMouse():
 	var new_pos = get_parent().to_local(mouse_pos)
 	new_pos = Vector2(int(new_pos.x), int(new_pos.y))
 	var delta = new_pos - position
-	position = new_pos
+	setAuthoredPosition(authoredPosition() + delta)
 	offset -= delta
 	offset = Vector2(int(offset.x), int(offset.y))
 	sprite.offset = offset

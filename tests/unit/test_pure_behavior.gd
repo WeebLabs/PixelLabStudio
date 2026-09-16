@@ -74,6 +74,17 @@ func _test_wiggle_geometry(t) -> void:
 	t.assert_approx(WiggleGeometry.project_fraction(oriented, Vector2(7.5, 2.0)), 0.75, 0.0001, "path projection returns stable arc fraction")
 	t.assert_equal(WiggleGeometry.tangent(oriented, 0.25), Vector2(5, 0), "path tangent follows the oriented rest geometry")
 
+	var joints := PackedVector2Array([Vector2.ZERO, Vector2(10, 0), Vector2(20, 0)])
+	var beside := Vector2(12, -6)
+	var bind := WiggleGeometry.bind_to_chain(beside, joints)
+	var at_rest := WiggleGeometry.follow_chain(bind, joints)
+	t.assert_approx((at_rest["position"] as Vector2).distance_to(beside), 0.0, 0.0001, "a child beside the wiggle chain stays put while the chain is at rest")
+	t.assert_approx(float(at_rest["rotation"]), 0.0, 0.0001, "an at-rest wiggle chain adds no child rotation")
+	var bent := PackedVector2Array([Vector2.ZERO, Vector2(10, 0), Vector2(10, 10)])
+	var riding := WiggleGeometry.follow_chain(bind, bent)
+	t.assert_approx((riding["position"] as Vector2).distance_to(Vector2(16, 2)), 0.0, 0.0001, "a bound child keeps its sideways offset as its segment turns")
+	t.assert_approx(float(riding["rotation"]), PI / 2.0, 0.0001, "a bound child turns with its chain segment")
+
 	var image := Image.create(16, 8, false, Image.FORMAT_RGBA8)
 	image.fill(Color.TRANSPARENT)
 	for y in range(2, 6):

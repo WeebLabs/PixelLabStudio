@@ -132,9 +132,9 @@ func duplicate_selected() -> void:
 		sprite.reparent(new_parent.sprite, false)
 		sprite.parentId = source.parentId
 		sprite.parentSprite = new_parent
-		sprite.position = source.position
+		sprite.position = source.authoredPosition()
 	else:
-		sprite.position = source.position
+		sprite.position = source.authoredPosition()
 	_global.select_sprite(sprite)
 	_global.spriteList.updateData()
 	_global.notify_user("Duplicated sprite.")

@@ -10,6 +10,8 @@ var smooth_path := PackedVector2Array()
 
 var _owner: Node2D
 var _path_edit_previous_visible := false
+# Bumped whenever the rest chain or its anchor changes, so children rebind.
+var _bind_serial := 0
 
 
 func setup(owner: Node2D) -> void:
@@ -155,6 +157,7 @@ func rebuild_chain() -> void:
 	for point in smooth_path:
 		relative_rest.append(_owner._tex_to_local(point) - root_local)
 	appendage.set_geometry(relative_rest, clampi(int(_owner.wiggleSegments), 2, 48))
+	_bind_serial += 1
 
 
 # The rest path is stored in texture pixels, so recropping the layer's texture
@@ -173,6 +176,7 @@ func remap_path(delta: Vector2) -> void:
 func sync_to_offset() -> void:
 	if appendage != null and not smooth_path.is_empty():
 		appendage.position = _owner._tex_to_local(smooth_path[0])
+		_bind_serial += 1
 
 
 func update(delta: float) -> void:
@@ -209,23 +213,31 @@ func parameters() -> Dictionary:
 	}
 
 
+# Each child is bound rigidly to the chain segment nearest its authored rest
+# position, keeping its offset in that segment's frame, so it rides the bend
+# without snapping onto the spine. Bindings are made against the chain's own rest
+# joints, so an at-rest chain leaves every child exactly where it was authored.
 func apply_to_children() -> void:
-	if appendage == null or smooth_path.size() < 2:
+	if appendage == null:
 		return
+	var joints := appendage.joints_local()
+	if joints.size() < 2:
+		return
+	var rest_joints := PackedVector2Array()
 	for child in _owner.getAllLinkedSprites():
 		if not child._wiggleFollowing:
 			child._wiggleRestPos = child.position
 			child._wiggleRestRot = child.rotation
 			child._wiggleFollowing = true
-		var texture_position: Vector2 = _owner._local_to_tex(child._wiggleRestPos)
-		var fraction := WiggleGeometry.project_fraction(smooth_path, texture_position)
-		var point: Vector2 = appendage.sample_local(fraction) + appendage.position
-		var next_point: Vector2 = appendage.sample_local(minf(fraction + 0.04, 1.0)) + appendage.position
-		child.position = point
-		var current_tangent := next_point - point
-		var rest_tangent := WiggleGeometry.tangent(smooth_path, fraction)
-		if current_tangent.length() > 0.001 and rest_tangent.length() > 0.001:
-			child.rotation = child._wiggleRestRot + (current_tangent.angle() - rest_tangent.angle())
+			child._wiggleBind = {}
+		if child._wiggleBind.get("serial", -1) != _bind_serial:
+			if rest_joints.is_empty():
+				rest_joints = appendage.rest_joints_local()
+			child._wiggleBind = WiggleGeometry.bind_to_chain(child._wiggleRestPos - appendage.position, rest_joints)
+			child._wiggleBind["serial"] = _bind_serial
+		var placed := WiggleGeometry.follow_chain(child._wiggleBind, joints)
+		child.position = appendage.position + placed["position"]
+		child.rotation = child._wiggleRestRot + placed["rotation"]
 
 
 func attach_children() -> void:
@@ -234,6 +246,7 @@ func attach_children() -> void:
 			child._wiggleRestPos = child.position
 			child._wiggleRestRot = child.rotation
 			child._wiggleFollowing = true
+			child._wiggleBind = {}
 			child.reparent(_owner.dragOrigin, true)
 
 
@@ -245,3 +258,4 @@ func release_children() -> void:
 			child.position = child._wiggleRestPos
 			child.rotation = child._wiggleRestRot
 			child._wiggleFollowing = false
+			child._wiggleBind = {}

@@ -266,17 +266,29 @@ func _update_mesh() -> void:
 		verts[i * 2 + 1] = center[i] - perp * w
 	polygon = verts
 
-# Position along the chain at normalized t in [0,1], in this node's local space.
-# Used by child-follow so attached props ride the ribbon.
-func sample_local(t: float) -> Vector2:
-	if _points.is_empty():
-		return Vector2.ZERO
-	t = clampf(t, 0.0, 1.0)
-	var fpos := t * float(_points.size() - 1)
-	var i := int(fpos)
-	if i >= _points.size() - 1:
-		return to_local(_points[-1][_POS])
-	return to_local(_points[i][_POS]).lerp(to_local(_points[i + 1][_POS]), fpos - float(i))
+# The live chain joints in this node's local space. Child-follow binds each child
+# to one joint segment, so it reads the same joints the physics moves.
+func joints_local() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in _points:
+		out.append(to_local(p[_POS]))
+	return out
+
+# The chain joints at REST in this node's local space, laid out exactly as reset()
+# lays them out from the current transform. Binding a child against these (rather
+# than the smoothed rest path) means an at-rest chain moves the child by zero.
+func rest_joints_local() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if _rest_rel.size() < 2:
+		return out
+	var ang := _base_rest_angle + global_rotation
+	var pos := get_global_position()
+	out.append(to_local(pos))
+	for i in range(1, segment_count + 1):
+		ang += _rest_rel[i]
+		pos += Vector2(segment_length, 0).rotated(ang)
+		out.append(to_local(pos))
+	return out
 
 # --- Geometry helpers (static, shared with the owner's bake) ---
 

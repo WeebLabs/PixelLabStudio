@@ -68,7 +68,7 @@ static func capture_properties(sprite: Object, serialize_structured: bool) -> Di
 		"path": sprite.get("path"),
 		"identification": sprite.get("id"),
 		"parentId": sprite.get("parentId"),
-		"pos": var_to_str(sprite.get("position")),
+		"pos": var_to_str(_authored_position(sprite)),
 		"offset": var_to_str(sprite.get("offset")),
 	}
 	for save_key in SIMPLE_FIELDS:
@@ -76,6 +76,14 @@ static func capture_properties(sprite: Object, serialize_structured: bool) -> Di
 	for save_key in STRUCTURED_FIELDS:
 		data[save_key] = encode_structured(save_key, sprite.get(STRUCTURED_FIELDS[save_key]), serialize_structured)
 	return data
+
+
+# A layer riding a wiggle parent has its live position rewritten every frame, so
+# saves and undo snapshots record the authored rest position instead.
+static func _authored_position(sprite: Object) -> Variant:
+	if sprite.get("_wiggleFollowing") == true:
+		return sprite.get("_wiggleRestPos")
+	return sprite.get("position")
 
 
 static func capture_save(sprite: Object) -> Dictionary:
@@ -117,7 +125,7 @@ static func _apply_value_fields(sprite: Object, data: Dictionary) -> void:
 static func apply_existing(sprite: Object, data: Dictionary) -> void:
 	var previous_frames := int(sprite.get("frames"))
 	_apply_value_fields(sprite, data)
-	sprite.set("position", ValueCodec.vector2_value(data.get("pos"), Vector2.ZERO))
+	sprite.call("setAuthoredPosition", ValueCodec.vector2_value(data.get("pos"), Vector2.ZERO))
 	sprite.get("sprite").offset = sprite.get("offset")
 	sprite.get("grabArea").position = (sprite.get("size") * -0.5) + sprite.get("offset")
 	sprite.call("setZIndex")

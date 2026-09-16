@@ -314,3 +314,44 @@ static func tangent(path: PackedVector2Array, fraction: float) -> Vector2:
 		return Vector2.RIGHT
 	var index := clampi(int(fraction * float(point_count - 1)), 0, point_count - 2)
 	return path[index + 1] - path[index]
+
+
+# Child-follow: bind a point to the chain segment nearest it. Stores which segment,
+# how far along it, and the point's offset in that segment's own frame. Keeping
+# the sideways offset is what lets a child placed beside the spine stay beside it.
+static func bind_to_chain(point: Vector2, joints: PackedVector2Array) -> Dictionary:
+	var bind := {"segment": 0, "along": 0.0, "angle": 0.0, "offset": point}
+	var best_distance := INF
+	for i in joints.size() - 1:
+		var start: Vector2 = joints[i]
+		var segment: Vector2 = joints[i + 1] - start
+		var along := clampf((point - start).dot(segment) / maxf(segment.length_squared(), 0.000001), 0.0, 1.0)
+		var anchor := start + segment * along
+		var distance := point.distance_squared_to(anchor)
+		if distance < best_distance:
+			best_distance = distance
+			bind = {
+				"segment": i,
+				"along": along,
+				"angle": segment.angle(),
+				"offset": (point - anchor).rotated(-segment.angle()),
+			}
+	return bind
+
+
+# Where a bound point sits on the chain's current joints, and how far its segment
+# has turned since binding. A chain still at its bound joints returns the point
+# unchanged with zero rotation.
+static func follow_chain(bind: Dictionary, joints: PackedVector2Array) -> Dictionary:
+	var offset: Vector2 = bind.get("offset", Vector2.ZERO)
+	if joints.size() < 2:
+		return {"position": offset, "rotation": 0.0}
+	var index := clampi(int(bind.get("segment", 0)), 0, joints.size() - 2)
+	var start: Vector2 = joints[index]
+	var segment: Vector2 = joints[index + 1] - start
+	var rest_angle := float(bind.get("angle", 0.0))
+	var angle: float = segment.angle() if segment.length_squared() > 0.000001 else rest_angle
+	return {
+		"position": start + segment * float(bind.get("along", 0.0)) + offset.rotated(angle),
+		"rotation": angle_difference(rest_angle, angle),
+	}

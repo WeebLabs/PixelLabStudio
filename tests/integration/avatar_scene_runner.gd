@@ -46,6 +46,7 @@ func _run() -> void:
 	await _test_sidebar_selection_state()
 	await _test_edit_commands()
 	await _test_idle_motion()
+	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
 	await _test_z_index_editor()
@@ -173,6 +174,49 @@ func _test_idle_motion() -> void:
 		await get_tree().process_frame
 	var moved_y: float = base.get_node("WobbleOrigin").position.y
 	assert_true(absf(moved_y - start_y) > 0.1, "migrated idle sway produces visible runtime motion")
+
+
+# A child placed beside a wiggle parent's spine must stay where it was authored
+# while the chain is at rest (it used to snap onto the spine), and user moves must
+# land on its authored position rather than being overwritten by the follow.
+func _test_wiggle_child_follow() -> void:
+	var base = Global.sprite_by_id(BASE_ID)
+	var child = Global.sprite_by_id(COSTUME_ONE_ID)
+	if base == null or child == null:
+		return
+	var saved := {}
+	for field in ["animClips", "wigglePath", "wigglePathWidths", "wiggleWagEnabled", "wiggleWeight", "wiggleShapeReturn"]:
+		saved[field] = base.get(field)
+	base.animClips = []
+	for _frame in range(30):
+		await get_tree().process_frame
+	var authored: Vector2 = child.position
+	base.wigglePath = PackedVector2Array([
+		base._local_to_tex(Vector2(-20, 0)), base._local_to_tex(Vector2.ZERO), base._local_to_tex(Vector2(20, 0)),
+	])
+	base.wigglePathWidths = PackedFloat32Array([8.0, 8.0, 8.0])
+	base.wiggleWagEnabled = false
+	base.wiggleWeight = 0.0
+	base.wiggleShapeReturn = 1.0
+	base.wiggleEnabled = true
+	base.setWiggle(true)
+	for _frame in range(10):
+		await get_tree().process_frame
+	assert_true(child.get_parent() == base.dragOrigin, "wiggle parent carries its linked child on DragOrigin")
+	assert_true(child.position.distance_to(authored) < 0.01, "a child beside the wiggle spine stays at its authored position at rest (got %s, want %s)" % [child.position, authored])
+	child.setAuthoredPosition(authored + Vector2(3, 0))
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(child.position.distance_to(authored + Vector2(3, 0)) < 0.01, "moving a following child moves it instead of being overwritten")
+	assert_equal(child.authoredPosition(), authored + Vector2(3, 0), "a following child reports its authored position for saves")
+	base.wiggleEnabled = false
+	base.setWiggle(false)
+	assert_true(child.get_parent() == base.sprite, "disabling wiggle returns the child to the Sprite2D")
+	assert_equal(child.position, authored + Vector2(3, 0), "disabling wiggle restores the child's authored position")
+	child.position = authored
+	for field in saved:
+		base.set(field, saved[field])
+	await get_tree().process_frame
 
 
 func _test_edit_commands() -> void:
