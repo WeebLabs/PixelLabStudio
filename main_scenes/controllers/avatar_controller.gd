@@ -357,6 +357,8 @@ func load_avatar(path: String) -> bool:
 	await _global.spriteList.updateData()
 	if _load_aborted():
 		return _abandon_load(load_dialog)
+	# The rig's depth is known now, so give the list the width that depth needs.
+	_global.spriteList.fitPanelToDepth()
 	_main.onWindowSizeChange()
 	_assign_default_ndi_reference()
 	if _main.ndi_manager != null:

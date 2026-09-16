@@ -776,10 +776,21 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > give up (the collapse arrow, the thumbnail, the badges, the show/hide button,
 > the separations, and a floor for the name). The name gives way first: it
 > ellipsizes as the row narrows, and indentation is only compressed once the name
-> is down to the width of `MIN_NAME_SAMPLE` ("Ab…") measured in the row's own font,
-> so the floor follows the font size rather than being a magic number. Measured on
-> a rig nesting five deep, the indentation now survives intact down to a 220 px
-> sidebar and only compresses below that. `layer_tree_controller`
+> reaches its floor.
+>
+> That floor is where Godot stops ellipsizing. Its text trimmer drops the ellipsis
+> and hard-cuts the string once fewer than about six characters would be left,
+> which is why deep rows were being sliced mid-word with no mark: verified by
+> rendering, a name ellipsizes down to 65 px at this font size and is cut without
+> a mark at 60. So a row reserves room for its own first `ELLIPSIS_MIN_CHARS`
+> characters plus the ellipsis, measured in the row's own font, and gives up
+> indentation rather than showing an unmarked cut. Badges appearing and a rename
+> both re-spend the budget, since both change what the row must keep.
+>
+> Loading an avatar also calls `viewer.fitPanelToDepth()`, which widens the
+> sidebar until the deepest row can show its indentation in full. It only grows
+> the panel, never past `MAX_WIDTH_RATIO`, and names truncate rather than the tree
+> losing its shape. `layer_tree_controller`
 > passes the scroll area's width minus its vertical scrollbar, and `reflow()`
 > re-clamps every row when the sidebar is resized. The row's `_draw()` guide lines
 > read `indentWidth()` rather than recomputing `indent * step`, so they follow the
@@ -793,6 +804,13 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > `avatar_scene_runner._test_layer_list_fits_panel` chains fixture layers into a
 > deep hierarchy and asserts, at three sidebar widths, that no show/hide button
 > crosses the panel's right edge and that every name keeps some room.
+
+### Visibility Toggle section
+
+> Added: 2026-09-16 — `ui_scenes/spriteList/visibility_toggle_section.gd` owns the
+> key-binding section (build, enable/disable, the capture and the clear), leaving
+> the sidebar to position it. Same split as the blend strip and the physics tab;
+> the sidebar's size ceiling in `test_ui_components` is what forces it.
 
 ### Row indentation
 

@@ -10,10 +10,15 @@ const ITEM_SEPARATION := 4
 # structure that a wider step would.
 const INDENT_STEP := 12
 # The name gives way first, ellipsizing as the row narrows, and indentation is
-# only compressed once the name is down to this floor: enough for a couple of
-# characters and the ellipsis, measured in the row's own font so it holds at any
-# font size.
-const MIN_NAME_SAMPLE := "Ab…"
+# only compressed once the name is down to its floor.
+#
+# That floor is where Godot stops ellipsizing: its text trimmer drops the
+# ellipsis and hard-cuts the string instead once fewer than about six characters
+# would be left (verified by rendering: at this font size a name ellipsizes down
+# to 65 px and is cut without a mark at 60). So a row reserves room for its own
+# first six characters plus the ellipsis, and gives up indentation rather than
+# showing a name sliced mid-word with nothing to say it was.
+const ELLIPSIS_MIN_CHARS := 6
 
 var sprite = null
 var parent = null
@@ -33,6 +38,7 @@ var _eye_target_badge: Label
 var _eye_track_badge: TextureRect
 var _indent_spacer: Control
 var _hbox: HBoxContainer
+var _indent_budget := -1.0
 var _hovered = false
 var _was_selected = false
 var _was_visible = true       # tracks effective (in-tree) visibility to refresh the eye
@@ -239,10 +245,12 @@ func _gui_input(event: InputEvent):
 		accept_event()
 
 
-# Re-read the layer's name, after a rename.
+# Re-read the layer's name, after a rename. The indent budget depends on the
+# name, so it is re-spent here.
 func refreshName():
 	if is_instance_valid(sprite):
 		_name_label.text = sprite.displayName()
+		updateIndent()
 
 func _select():
 	# A layer row is a Control, so it never reaches the canvas click path and its
@@ -296,10 +304,14 @@ func _process(_delta):
 	if has_normal != _was_normal_map:
 		_was_normal_map = has_normal
 		_normal_badge.visible = has_normal
+		# A badge appearing takes room the indent had been spending, so the budget
+		# is re-spent rather than leaving the name squeezed under its floor.
+		updateIndent()
 	var is_target := _is_eye_track_target()
 	if is_target != _was_eye_target:
 		_was_eye_target = is_target
 		_eye_target_badge.visible = is_target
+		updateIndent()
 	var eye_enabled: bool = sprite.eyeTrack
 	var global_enabled: bool = Global.eyeTrackingGloballyEnabled
 	if eye_enabled != _was_eye_track_enabled or global_enabled != _was_global_eye_tracking:
@@ -331,7 +343,9 @@ func _update_eye_track_badge():
 	if _eye_track_badge == null or not is_instance_valid(sprite):
 		return
 	var on: bool = sprite.eyeTrack
-	_eye_track_badge.visible = on
+	if _eye_track_badge.visible != on:
+		_eye_track_badge.visible = on
+		updateIndent()
 	if on:
 		_eye_track_badge.modulate = Color(0.78, 0.78, 0.82) if Global.eyeTrackingGloballyEnabled else Color(0.4, 0.4, 0.45)
 
@@ -341,6 +355,13 @@ func _update_eye_track_badge():
 # is the controls. `available_width` is what the list has to give (-1 when the
 # caller does not know yet, which keeps the plain step).
 func updateIndent(available_width: float = -1.0):
+	# Callable from the row's own build, before the row has all its parts.
+	if _hbox == null or _vis_btn == null:
+		return
+	if available_width >= 0.0:
+		_indent_budget = available_width
+	else:
+		available_width = _indent_budget
 	var wanted := float(indent * INDENT_STEP)
 	if available_width >= 0.0:
 		wanted = minf(wanted, maxf(0.0, available_width - _fixed_content_width()))
@@ -349,14 +370,23 @@ func updateIndent(available_width: float = -1.0):
 	queue_redraw()
 
 
-# The narrowest the name is allowed to get before indentation starts giving way.
+# The narrowest this name may get while Godot will still ellipsize it.
 func _min_name_width() -> float:
 	var font := _name_label.get_theme_font("font")
 	if font == null:
 		return 0.0
+	var sample: String = _name_label.text.substr(0, ELLIPSIS_MIN_CHARS)
+	if sample.length() < _name_label.text.length():
+		sample += "…"
 	return font.get_string_size(
-		MIN_NAME_SAMPLE, HORIZONTAL_ALIGNMENT_LEFT, -1, _name_label.get_theme_font_size("font_size")
+		sample, HORIZONTAL_ALIGNMENT_LEFT, -1, _name_label.get_theme_font_size("font_size")
 	).x
+
+
+# The width this row wants: its full indentation plus everything it cannot give
+# up. A list given this much never has to compress anyone's indentation.
+func requiredWidth() -> float:
+	return indent * INDENT_STEP + _fixed_content_width()
 
 
 # How far this row is actually indented, after the budget clamp.

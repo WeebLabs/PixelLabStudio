@@ -7,6 +7,7 @@ const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_contr
 const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
 const LayerDetailsPanel = preload("res://ui_scenes/spriteList/layer_details_panel.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
+const VisibilityToggleSection = preload("res://ui_scenes/spriteList/visibility_toggle_section.gd")
 
 @onready var container = $ScrollContainer/VBoxContainer
 var SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
@@ -61,10 +62,7 @@ var _slider_grabber_enabled: ImageTexture
 var _slider_grabber_disabled: ImageTexture
 var _slider_theme: Dictionary
 
-var _vis_toggle_section: VBoxContainer
-var _vis_toggle_btn: Button
-var _vis_toggle_label: Label
-var _vis_toggle_delete_btn: Button
+var _vis_toggle = VisibilityToggleSection.new()
 var _divider4: ColorRect
 
 var _filter_field: LineEdit
@@ -311,52 +309,7 @@ func _create_vis_toggle():
 	# independently from both sections.
 	_divider4 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider4)
-
-	# Section is a VBoxContainer with a header row and a control row inside.
-	_vis_toggle_section = VBoxContainer.new()
-	_vis_toggle_section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
-	add_child(_vis_toggle_section)
-
-	var label_color = Color(0.75, 0.75, 0.8)
-
-	# Section header
-	var header = Label.new()
-	header.text = "Visibility Toggle"
-	header.add_theme_font_size_override("font_size", 12)
-	header.add_theme_color_override("font_color", label_color)
-	_vis_toggle_section.add_child(header)
-
-	# Control row: [Set Key] [toggle: "..."]  ...  [x]
-	var row = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	_vis_toggle_section.add_child(row)
-
-	_vis_toggle_btn = Button.new()
-	_vis_toggle_btn.text = "Set Key"
-	_vis_toggle_btn.flat = true
-	_vis_toggle_btn.add_theme_font_size_override("font_size", 12)
-	_vis_toggle_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
-	_vis_toggle_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	_vis_toggle_btn.pressed.connect(_on_set_toggle_pressed)
-	row.add_child(_vis_toggle_btn)
-
-	_vis_toggle_label = Label.new()
-	_vis_toggle_label.text = "toggle: \"null\""
-	_vis_toggle_label.add_theme_font_size_override("font_size", 12)
-	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_vis_toggle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_vis_toggle_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(_vis_toggle_label)
-
-	_vis_toggle_delete_btn = Button.new()
-	_vis_toggle_delete_btn.text = "x"
-	_vis_toggle_delete_btn.flat = true
-	_vis_toggle_delete_btn.add_theme_font_size_override("font_size", 11)
-	_vis_toggle_delete_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
-	_vis_toggle_delete_btn.add_theme_color_override("font_hover_color", Color(0.9, 0.45, 0.5))
-	_vis_toggle_delete_btn.custom_minimum_size = Vector2(20, 0)
-	_vis_toggle_delete_btn.pressed.connect(_on_vis_toggle_delete_pressed)
-	row.add_child(_vis_toggle_delete_btn)
+	_vis_toggle.build(self)
 
 func _apply_size():
 	var s = get_viewport().get_visible_rect().size
@@ -424,7 +377,7 @@ func _apply_size():
 	_tab_bar.set_bar_size(section_width)
 	y += AppTabBar.BAR_HEIGHT + Global.UI_ROW_GAP
 
-	var vis_h = _vis_toggle_section.get_combined_minimum_size().y
+	var vis_h = _vis_toggle.section.get_combined_minimum_size().y
 	var vis_y = panel_height - vis_h - BOTTOM_MARGIN
 	var divider4_y = vis_y - Global.UI_DIVIDER_PAD
 	var tab_bottom = divider4_y - Global.UI_DIVIDER_PAD
@@ -435,8 +388,8 @@ func _apply_size():
 	_divider4.position = Vector2(8, divider4_y)
 	_divider4.size.x = panel_width - 16
 
-	_vis_toggle_section.position = Vector2(section_x, vis_y)
-	_vis_toggle_section.size = Vector2(section_width, vis_h)
+	_vis_toggle.section.position = Vector2(section_x, vis_y)
+	_vis_toggle.section.size = Vector2(section_width, vis_h)
 
 	# Collision area + sidebar anchor
 	$Area2D2/CollisionShape2D.shape.size = Vector2(panel_width, panel_height)
@@ -476,13 +429,7 @@ func _process(_delta):
 	# Eye-tracking control enable/disable is handled by refreshEyeUI() above
 	# based on scope (per_layer / global / dead); don't blanket-disable here.
 
-	# Visibility Toggle
-	_vis_toggle_btn.disabled = no_sprite
-	_vis_toggle_delete_btn.disabled = no_sprite
-	if no_sprite:
-		_vis_toggle_label.add_theme_color_override("font_color", Color(0.35, 0.35, 0.4))
-	elif not Global.awaitingToggleBind:
-		_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	_vis_toggle.set_enabled(not no_sprite)
 
 	if !no_sprite:
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
@@ -514,8 +461,7 @@ func updateControls():
 	_physics_tab.sync()
 	_blend_section_helper.sync()
 	refreshEyeUI()
-	if Global.heldSprite != null:
-		_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
+	_vis_toggle.refresh()
 
 # --- Top control handlers ---
 
@@ -571,28 +517,6 @@ func refreshEyeUI() -> void:
 
 func refreshEyePickWhip() -> void:
 	_eye_tracking.refresh_pick_whip()
-
-# --- Visibility Toggle handlers ---
-
-func _on_set_toggle_pressed():
-	if Global.heldSprite == null: return
-	_vis_toggle_label.text = "toggle: AWAITING INPUT"
-	_vis_toggle_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.8))
-	Global.begin_visibility_key_capture()
-	await Global.main.visibility_binding_armed
-	var keys = await Global.main.spriteVisToggles
-	Global.finish_visibility_key_capture()
-	var key = keys[0]
-	if Global.heldSprite == null: return
-	MutationCommands.set_layer_property(Global.heldSprite, "toggle", key)
-	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
-	_vis_toggle_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-
-func _on_vis_toggle_delete_pressed():
-	if Global.heldSprite == null: return
-	MutationCommands.set_layer_property(Global.heldSprite, "toggle", "null")
-	_vis_toggle_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
-	Global.heldSprite.makeVis()
 
 # --- Resize and drag ---
 
@@ -679,6 +603,25 @@ func updateData(sort_by_z: bool = true):
 
 func refreshNames():
 	_layer_tree.refresh_names()
+
+# Widen the sidebar so the deepest layer in this avatar shows its indentation in
+# full, rather than having it compressed away by the row budget. Called when an
+# avatar is loaded, since that is when the rig's depth is known and when the user
+# is not in the middle of reading the list. It only ever grows the panel, and
+# never past the usual maximum; names truncate instead, which is what the panel
+# is already built to do.
+func fitPanelToDepth():
+	var extra: float = _layer_tree.extra_width_for_full_indent(panel_width)
+	if extra <= 0.0:
+		return
+	var target: float = SidebarUIFactory.clamp_panel_width(
+		panel_width + extra, get_viewport().get_visible_rect().size.x, MIN_WIDTH, MAX_WIDTH_RATIO,
+	)
+	if target <= panel_width:
+		return
+	panel_width = target
+	_apply_size()
+
 
 # Rows in line with the live layers, in place (delete, duplicate, undo).
 func syncRows(sort_by_z: bool = true):

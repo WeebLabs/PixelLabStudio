@@ -56,6 +56,7 @@ func _run() -> void:
 	await _test_duplicate_placement()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
+	await _test_sidebar_fits_depth()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -430,6 +431,52 @@ func _test_layer_list_fits_panel() -> void:
 	for id in chain.slice(1):
 		var restored = Global.sprite_by_id(id)
 		assert_true(restored != null and restored.parentId == BASE_ID, "the test rig's hierarchy is put back")
+	list.panel_width = original_width
+	list._apply_size()
+	await list.updateData()
+	await get_tree().process_frame
+
+
+# Loading an avatar widens the sidebar until the deepest layer can show its
+# indentation in full, so depth is never compressed away on a rig as it opens.
+func _test_sidebar_fits_depth() -> void:
+	var list = Global.spriteList
+	var original_width: float = list.panel_width
+
+	# One chain through every fixture layer, as deep as this rig can go.
+	var ids := []
+	for sprite in Global.sprite_nodes():
+		ids.append(sprite.id)
+	MutationCommands.structural(func():
+		for index in range(1, ids.size()):
+			var child = Global.sprite_by_id(ids[index])
+			var parent = Global.sprite_by_id(ids[index - 1])
+			if child != null and parent != null:
+				Global.linkSprite(child, parent)
+		return true)
+	await list.updateData()
+	await get_tree().process_frame
+
+	var width_before: float = list.panel_width
+	list.fitPanelToDepth()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	assert_true(list.panel_width >= width_before, "fitting the sidebar to depth never narrows it")
+	var maximum: float = get_viewport().get_visible_rect().size.x * list.MAX_WIDTH_RATIO
+	var compressed := 0
+	var deepest := 0
+	for row in list.container.get_children():
+		deepest = maxi(deepest, row.indent)
+		if row.indentWidth() < row.indent * SpriteListObject.INDENT_STEP:
+			compressed += 1
+	assert_true(deepest >= 8, "the test rig is deep enough to need the width")
+	if list.panel_width < maximum:
+		assert_equal(compressed, 0, "after fitting, no row's indentation is compressed")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
 	list.panel_width = original_width
 	list._apply_size()
 	await list.updateData()

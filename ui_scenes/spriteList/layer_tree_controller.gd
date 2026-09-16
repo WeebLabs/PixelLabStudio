@@ -276,6 +276,19 @@ func _row_width() -> float:
 	return width
 
 
+# How much wider the panel has to be for the deepest row to show its full
+# indentation, or 0 when it already fits. The panel is wider than one row by its
+# own padding and the scrollbar, so that difference is carried across.
+func extra_width_for_full_indent(panel_width: float) -> float:
+	var row_width := _row_width()
+	if row_width <= 0.0:
+		return 0.0
+	var needed := 0.0
+	for row in _container.get_children():
+		needed = maxf(needed, row.requiredWidth())
+	return maxf(0.0, needed - row_width) if needed > row_width else 0.0
+
+
 # Re-clamp the indentation after the sidebar is resized, since the budget each
 # row has to spend on depth moved with it.
 func reflow() -> void:
