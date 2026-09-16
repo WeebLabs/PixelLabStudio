@@ -46,6 +46,7 @@ func _run() -> void:
 	await _test_sidebar_selection_state()
 	await _test_edit_commands()
 	await _test_idle_motion()
+	await _test_click_cycling()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -163,6 +164,86 @@ func _test_loaded_avatar(context: String) -> void:
 	if base.animClips.size() == 1:
 		assert_equal(base.animClips[0].get("channel"), "translation", context + ": migrated sway uses translation")
 		assert_approx(float(base.animClips[0].get("ampY", 0.0)), 11.0, 0.0001, context + ": migrated sway amplitude is preserved")
+
+
+# Clicking a stack of overlapping layers must select the topmost one and then
+# step down the stack, and it must keep stepping while the avatar is moving. The
+# real pick path is used: the physics broad phase, the alpha test and the
+# top-first ordering all run, with only the cursor position injected.
+func _test_click_cycling() -> void:
+	if not _main.editMode:
+		_main.swapMode()
+	await get_tree().process_frame
+	await get_tree().physics_frame
+
+	var point := _busiest_click_point()
+	var first_hits := _pick_at(point)
+	assert_true(first_hits.size() >= 2, "the fixture offers a stack of overlapping layers to cycle")
+	if first_hits.size() < 2:
+		return
+
+	Global.clear_selection()
+	var seen := {}
+	var stepped_correctly := true
+	for click in range(8):
+		# Keep the rig in motion, which is what resets index-based cycling.
+		if click % 2 == 0:
+			_main.onSpeak()
+		for _frame in range(6):
+			await get_tree().process_frame
+		var hits := _pick_at(point)
+		if hits.is_empty():
+			continue
+		var candidates := []
+		for hit in hits:
+			candidates.append(Global.sprite_from_hit_area(hit))
+		var held_before = Global.heldSprite
+		var expected = candidates[0]
+		var held_index: int = candidates.find(held_before)
+		if held_index != -1:
+			expected = candidates[(held_index + 1) % candidates.size()]
+		Global.select(hits)
+		if Global.heldSprite != expected:
+			stepped_correctly = false
+		if Global.heldSprite != null:
+			seen[Global.heldSprite.id] = true
+
+	assert_true(stepped_correctly, "each click selects the layer below the held one, wrapping at the bottom")
+	assert_true(seen.size() >= 2, "clicking a stack on a moving avatar reaches more than one layer")
+	Global.clear_selection()
+
+
+# The world point covered by the most opaque layers, so the test cycles a real
+# stack rather than whatever happens to sit at a fixed coordinate.
+func _busiest_click_point() -> Vector2:
+	var best := Vector2.ZERO
+	var best_count := 0
+	for sprite in Global.sprite_nodes():
+		var center: Vector2 = sprite.sprite.global_position
+		for dx in range(-40, 41, 8):
+			for dy in range(-40, 41, 8):
+				var point := center + Vector2(dx, dy)
+				var count := _pick_at(point).size()
+				if count > best_count:
+					best_count = count
+					best = point
+	return best
+
+
+func _pick_at(world_point: Vector2) -> Array:
+	var space := _main.get_world_2d().direct_space_state
+	var params := PhysicsPointQueryParameters2D.new()
+	params.position = world_point
+	params.collision_mask = Global.mouse.SELECT_MASK
+	params.collide_with_areas = true
+	params.collide_with_bodies = false
+	var areas := []
+	for result in space.intersect_point(params):
+		if result.collider is Area2D:
+			areas.append(result.collider)
+	var opaque: Array = Global.mouse._opaque_candidates(areas, world_point)
+	Global.mouse._sort_top_first(opaque)
+	return opaque
 
 
 func _test_idle_motion() -> void:

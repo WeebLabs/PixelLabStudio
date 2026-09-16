@@ -648,6 +648,43 @@ Selection in edit mode flows through these components:
 > as `Global.selection_changed` for consumers that need event-driven behavior;
 > the existing UI remains intentionally polling-based.
 
+### Cycling down a stack of overlapping layers
+
+> Added: 2026-09-16 — Clicking a stack selects its topmost layer; clicking again
+> steps to the next layer down and wraps at the bottom. Two things had to change
+> for that to hold on a live avatar.
+>
+> **The step is anchored to the held layer, not to a stored index.**
+> `SelectionState.choose_from_hits` finds the currently selected layer in the new
+> candidate list and takes the one after it, falling back to the top when it is
+> not there; `_last_hits`/`_hit_index` are gone and `reset_click_cycle()` is now a
+> no-op kept for callers. The old index was keyed on the exact ordered candidate
+> array, and the avatar never stops moving (bounce, wobble, animation clips), so
+> the same screen point resolves to a different array almost every click: measured
+> at a human click rate over a moving rig, the list changed on 10 of 12 clicks, and
+> each change reset the index to the top. That is what made cycling look broken,
+> and a click landing back on the already-selected top layer look like it had not
+> registered at all.
+>
+> **The candidate ordering is total.** `mouse_cursor._sort_top_first` orders by
+> visible-before-faded, then z, then depth-first draw order under
+> `OriginMotion/Origin`. Godot's sort is not stable and the physics query returns
+> hits in broadphase order, which shifts as the avatar moves, so with only z to
+> compare, layers sharing a z came back in a different order from one click to the
+> next: six distinct orders over twelve clicks, measured. Draw order is the correct
+> tie-break because Godot draws equal `z_index` in tree order, so the layer later
+> in the tree is the one actually on top.
+>
+> `mouse_cursor` also gives the alpha test a 3-screen-pixel tolerance ring
+> (`PICK_TOLERANCE_PX`). The exact cursor pixel is tried first and decides the
+> answer whenever it hits anything; the ring only rescues a click that would
+> otherwise resolve to nothing and therefore clear the selection, which a single
+> texel sampled on a moving, soft-edged layer regularly did.
+>
+> `tests/integration/avatar_scene_runner._test_click_cycling` covers this through
+> the real pick path (physics broad phase, alpha test, ordering) with the rig in
+> motion and only the cursor position injected.
+
 ### Mouse filter configuration
 
 Decorative `ColorRect` background panels must have `mouse_filter = MOUSE_FILTER_IGNORE` so they don't consume clicks before they reach `_unhandled_input`. This applies to:

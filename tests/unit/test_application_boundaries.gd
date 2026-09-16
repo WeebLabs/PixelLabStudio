@@ -25,12 +25,25 @@ func _test_selection_state(t) -> void:
 	t.assert_equal(changes.size(), 1, "selecting the current layer does not emit a duplicate change")
 
 	var resolve := func(hit): return resolved.get(hit)
+	state.clear()
 	state.choose_from_hits([hit_one, hit_two], resolve)
-	t.assert_true(state.current == first, "a new hit stack selects its first layer")
+	t.assert_true(state.current == first, "a hit stack selects its topmost layer")
 	state.choose_from_hits([hit_one, hit_two], resolve)
 	t.assert_true(state.current == second, "a repeated hit stack cycles to its next layer")
 	state.choose_from_hits([hit_one, hit_two], resolve)
 	t.assert_true(state.current == first, "hit-stack cycling wraps deterministically")
+
+	# Cycling is anchored to the held layer, not to an index into the previous
+	# click's candidate array, because a moving avatar hands back a different
+	# array almost every click.
+	state.choose_from_hits([hit_two], resolve)
+	t.assert_true(state.current == second, "a stack the held layer has dropped out of selects its top")
+	state.choose_from_hits([hit_one, hit_two], resolve)
+	t.assert_true(state.current == first, "cycling continues after the candidate list changes")
+	state.select(second)
+	state.choose_from_hits([hit_one, hit_two], resolve)
+	t.assert_true(state.current == first, "cycling steps on from whatever layer is selected")
+
 	state.choose_from_hits([], resolve)
 	t.assert_true(state.current == null, "an empty canvas hit clears selection")
 
