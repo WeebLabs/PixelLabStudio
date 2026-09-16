@@ -361,7 +361,7 @@ func _refresh_global() -> void:
 	_distance_slider.set_value_no_signal(agreed_distance if agreed_distance != null else _distance_slider.min_value)
 	_speed_slider.set_value_no_signal(agreed_speed if agreed_speed != null else _speed_slider.min_value)
 	_update_amount_label()
-	_speed_label.text = "tracking speed: " + str(_speed_slider.value)
+	_speed_label.text = "tracking speed: " + _global.selection_value_text("eyeTrackSpeed", str(_speed_slider.value))
 	_pick_button.visible = _mode_option.selected == 1
 	_pick_button.disabled = false
 	_update_layer_item_label()
@@ -400,9 +400,9 @@ func _agreed_value(property: String):
 
 func _update_amount_label() -> void:
 	if _type_option.selected == 1:
-		_distance_label.text = "max tilt: " + str(_distance_slider.value) + "°"
+		_distance_label.text = "max tilt: " + _global.selection_value_text("eyeTrackDistance", str(_distance_slider.value) + "°")
 	else:
-		_distance_label.text = "tracking distance: " + str(_distance_slider.value)
+		_distance_label.text = "tracking distance: " + _global.selection_value_text("eyeTrackDistance", str(_distance_slider.value))
 
 
 func _full_target_name() -> String:

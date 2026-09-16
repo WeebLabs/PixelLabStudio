@@ -56,6 +56,7 @@ func _run() -> void:
 	await _test_layer_replace_target()
 	await _test_duplicate_placement()
 	await _test_multi_selection()
+	await _test_mixed_value_indicator()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -537,6 +538,39 @@ func _test_multi_selection() -> void:
 	for _frame in range(3):
 		await get_tree().process_frame
 	assert_equal(Global.sprite_count(), count, "one undo restores the whole group")
+	Global.clear_selection()
+
+
+# A control whose selected layers disagree shows a dash rather than the active
+# layer's number.
+func _test_mixed_value_indicator() -> void:
+	var first = Global.sprite_by_id(BASE_ID)
+	var second = Global.sprite_by_id(COSTUME_ONE_ID)
+	if first == null or second == null:
+		return
+	var drag_label: Label = Global.spriteEdit._drag_label
+
+	first.dragSpeed = 4
+	second.dragSpeed = 4
+	Global.select_sprite(first)
+	Global.toggle_sprite_selection(second)
+	assert_false(Global.selection_is_mixed("dragSpeed"), "layers that agree are not mixed")
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_true(drag_label.text.contains("4"), "an agreed value still shows its number")
+
+	second.dragSpeed = 9
+	assert_true(Global.selection_is_mixed("dragSpeed"), "layers that disagree read as mixed")
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_true(drag_label.text.ends_with(Global.MIXED_VALUE), "a mixed value shows the dash instead")
+
+	# One layer alone is never mixed, whatever the others hold.
+	Global.select_sprite(first)
+	assert_false(Global.selection_is_mixed("dragSpeed"), "a single layer is never mixed")
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_true(drag_label.text.contains("4"), "the number comes back with one layer selected")
 	Global.clear_selection()
 
 

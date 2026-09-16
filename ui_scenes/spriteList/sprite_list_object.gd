@@ -204,10 +204,11 @@ static func _init_styles():
 	_style_selected.border_color = Color(0.45, 0.45, 0.45, 0.6)
 	_style_selected.set_border_width_all(1)
 
-	# Selected alongside the active layer: same fill, no border, so the row that
-	# the sidebars are actually showing still stands out from the group.
+	# Selected alongside the active layer: the same fill, without the border, so
+	# the group reads as one selection and the row the sidebars are showing is
+	# still identifiable.
 	_style_co_selected = StyleBoxFlat.new()
-	_style_co_selected.bg_color = Color(0.2, 0.2, 0.23, 0.95)
+	_style_co_selected.bg_color = _style_selected.bg_color
 	_style_co_selected.set_corner_radius_all(4)
 	_style_co_selected.content_margin_left = 4
 	_style_co_selected.content_margin_right = 4

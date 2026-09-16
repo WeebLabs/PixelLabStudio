@@ -197,7 +197,10 @@ func _refresh_opacity_display():
 	if Global.heldSprite == null:
 		return
 	if not _opacity_edit.has_focus():
-		_set_edit_text(Global.heldSprite.opacity)
+		if Global.selection_is_mixed("opacity"):
+			_opacity_edit.text = Global.MIXED_VALUE
+		else:
+			_set_edit_text(Global.heldSprite.opacity)
 	_opacity_slider.set_value_no_signal(Global.heldSprite.opacity)
 
 func _set_edit_text(value: float):

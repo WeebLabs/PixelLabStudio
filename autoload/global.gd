@@ -1,6 +1,9 @@
 extends Node
 
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
+# What a control shows in place of a number when the selected layers disagree.
+const MIXED_VALUE := "—"
 const InputCommands = preload("res://autoload/input/input_commands.gd")
 const ZIndexEditor = preload("res://ui_scenes/zIndex/z_index_editor.gd")
 
@@ -271,6 +274,26 @@ func selected_sprites() -> Array:
 
 func is_sprite_selected(sprite: Object) -> bool:
 	return _selection_state.is_selected(sprite)
+
+
+# True when several layers are selected and they do not all share this property's
+# value. A control showing the active layer's number would then be claiming
+# something about the others that is not true, so it shows MIXED_VALUE instead.
+func selection_is_mixed(property: String) -> bool:
+	var selected := selected_sprites()
+	if selected.size() < 2:
+		return false
+	var first: Variant = selected[0].get(property)
+	for index in range(1, selected.size()):
+		if not MutationCommands.values_match(first, selected[index].get(property)):
+			return true
+	return false
+
+
+# The text a control should show for `property`: the value it was given, or the
+# mixed-value dash when the selection disagrees.
+func selection_value_text(property: String, shown: String) -> String:
+	return MIXED_VALUE if selection_is_mixed(property) else shown
 
 
 func toggle_sprite_selection(sprite: Object) -> void:

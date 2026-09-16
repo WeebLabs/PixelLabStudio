@@ -203,6 +203,13 @@ static func _validate(property: String) -> bool:
 	return false
 
 
+# Whether two property values count as the same edit. Public because the panels
+# ask the same question of a multi-layer selection when they decide whether to
+# show a number or a mixed-value dash.
+static func values_match(a: Variant, b: Variant) -> bool:
+	return _same_value(a, b)
+
+
 # Arrays and dictionaries are compared by value: callers routinely hand back a
 # mutated duplicate of the current collection, and identity comparison would
 # read every one of those as unchanged.

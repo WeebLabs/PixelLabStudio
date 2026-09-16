@@ -750,9 +750,17 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > does not fan out: it names one entry inside one layer's structured field (an
 > animation clip), which has no meaning on a different layer.
 >
-> Rows draw the active layer with its border, and the rest of the selection with
-> the same fill and no border, so the layer the sidebars are showing stays
-> distinguishable from the group.
+> Rows draw the whole selection with the same fill; only the active layer carries
+> the border, so the group reads as one selection while the row the sidebars are
+> showing stays identifiable.
+>
+> **Mixed values.** A control shows `Global.MIXED_VALUE` ("—") in place of its
+> number when `Global.selection_is_mixed(property)` reports that the selected
+> layers disagree, so the panel never claims the active layer's number for layers
+> that do not hold it. The comparison is `MutationCommands.values_match`, the same
+> one the commands use to decide whether an edit is a change at all. Covered in
+> the left sidebar's sliders, the Physics tab's sliders, the eye-tracking sliders
+> and the opacity field.
 
 ### Layer context menu (right-click a row)
 

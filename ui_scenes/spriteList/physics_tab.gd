@@ -403,6 +403,9 @@ func _update_label(prop: String) -> void:
 	var row = _rows[prop]
 	var v = row.slider.value
 	var shown = str(int(round(v))) if row.is_int else str(snappedf(v, 0.01))
+	if Global.selection_is_mixed(prop):
+		row.label.text = row.prefix + ": " + Global.MIXED_VALUE
+		return
 	row.label.text = row.prefix + ": " + shown + row.suffix
 
 # --- handlers ---

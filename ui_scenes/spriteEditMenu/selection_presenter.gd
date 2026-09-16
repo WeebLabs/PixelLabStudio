@@ -119,18 +119,25 @@ func _update_rotation_preview(sprite) -> void:
 		_ui.rot_display.scale = Vector2.ONE * (_rotation_target_size / sprite.imageData.get_size().y)
 
 
+# Sliders show the ACTIVE layer's value, and an edit writes to every selected
+# layer, so a label whose layers disagree reads as a dash rather than claiming
+# the active layer's number for all of them.
 func _sync_controls(sprite) -> void:
-	_ui.drag_label.text = "drag: " + str(sprite.dragSpeed)
+	_ui.drag_label.text = "drag: " + _value("dragSpeed", sprite.dragSpeed)
 	_ui.drag_slider.set_value_no_signal(sprite.dragSpeed)
-	_ui.rdrag_label.text = "rotational drag: " + str(sprite.rdragStr)
+	_ui.rdrag_label.text = "rotational drag: " + _value("rdragStr", sprite.rdragStr)
 	_ui.rdrag_slider.set_value_no_signal(sprite.rdragStr)
 	_ui.rot_min_slider.set_value_no_signal(sprite.rLimitMin)
-	_ui.rot_min_label.text = "rotational limit min: " + str(sprite.rLimitMin)
+	_ui.rot_min_label.text = "rotational limit min: " + _value("rLimitMin", sprite.rLimitMin)
 	_ui.rot_max_slider.set_value_no_signal(sprite.rLimitMax)
-	_ui.rot_max_label.text = "rotational limit max: " + str(sprite.rLimitMax)
-	_ui.squash_label.text = "squash: " + str(sprite.stretchAmount)
+	_ui.rot_max_label.text = "rotational limit max: " + _value("rLimitMax", sprite.rLimitMax)
+	_ui.squash_label.text = "squash: " + _value("stretchAmount", sprite.stretchAmount)
 	_ui.squash_slider.set_value_no_signal(sprite.stretchAmount)
-	_ui.anim_speed_label.text = "animation speed: " + str(sprite.animSpeed)
+	_ui.anim_speed_label.text = "animation speed: " + _value("animSpeed", sprite.animSpeed)
 	_ui.anim_speed_slider.set_value_no_signal(sprite.animSpeed)
-	_ui.anim_frames_label.text = "sprite frames: " + str(sprite.frames)
+	_ui.anim_frames_label.text = "sprite frames: " + _value("frames", sprite.frames)
 	_ui.anim_frames_slider.set_value_no_signal(sprite.frames)
+
+
+func _value(property: String, shown: Variant) -> String:
+	return _global.selection_value_text(property, str(shown))
