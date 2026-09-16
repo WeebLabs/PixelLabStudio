@@ -30,6 +30,19 @@ func unregister(sprite: Object) -> void:
 	_ordered.erase(sprite)
 	_eye_target_cache_frame = -1
 
+# Put `sprite` immediately after `anchor` in enumeration order. The layer list
+# breaks ties on this order, so a duplicate placed here lands beside the layer it
+# was copied from instead of at the bottom of everything sharing its z.
+func place_after(sprite: Object, anchor: Object) -> void:
+	if sprite == null or anchor == null or sprite == anchor:
+		return
+	if not _ordered.has(anchor):
+		return
+	_ordered.erase(sprite)
+	_ordered.insert(_ordered.find(anchor) + 1, sprite)
+	_eye_target_cache_frame = -1
+
+
 func clear() -> void:
 	_by_id.clear()
 	_ordered.clear()

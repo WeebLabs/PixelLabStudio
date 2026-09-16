@@ -139,6 +139,10 @@ func duplicate_selected() -> void:
 		sprite.position = source.authoredPosition()
 	else:
 		sprite.position = source.authoredPosition()
+	# A duplicate carries the source's z, and the list breaks ties on enumeration
+	# order, so without this it appears at the bottom of everything sharing that
+	# z rather than beside the layer it came from.
+	_global.place_sprite_after(sprite, source)
 	_global.select_sprite(sprite)
 	_global.spriteList.syncRows()
 	_global.notify_user("Duplicated sprite.")

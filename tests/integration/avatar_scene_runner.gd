@@ -52,6 +52,7 @@ func _run() -> void:
 	await _test_layer_deletion_children()
 	await _test_layer_rename()
 	await _test_layer_context_menu()
+	await _test_duplicate_placement()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -358,6 +359,33 @@ func _test_layer_deletion_children() -> void:
 	for _frame in range(3):
 		await get_tree().process_frame
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "undoing a deletion with children restores both layers")
+
+
+# A duplicate belongs beside the layer it came from, under the same parent.
+func _test_duplicate_placement() -> void:
+	var source = Global.sprite_by_id(COSTUME_ONE_ID)
+	if source == null:
+		return
+	Global.select_sprite(source)
+	_main.duplicate_selected_layer()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	var duplicate = Global.heldSprite
+	assert_true(duplicate != null and duplicate != source, "duplicating selects the new layer")
+	if duplicate == null or duplicate == source:
+		return
+	assert_equal(duplicate.parentId, source.parentId, "a duplicate keeps the source's parent")
+
+	var ids := _row_sprite_ids()
+	var source_row := ids.find(source.id)
+	var duplicate_row := ids.find(duplicate.id)
+	assert_true(source_row != -1 and duplicate_row != -1, "both layers have rows")
+	assert_equal(duplicate_row, source_row + 1, "the duplicate's row sits directly under the source")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
 
 
 # The right-click menu opens where the cursor is, and the delete prompt always

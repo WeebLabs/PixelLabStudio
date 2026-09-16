@@ -222,6 +222,12 @@ func register_sprite(sprite: Object) -> void:
 	_sprite_registry.register(sprite)
 
 
+# Enumeration order decides where equal-z layers sit in the list, so a layer that
+# belongs beside another one says so here.
+func place_sprite_after(sprite: Object, anchor: Object) -> void:
+	_sprite_registry.place_after(sprite, anchor)
+
+
 func unregister_sprite(sprite: Object) -> void:
 	if heldSprite == sprite:
 		clear_selection()

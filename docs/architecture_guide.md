@@ -773,8 +773,13 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > whole panel. Deletion, duplication and undo restores all go through the
 > reconciler; `update_data()` stays for avatar loads and costume switches.
 >
-> `update_data()`'s z sort also breaks ties on registry order (insertion order,
-> which does not move when a layer is removed). Godot's sort is not stable and
+> The z sort breaks ties on registry order (insertion order, which does not move
+> when a layer is removed, nor when a layer is reparented: `register()` keeps an
+> already-registered sprite where it is). That order is therefore the list's
+> tie-break, so a layer that belongs beside another one asks for it explicitly
+> through `Global.place_sprite_after()`. Duplication does, since a duplicate
+> carries the source's z and would otherwise appear at the bottom of everything
+> sharing it rather than next to the layer it was copied from. Godot's sort is not stable and
 > rigs routinely share one z across many layers (20 of 54 on a real avatar), so a
 > bare `a.z > b.z` reshuffled those layers on every rebuild: the list came back in
 > a different order with a different row at the top.
