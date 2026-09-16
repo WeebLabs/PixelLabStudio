@@ -771,7 +771,8 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > dragging the sidebar wider was the only way back.
 >
 > `updateIndent(available_width)` treats depth as a budget: the indent spacer gets
-> `indent * INDENT_STEP` px, clamped so the row still fits everything it cannot
+> `indent * INDENT_STEP` px (12, the size other tree panels use: VS Code indents 8,
+> Blender and Unity 14 to 16), clamped so the row still fits everything it cannot
 > give up (the collapse arrow, the thumbnail, the badges, the show/hide button,
 > the separations, and `MIN_NAME_WIDTH` for the name). `layer_tree_controller`
 > passes the scroll area's width minus its vertical scrollbar, and `reflow()`

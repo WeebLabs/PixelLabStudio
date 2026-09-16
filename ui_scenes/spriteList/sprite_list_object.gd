@@ -5,7 +5,10 @@ const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.
 
 const ROW_HEIGHT := 42
 const ITEM_SEPARATION := 4
-const INDENT_STEP := 19
+# Per level. Kept small on purpose: a deep rig stays inside the panel without the
+# budget clamp ever having to compress it, and the guide lines carry the
+# structure that a wider step would.
+const INDENT_STEP := 12
 # What the name is never squeezed below, so a deeply nested layer is still
 # readable rather than indented into nothing.
 const MIN_NAME_WIDTH := 56.0

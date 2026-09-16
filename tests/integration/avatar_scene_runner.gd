@@ -4,6 +4,7 @@ const MAIN_SCENE := preload("res://main_scenes/main.tscn")
 const AvatarSaveControllerScript = preload("res://main_scenes/controllers/save_controller.gd")
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
+const SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
 
 const REGRESSION_FIXTURE := "res://tests/fixtures/avatar_scene_regression.json"
 const INVALID_FIXTURE := "res://tests/fixtures/avatar_duplicate_id.json"
@@ -375,9 +376,10 @@ func _test_layer_list_indentation() -> void:
 			indent_for[row.sprite.id] = [row.indent, row._indent_spacer.custom_minimum_size.x]
 
 	# BASE is a root, COSTUME_TWO is its child, NESTED is a child of that.
+	var step := float(SpriteListObject.INDENT_STEP)
 	assert_equal(indent_for.get(BASE_ID), [0, 0.0], "a root layer's row is not indented")
-	assert_equal(indent_for.get(COSTUME_TWO_ID), [1, 19.0], "a child layer's row is indented one step")
-	assert_equal(indent_for.get(NESTED_ID), [2, 38.0], "a grandchild's row is indented two steps")
+	assert_equal(indent_for.get(COSTUME_TWO_ID), [1, step], "a child layer's row is indented one step")
+	assert_equal(indent_for.get(NESTED_ID), [2, step * 2.0], "a grandchild's row is indented two steps")
 
 
 # Deep hierarchies and a narrow sidebar must not push the show/hide button off
