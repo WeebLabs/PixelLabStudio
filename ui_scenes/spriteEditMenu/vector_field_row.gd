@@ -66,7 +66,12 @@ func _field(placeholder: String) -> LineEdit:
 	field.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	field.custom_minimum_size = Vector2(FIELD_WIDTH, FIELD_HEIGHT)
 	field.add_theme_font_size_override("font_size", FONT_SIZE)
-	field.text_submitted.connect(func(_text: String): _commit())
+	# Enter applies the value and gives focus back. A field that keeps focus keeps
+	# swallowing the keyboard: the app suppresses its shortcuts while a text field
+	# is focused, so undo did nothing until the user clicked away.
+	field.text_submitted.connect(func(_text: String):
+		_commit()
+		field.release_focus())
 	field.focus_exited.connect(_commit)
 	row.add_child(field)
 	return field

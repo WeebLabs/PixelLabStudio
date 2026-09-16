@@ -614,6 +614,31 @@ func _test_transform_entry() -> void:
 		await get_tree().process_frame
 	assert_equal(Global.sprite_by_id(BASE_ID).offset, original_offset, "undo puts the offset back")
 
+	# Enter applies the value and hands the keyboard back, so the app's own
+	# shortcuts (undo among them) work without clicking away first.
+	sprite = Global.sprite_by_id(BASE_ID)
+	position_fields._x.grab_focus()
+	await get_tree().process_frame
+	assert_true(position_fields._x.has_focus(), "a field takes focus when it is clicked into")
+	position_fields._x.text = "3"
+	position_fields._x.text_submitted.emit("3")
+	await get_tree().process_frame
+	assert_false(position_fields._x.has_focus(), "Enter gives focus back")
+	assert_false(Global.is_text_entry_active(), "the app's shortcuts are live again")
+	assert_equal(sprite.authoredPosition().x, 3.0, "Enter applied the value")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	sprite = Global.sprite_by_id(BASE_ID)
+
+	# Committing a field nobody changed leaves no history entry to undo through.
+	var before_entry: Vector2 = sprite.authoredPosition()
+	var depth: int = UndoManager._undo_stack.size()
+	position_fields.show_value(before_entry)
+	position_fields._commit()
+	await get_tree().process_frame
+	assert_equal(UndoManager._undo_stack.size(), depth, "an unchanged entry adds no history")
+
 	# Unreadable entries are ignored rather than moving the layer to zero.
 	sprite = Global.sprite_by_id(BASE_ID)
 	var held: Vector2 = sprite.authoredPosition()

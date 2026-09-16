@@ -735,6 +735,12 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > Enter or on focus leaving. A field that does not read as a number is ignored, so
 > a stray keystroke and a click away cannot move a layer to zero.
 >
+> **Enter also releases focus**, because `Global._is_any_field_focused()`
+> suppresses the app's own shortcuts while a `LineEdit` holds focus: a field that
+> kept focus after Enter swallowed Ctrl+Z, and undo appeared not to work until the
+> user clicked away. Both commits also report whether anything actually moved, so
+> a field that was only visited leaves no empty history entry to undo through.
+>
 > Position goes through `setAuthoredPosition`, which is what a wiggle-following
 > child needs. Offset goes through `SpriteOrigin.set_offset`
 > (`ui_scenes/selectedSprite/sprite_origin.gd`), which also re-writes

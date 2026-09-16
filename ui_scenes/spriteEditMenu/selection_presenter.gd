@@ -169,11 +169,15 @@ func sync_transform_fields(sprite) -> void:
 
 # The active layer only, for both. Handing several layers one absolute position
 # would stack them on top of each other, which is never what was meant.
+# Both report whether anything actually moved, so committing a field that was
+# only visited leaves no empty history entry for the user to undo through.
 func _apply_position(value: Vector2) -> void:
 	var sprite = _global.heldSprite
 	if sprite == null:
 		return
 	MutationCommands.structural(func():
+		if sprite.authoredPosition() == value:
+			return false
 		sprite.setAuthoredPosition(value)
 		return true)
 
@@ -183,5 +187,7 @@ func _apply_offset(value: Vector2) -> void:
 	if sprite == null:
 		return
 	MutationCommands.structural(func():
+		if sprite.offset == value:
+			return false
 		SpriteOrigin.set_offset(sprite, value)
 		return true)
