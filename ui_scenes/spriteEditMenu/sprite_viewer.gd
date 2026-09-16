@@ -4,6 +4,7 @@ const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const NormalMapPanel = preload("res://ui_scenes/spriteEditMenu/normal_map_panel.gd")
+const VectorFieldRow = preload("res://ui_scenes/spriteEditMenu/vector_field_row.gd")
 const RotationPreviewRenderer = preload("res://ui_scenes/spriteEditMenu/rotation_preview_renderer.gd")
 const SelectionPresenter = preload("res://ui_scenes/spriteEditMenu/selection_presenter.gd")
 
@@ -85,6 +86,8 @@ var _anim_speed_slider: HSlider
 var _position_vbox: VBoxContainer
 var _pos_label: Label
 var _offset_label: Label
+var _pos_fields = VectorFieldRow.new()
+var _offset_fields = VectorFieldRow.new()
 var _layer_label: Label
 
 # RotationalLimits — circle visualization at top + a VBox of min/max
@@ -123,8 +126,14 @@ func _ready():
 	_pos_label = get_node("Position/Label")
 	_offset_label = get_node("Position/Label2")
 	_layer_label = get_node("Position/Label3")
+	# Position and offset are typed in, not just read: the labels they replace
+	# only ever displayed what the canvas drag had already done.
+	_pos_fields.build("position")
+	_offset_fields.build("offset")
 	_position_vbox = _build_section_vbox($Position, Vector2(10, 155), 226,
-		[_parent_label, _pos_label, _offset_label, _layer_label])
+		[_parent_label, _pos_fields.row, _offset_fields.row, _layer_label])
+	_pos_label.visible = false
+	_offset_label.visible = false
 
 	# (Section position shifts are consolidated into a single block below the
 	# VBox creation — see "Section layout" comment further down.)
@@ -298,6 +307,7 @@ func _ready():
 	)
 	_selection_presenter.setup(Global, _selection_ui(), _normal_panel,
 		Vector2(PREVIEW_MAX_W, PREVIEW_MAX_H), ROT_RADIUS)
+	_selection_presenter.connect_transform_fields()
 	_set_controls_enabled(Global.heldSprite != null)
 	setImage()
 	_apply_size()
@@ -313,6 +323,8 @@ func _set_controls_enabled(enabled: bool):
 		button.disabled = !enabled
 	for slider in _sliders:
 		SidebarUIFactory.apply_slider_theme(slider, _slider_theme, enabled)
+	_pos_fields.set_enabled(enabled)
+	_offset_fields.set_enabled(enabled)
 	
 func _replace_rot_display_textures():
 	_rotation_renderer.rebuild($RotationalLimits/RotBack, ROT_RADIUS)
@@ -328,6 +340,8 @@ func _selection_ui() -> Dictionary:
 		"parent_label": _parent_label,
 		"position_label": _pos_label,
 		"offset_label": _offset_label,
+		"position_fields": _pos_fields,
+		"offset_fields": _offset_fields,
 		"layer_label": _layer_label,
 		"drag_label": _drag_label,
 		"drag_slider": _drag_slider,
@@ -613,8 +627,7 @@ func _process(delta):
 
 	var obj = Global.heldSprite
 	
-	_pos_label.text = "position     X : "+str(obj.position.x)+"     Y: " + str(obj.position.y)
-	_offset_label.text = "offset         X : "+str(obj.offset.x)+"     Y: " + str(obj.offset.y)
+	_selection_presenter.sync_transform_fields(obj)
 	# Keep the rotation-limit preview's pivot in sync with the live origin: offset changes
 	# when the origin point is moved, but setImage() only sets it on selection.
 	spriteRotDisplay.offset = obj.offset

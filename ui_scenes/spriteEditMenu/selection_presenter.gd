@@ -1,5 +1,8 @@
 extends RefCounted
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const SpriteOrigin = preload("res://ui_scenes/selectedSprite/sprite_origin.gd")
+
 var _global: Node
 var _ui: Dictionary
 var _normal_panel: RefCounted
@@ -54,8 +57,8 @@ func sync_rotation_limits() -> void:
 func _clear() -> void:
 	_ui.preview.texture = null
 	_ui.parent_label.text = ""
-	_ui.position_label.text = ""
-	_ui.offset_label.text = ""
+	_ui.position_fields.show_text("")
+	_ui.offset_fields.show_text("")
 	_ui.layer_label.text = ""
 	_ui.drag_label.text = ""
 	_ui.rot_display.texture = null
@@ -141,3 +144,44 @@ func _sync_controls(sprite) -> void:
 
 func _value(property: String, shown: Variant) -> String:
 	return _global.selection_value_text(property, str(shown))
+
+
+# --- Position and origin-offset entry ---
+
+# The two numeric rows, both ways. They are refreshed every frame from the held
+# layer (a canvas drag has to show up in them), except in a field being typed in,
+# and an entry commits through history like any other edit.
+func connect_transform_fields() -> void:
+	_ui.position_fields.committed.connect(_apply_position)
+	_ui.offset_fields.committed.connect(_apply_offset)
+
+
+func sync_transform_fields(sprite) -> void:
+	if _global.selection_is_mixed("position"):
+		_ui.position_fields.show_text(_global.MIXED_VALUE)
+	else:
+		_ui.position_fields.show_value(sprite.authoredPosition())
+	if _global.selection_is_mixed("offset"):
+		_ui.offset_fields.show_text(_global.MIXED_VALUE)
+	else:
+		_ui.offset_fields.show_value(sprite.offset)
+
+
+# The active layer only, for both. Handing several layers one absolute position
+# would stack them on top of each other, which is never what was meant.
+func _apply_position(value: Vector2) -> void:
+	var sprite = _global.heldSprite
+	if sprite == null:
+		return
+	MutationCommands.structural(func():
+		sprite.setAuthoredPosition(value)
+		return true)
+
+
+func _apply_offset(value: Vector2) -> void:
+	var sprite = _global.heldSprite
+	if sprite == null:
+		return
+	MutationCommands.structural(func():
+		SpriteOrigin.set_offset(sprite, value)
+		return true)

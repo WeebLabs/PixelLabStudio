@@ -903,8 +903,8 @@ func apply_wiggle_path_changed():
 func wiggle_auto_fit_path():
 	_wiggleRuntime.auto_fit_and_refresh()
 
-# Texture-pixel -> appendage/dragOrigin local. The Sprite2D is centered, shifted
-# by `offset`, so texture (px) maps to local (px - size/2 + offset).
+# Texture-pixel -> appendage/dragOrigin local: the Sprite2D is centered and
+# shifted by `offset`, so texture px maps to local (px - size/2 + offset).
 func _tex_to_local(tex_px: Vector2) -> Vector2:
 	return tex_px - Vector2(size) * 0.5 + offset
 
@@ -921,9 +921,8 @@ func _sync_wiggle_to_offset():
 	_wiggleRuntime.sync_to_offset()
 
 # Per-smooth-point half-widths (px): the per-control-point widths interpolated
-# along the smooth path, scaled by the global thickness knob. This sets how far the
-# mesh band reaches perpendicular to the path (how much of the layer it covers);
-# thickness widens/trims that band. Changing thickness rebuilds the mesh.
+# along the smooth path and scaled by the thickness knob, which is how far the
+# mesh band reaches perpendicular to the path. Changing thickness rebuilds it.
 func _smooth_widths(smooth: PackedVector2Array) -> PackedFloat32Array:
 	return WiggleGeometry.smooth_widths(smooth.size(), wigglePathWidths, wiggleThickness)
 

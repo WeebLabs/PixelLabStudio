@@ -725,6 +725,28 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 > Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
+### Position and offset entry (left sidebar)
+
+> Added: 2026-09-16 — The position and offset readouts are two numeric fields
+> each (`ui_scenes/spriteEditMenu/vector_field_row.gd`), not labels.
+> `selection_presenter` owns both directions: `sync_transform_fields()` refreshes
+> them from the held layer every frame, skipping a field that has focus so a
+> per-frame write cannot overwrite a half-typed number, and an entry commits on
+> Enter or on focus leaving. A field that does not read as a number is ignored, so
+> a stray keystroke and a click away cannot move a layer to zero.
+>
+> Position goes through `setAuthoredPosition`, which is what a wiggle-following
+> child needs. Offset goes through `SpriteOrigin.set_offset`
+> (`ui_scenes/selectedSprite/sprite_origin.gd`), which also re-writes
+> `sprite.offset`, the grab area and the wiggle anchor. Note the difference from
+> the canvas origin gizmo: the gizmo moves `position` and `offset` together so the
+> artwork stays still and the origin slides under it, while typing an offset moves
+> the artwork relative to the origin, which is what the number says.
+>
+> Both act on the ACTIVE layer only, unlike the sliders: handing several layers
+> one absolute position would stack them. They show `MIXED_VALUE` when a
+> multi-selection disagrees.
+
 ### Selecting several layers
 
 > Added: 2026-09-16 — Command-click (Control on Windows and Linux) adds or

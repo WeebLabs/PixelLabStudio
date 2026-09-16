@@ -57,6 +57,7 @@ func _run() -> void:
 	await _test_duplicate_placement()
 	await _test_multi_selection()
 	await _test_mixed_value_indicator()
+	await _test_transform_entry()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -572,6 +573,57 @@ func _test_mixed_value_indicator() -> void:
 	await get_tree().process_frame
 	assert_true(drag_label.text.contains("4"), "the number comes back with one layer selected")
 	Global.clear_selection()
+
+
+# Position and origin offset are typed in, not just read.
+func _test_transform_entry() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	Global.select_sprite(sprite)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+
+	var position_fields = Global.spriteEdit._pos_fields
+	var offset_fields = Global.spriteEdit._offset_fields
+	var original: Vector2 = sprite.authoredPosition()
+	var original_offset: Vector2 = sprite.offset
+
+	position_fields._x.text = "12"
+	position_fields._y.text = "-34"
+	position_fields._commit()
+	await get_tree().process_frame
+	assert_equal(sprite.authoredPosition(), Vector2(12, -34), "typing a position moves the layer")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_by_id(BASE_ID).authoredPosition(), original, "undo puts the position back")
+
+	sprite = Global.sprite_by_id(BASE_ID)
+	offset_fields._x.text = "7"
+	offset_fields._y.text = "8"
+	offset_fields._commit()
+	await get_tree().process_frame
+	assert_equal(sprite.offset, Vector2(7, 8), "typing an offset moves the origin")
+	assert_equal(sprite.sprite.offset, Vector2(7, 8), "the artwork follows the offset")
+	assert_equal(sprite.authoredPosition(), original, "an offset entry leaves the position alone")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_by_id(BASE_ID).offset, original_offset, "undo puts the offset back")
+
+	# Unreadable entries are ignored rather than moving the layer to zero.
+	sprite = Global.sprite_by_id(BASE_ID)
+	var held: Vector2 = sprite.authoredPosition()
+	position_fields._x.text = ""
+	position_fields._y.text = "nonsense"
+	position_fields._commit()
+	await get_tree().process_frame
+	assert_equal(sprite.authoredPosition(), held, "an unreadable entry changes nothing")
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.
