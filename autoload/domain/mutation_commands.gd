@@ -181,9 +181,15 @@ static func _edit_targets(sprite: Object) -> Array:
 
 static func _global() -> Object:
 	var loop := Engine.get_main_loop()
-	if loop is SceneTree:
-		return (loop as SceneTree).root.get_node_or_null("/root/Global")
-	return null
+	if not (loop is SceneTree):
+		return null
+	# A bare SceneTree script run (the isolated test workspace) has no scene, and
+	# an absolute get_node() from outside the active tree is an engine error, not
+	# a null. There is no selection to fan out to there either.
+	var tree := loop as SceneTree
+	if tree.current_scene == null:
+		return null
+	return tree.root.get_node_or_null("/root/Global")
 
 
 # Gesture keys are scoped to the layer and property so dragging one slider,
