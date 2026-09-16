@@ -5,15 +5,85 @@ extends RefCounted
 ## invalidation and future observers have one canonical boundary.
 signal changed(current: Object, previous: Object)
 
+## The active layer. Everything that edits one layer (both sidebars, the canvas,
+## the keyboard) reads this, so it stays a single object.
 var current: Object = null
 
+## Layers selected alongside the active one, for the operations that can act on
+## several at once (duplicate, delete). Always excludes `current`, so the whole
+## selection is `current` followed by these, in the order they were picked.
+var extras: Array = []
 
+
+func selection() -> Array:
+	var all := []
+	if current != null and is_instance_valid(current):
+		all.append(current)
+	for sprite in extras:
+		if is_instance_valid(sprite):
+			all.append(sprite)
+	return all
+
+
+func is_selected(sprite: Object) -> bool:
+	return sprite != null and (sprite == current or extras.has(sprite))
+
+
+# Select one layer, dropping any multi-selection: an ordinary click replaces the
+# selection rather than adding to it.
 func select(sprite: Object, reset_cycle: bool = true) -> Object:
+	var had_extras := not extras.is_empty()
+	extras.clear()
 	var previous := current
 	current = sprite if sprite == null or is_instance_valid(sprite) else null
-	if current != previous:
+	if current != previous or had_extras:
 		changed.emit(current, previous)
 	return previous
+
+
+# Add or remove one layer from the selection, for a modifier-click. Removing the
+# active layer promotes the next one, so there is always an active layer while
+# anything is selected.
+func toggle(sprite: Object) -> void:
+	if sprite == null or not is_instance_valid(sprite):
+		return
+	var previous := current
+	if sprite == current:
+		current = extras.pop_front() if not extras.is_empty() else null
+	elif extras.has(sprite):
+		extras.erase(sprite)
+	elif current == null:
+		current = sprite
+	else:
+		extras.append(sprite)
+	changed.emit(current, previous)
+
+
+# Replace the selection with `sprites`, the first of which becomes active. Used
+# for a range pick, where the caller knows the list order.
+func select_many(sprites: Array) -> void:
+	var previous := current
+	extras.clear()
+	current = null
+	for sprite in sprites:
+		if sprite == null or not is_instance_valid(sprite):
+			continue
+		if current == null:
+			current = sprite
+		elif sprite != current:
+			extras.append(sprite)
+	changed.emit(current, previous)
+
+
+# Drop a layer that is going away, without disturbing the rest of the selection.
+func forget(sprite: Object) -> void:
+	if extras.has(sprite):
+		extras.erase(sprite)
+		changed.emit(current, current)
+	elif sprite == current:
+		var previous := current
+		current = extras.pop_front() if not extras.is_empty() else null
+		changed.emit(current, previous)
 
 
 func clear() -> Object:

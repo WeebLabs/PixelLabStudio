@@ -24,12 +24,18 @@ const DELETE_PANEL := Vector2(420, 0)
 static func open(list: Node, sprite) -> PopupMenu:
 	if sprite == null or not is_instance_valid(sprite):
 		return null
+	# Rename and replace name one layer and act on it, so they are not offered
+	# for a group: the menu only shows what it can actually do to everything
+	# selected.
+	var selected: Array = Global.selected_sprites()
+	var group: bool = selected.size() > 1 and selected.has(sprite)
 	var menu := PopupMenu.new()
-	menu.add_item("Duplicate", ITEM_DUPLICATE)
-	menu.add_item("Rename...", ITEM_RENAME)
-	menu.add_item("Replace", ITEM_REPLACE)
+	menu.add_item("Duplicate %d layers" % selected.size() if group else "Duplicate", ITEM_DUPLICATE)
+	if not group:
+		menu.add_item("Rename...", ITEM_RENAME)
+		menu.add_item("Replace", ITEM_REPLACE)
 	menu.add_separator()
-	menu.add_item("Delete...", ITEM_DELETE)
+	menu.add_item("Delete %d layers..." % selected.size() if group else "Delete...", ITEM_DELETE)
 	menu.id_pressed.connect(func(id: int): _activate(list, sprite, id))
 	menu.popup_hide.connect(func(): menu.queue_free())
 	list.get_tree().root.add_child(menu)
@@ -54,7 +60,8 @@ static func _activate(list: Node, sprite, id: int) -> void:
 		return
 	match id:
 		ITEM_DUPLICATE:
-			Global.select_sprite(sprite)
+			if not Global.is_sprite_selected(sprite):
+				Global.select_sprite(sprite)
 			Global.spriteEdit.setImage()
 			Global.main.duplicate_selected_layer()
 		ITEM_RENAME:
@@ -84,19 +91,33 @@ static func confirm_rename(list: Node, sprite) -> void:
 
 
 static func confirm_delete(list: Node, sprite) -> void:
-	var children: int = sprite.getAllDescendants().size()
+	var targets: Array = Global.selected_sprites()
+	if not (targets.size() > 1 and targets.has(sprite)):
+		targets = [sprite]
+	var children := 0
+	for target in targets:
+		for descendant in target.getAllDescendants():
+			if not targets.has(descendant):
+				children += 1
+
 	var dialog := ModalDialogUI.new()
 	_ui_layer(list).add_child(dialog)
 	dialog.set_panel_min_size(DELETE_PANEL)
-	dialog.set_title("Delete \"%s\"?" % sprite.displayName())
+	if targets.size() > 1:
+		dialog.set_title("Delete %d layers?" % targets.size())
+	else:
+		dialog.set_title("Delete \"%s\"?" % sprite.displayName())
 
 	if children > 0:
 		dialog.add_message(
-			"This layer has %d layer%s under it. They are kept by default and move up to this layer's own parent."
-			% [children, "" if children == 1 else "s"]
+			"%d layer%s sit%s under %s. They are kept by default and move up to the deleted layer's own parent."
+			% [
+				children, "" if children == 1 else "s", "s" if children == 1 else "",
+				"this layer" if targets.size() == 1 else "these layers",
+			]
 		)
 	else:
-		dialog.add_message("Nothing is linked under this layer.")
+		dialog.add_message("Nothing is linked under %s." % ("this layer" if targets.size() == 1 else "these layers"))
 	# The checkbox is always on the prompt, greyed when there is nothing under
 	# this layer, so the choice reads the same way every time.
 	var with_children := dialog.add_checkbox("Also delete the layers under it", false)
@@ -109,8 +130,7 @@ static func confirm_delete(list: Node, sprite) -> void:
 			"callback": func():
 				var include := with_children.button_pressed
 				dialog.queue_free()
-				if is_instance_valid(sprite):
-					Global.main.delete_layer(sprite, include),
+				Global.main.delete_layers(targets, include),
 		},
 		{"text": "Cancel", "callback": func(): dialog.queue_free()},
 	])

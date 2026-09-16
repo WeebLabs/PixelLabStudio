@@ -55,6 +55,7 @@ func _run() -> void:
 	await _test_layer_context_menu()
 	await _test_layer_replace_target()
 	await _test_duplicate_placement()
+	await _test_multi_selection()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -482,6 +483,61 @@ func _test_sidebar_fits_depth() -> void:
 	list._apply_size()
 	await list.updateData()
 	await get_tree().process_frame
+
+
+# Modifier-clicking builds a selection of several layers, which duplicate and
+# delete then act on, and which the sidebars write to as one history entry.
+func _test_multi_selection() -> void:
+	var first = Global.sprite_by_id(BASE_ID)
+	var second = Global.sprite_by_id(COSTUME_ONE_ID)
+	var third = Global.sprite_by_id(COSTUME_TWO_ID)
+	if first == null or second == null or third == null:
+		return
+
+	Global.select_sprite(first)
+	Global.toggle_sprite_selection(second)
+	assert_equal(Global.selected_sprites().size(), 2, "a modifier-click adds a layer to the selection")
+	assert_true(Global.heldSprite == first, "the layer clicked first stays the active one")
+	assert_true(Global.is_sprite_selected(second), "the added layer reads as selected")
+
+	Global.toggle_sprite_selection(second)
+	assert_equal(Global.selected_sprites().size(), 1, "a second modifier-click removes it again")
+
+	# Removing the active layer promotes another, so an edit always has a target.
+	Global.toggle_sprite_selection(second)
+	Global.toggle_sprite_selection(first)
+	assert_true(Global.heldSprite == second, "dropping the active layer promotes the next one")
+
+	# A plain selection replaces the group.
+	Global.select_sprite(third)
+	assert_equal(Global.selected_sprites().size(), 1, "an ordinary click replaces the selection")
+
+	# A sidebar edit writes to every selected layer, in one history entry.
+	Global.select_sprite(first)
+	Global.toggle_sprite_selection(second)
+	var before_talk: int = second.showOnTalk
+	MutationCommands.set_layer_property(first, "showOnTalk", 2)
+	assert_equal(first.showOnTalk, 2, "the edit reaches the active layer")
+	assert_equal(second.showOnTalk, 2, "the edit reaches the rest of the selection")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_by_id(COSTUME_ONE_ID).showOnTalk, before_talk, "one undo puts every layer back")
+
+	# Deleting a group is one entry too.
+	var count: int = Global.sprite_count()
+	Global.select_sprite(Global.sprite_by_id(4000000010))
+	Global.toggle_sprite_selection(Global.sprite_by_id(4000000011))
+	_main.delete_layers(Global.selected_sprites(), false)
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_count(), count - 2, "deleting a group removes every layer in it")
+	assert_equal(Global.selected_sprites().size(), 0, "the deleted layers leave the selection")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_count(), count, "one undo restores the whole group")
+	Global.clear_selection()
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

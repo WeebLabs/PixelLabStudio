@@ -40,7 +40,7 @@ var _indent_spacer: Control
 var _hbox: HBoxContainer
 var _indent_budget := -1.0
 var _hovered = false
-var _was_selected = false
+var _was_selected = -1   # 0 unselected, 1 selected alongside, 2 the active layer
 var _was_visible = true       # tracks effective (in-tree) visibility to refresh the eye
 var _vis_synced = false       # force a first-frame eye sync (sprites aren't visible-in-tree yet at row setup)
 var _was_normal_map: Variant = null
@@ -51,6 +51,7 @@ var _was_global_eye_tracking: Variant = null
 static var _style_normal: StyleBoxFlat
 static var _style_hover: StyleBoxFlat
 static var _style_selected: StyleBoxFlat
+static var _style_co_selected: StyleBoxFlat
 static var _styles_ready = false
 static var _eye_tex: Texture2D = null
 
@@ -203,10 +204,21 @@ static func _init_styles():
 	_style_selected.border_color = Color(0.45, 0.45, 0.45, 0.6)
 	_style_selected.set_border_width_all(1)
 
+	# Selected alongside the active layer: same fill, no border, so the row that
+	# the sidebars are actually showing still stands out from the group.
+	_style_co_selected = StyleBoxFlat.new()
+	_style_co_selected.bg_color = Color(0.2, 0.2, 0.23, 0.95)
+	_style_co_selected.set_corner_radius_all(4)
+	_style_co_selected.content_margin_left = 4
+	_style_co_selected.content_margin_right = 4
+	_style_co_selected.content_margin_top = 2
+	_style_co_selected.content_margin_bottom = 2
+
 func _update_style():
-	var is_selected = sprite == Global.heldSprite
-	if is_selected:
+	if sprite == Global.heldSprite:
 		add_theme_stylebox_override("panel", _style_selected)
+	elif Global.is_sprite_selected(sprite):
+		add_theme_stylebox_override("panel", _style_co_selected)
 	elif _hovered:
 		add_theme_stylebox_override("panel", _style_hover)
 	else:
@@ -235,12 +247,23 @@ func _gui_input(event: InputEvent):
 	if not (event is InputEventMouseButton and event.pressed):
 		return
 	if event.button_index == MOUSE_BUTTON_LEFT:
-		_select()
+		if event.is_command_or_control_pressed():
+			# Add or remove this one layer.
+			Global.toggle_sprite_selection(sprite)
+			Global.spriteEdit.setImage()
+		elif event.shift_pressed and Global.heldSprite != null:
+			# Everything between the active layer and this one, as the list reads.
+			Global.select_sprites(Global.spriteList.layersBetween(Global.heldSprite, sprite))
+			Global.spriteEdit.setImage()
+		else:
+			_select()
 		accept_event()
 	elif event.button_index == MOUSE_BUTTON_RIGHT:
-		# Right-click acts on the row under the cursor, so it selects first: the
-		# menu's actions and the panels behind it all read the held layer.
-		_select()
+		# Right-click acts on the row under the cursor, so it selects first,
+		# unless that row is already part of a multi-selection: then the menu is
+		# about the group the user built.
+		if not Global.is_sprite_selected(sprite) or Global.selected_sprites().size() < 2:
+			_select()
 		LayerContextMenu.open(Global.spriteList, sprite)
 		accept_event()
 
@@ -296,9 +319,9 @@ func _draw():
 func _process(_delta):
 	if !is_instance_valid(sprite):
 		return
-	var is_selected = sprite == Global.heldSprite
-	if is_selected != _was_selected:
-		_was_selected = is_selected
+	var selection_state := 2 if sprite == Global.heldSprite else int(Global.is_sprite_selected(sprite))
+	if selection_state != _was_selected:
+		_was_selected = selection_state
 		_update_style()
 	var has_normal: bool = bool(sprite.hasNormalMap())
 	if has_normal != _was_normal_map:

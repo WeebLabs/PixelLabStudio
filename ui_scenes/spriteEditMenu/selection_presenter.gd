@@ -94,6 +94,12 @@ func _update_preview(sprite) -> float:
 
 
 func _update_parent(sprite) -> void:
+	# With several layers selected, say so: every control below this line writes
+	# to all of them, and the values shown are the active layer's.
+	var selected: Array = _global.selected_sprites()
+	if selected.size() > 1:
+		_ui.parent_label.text = "%d layers selected" % selected.size()
+		return
 	_ui.parent_label.text = "Root Element"
 	if sprite.parentId == null:
 		return

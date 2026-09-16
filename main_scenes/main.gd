@@ -512,6 +512,10 @@ func delete_layer(sprite, include_children := false) -> void:
 	avatar_controller.delete_layer(sprite, include_children)
 
 
+func delete_layers(sprites: Array, include_children := false) -> void:
+	avatar_controller.delete_layers(sprites, include_children)
+
+
 func changeCostumeStreamDeck(id: String) -> void:
 	var command: Dictionary = InputCommands.decode_device_costume(id)
 	if command["command"] == "change_costume":

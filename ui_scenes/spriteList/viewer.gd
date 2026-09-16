@@ -601,6 +601,10 @@ func updateData(sort_by_z: bool = true):
 	_pending_scroll_target = null
 	await _layer_tree.update_data(sort_by_z, pending_target)
 
+func layersBetween(a, b) -> Array:
+	return _layer_tree.layers_between(a, b)
+
+
 func refreshNames():
 	_layer_tree.refresh_names()
 

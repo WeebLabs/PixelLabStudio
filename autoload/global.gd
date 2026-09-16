@@ -229,8 +229,9 @@ func place_sprite_after(sprite: Object, anchor: Object) -> void:
 
 
 func unregister_sprite(sprite: Object) -> void:
-	if heldSprite == sprite:
-		clear_selection()
+	# Drop it from the selection without disturbing the rest: deleting several
+	# layers at once frees them one by one.
+	_selection_state.forget(sprite)
 	_sprite_registry.unregister(sprite)
 
 
@@ -260,6 +261,24 @@ func select_sprite(sprite: Object) -> Object:
 
 func clear_selection() -> Object:
 	return _selection_state.clear()
+
+
+# Every selected layer, the active one first. One layer is the normal case; the
+# layer list's modifier-click is what makes it longer.
+func selected_sprites() -> Array:
+	return _selection_state.selection()
+
+
+func is_sprite_selected(sprite: Object) -> bool:
+	return _selection_state.is_selected(sprite)
+
+
+func toggle_sprite_selection(sprite: Object) -> void:
+	_selection_state.toggle(sprite)
+
+
+func select_sprites(sprites: Array) -> void:
+	_selection_state.select_many(sprites)
 
 
 

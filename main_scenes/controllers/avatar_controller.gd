@@ -118,11 +118,32 @@ func add_image_from_data(image: Image, layer_name: String, canvas_position: Vect
 	return sprite
 
 
+# Duplicate every selected layer, newest copy selected, as one history entry.
 func duplicate_selected() -> void:
-	var source = _global.heldSprite
-	if source == null:
+	var sources: Array = _global.selected_sprites()
+	if sources.is_empty():
+		return
+	if sources.size() > 1:
+		MutationCommands.capture_bulk()
+		var copies := []
+		for source in sources:
+			copies.append(_duplicate_layer(source))
+		_global.select_sprites(copies)
+		_global.spriteList.syncRows()
+		_global.notify_user("Duplicated %d sprites." % copies.size())
 		return
 	MutationCommands.capture_bulk()
+	_duplicate_layer(sources[0])
+	_global.select_sprite(_global.heldSprite)
+	_global.spriteList.syncRows()
+	_global.notify_user("Duplicated sprite.")
+
+
+# One copy, placed beside its source. The caller owns the history entry and the
+# list refresh, since a multi-layer duplicate is one of each.
+func _duplicate_layer(source):
+	if source == null or not is_instance_valid(source):
+		return null
 	var sprite = _sprite_scene.instantiate()
 	SpriteState.copy_for_duplicate(source, sprite)
 	sprite.id = next_sprite_id()
@@ -144,8 +165,7 @@ func duplicate_selected() -> void:
 	# z rather than beside the layer it came from.
 	_global.place_sprite_after(sprite, source)
 	_global.select_sprite(sprite)
-	_global.spriteList.syncRows()
-	_global.notify_user("Duplicated sprite.")
+	return sprite
 
 
 # Delete one layer, optionally taking its descendants with it.
@@ -155,33 +175,62 @@ func duplicate_selected() -> void:
 # only the one layer disappears. With `include_children` the layer and everything
 # under it go, which is the destructive choice the delete prompt asks about.
 func delete_layer(sprite, include_children: bool) -> void:
-	if sprite == null or not is_instance_valid(sprite):
+	delete_layers([sprite], include_children)
+
+
+# Delete every layer in `sprites` as one history entry. A layer already going
+# because an ancestor of it is being deleted is not handled twice.
+func delete_layers(sprites: Array, include_children: bool) -> void:
+	var doomed := []
+	for sprite in sprites:
+		if sprite == null or not is_instance_valid(sprite) or doomed.has(sprite):
+			continue
+		doomed.append(sprite)
+		if include_children:
+			for descendant in sprite.getAllDescendants():
+				if not doomed.has(descendant):
+					doomed.append(descendant)
+	if doomed.is_empty():
 		return
-	var doomed := [sprite]
-	if include_children:
-		doomed.append_array(sprite.getAllDescendants())
-	var orphans: Array = [] if include_children else sprite.getAllLinkedSprites()
-	var grandparent = sprite.parentSprite
+
+	# Children that survive re-attach to the deleted layer's own parent, unless
+	# that parent is going too, in which case they climb to the nearest survivor.
+	var rehome := []
+	if not include_children:
+		for sprite in doomed:
+			for child in sprite.getAllLinkedSprites():
+				if not doomed.has(child):
+					rehome.append([child, _surviving_ancestor(sprite, doomed)])
 
 	MutationCommands.structural(func():
-		if not orphans.is_empty():
-			# Lifts the children out to the root, keeping their world position.
+		for sprite in doomed:
 			_global.unlinkChildren(sprite)
-			if grandparent != null and is_instance_valid(grandparent):
-				for child in orphans:
-					child.reparent(grandparent.sprite, true)
-					child.parentId = grandparent.id
-					child.parentSprite = grandparent
-		for layer in doomed:
-			if is_instance_valid(layer):
-				layer.queue_free()
+		for entry in rehome:
+			var child = entry[0]
+			var new_parent = entry[1]
+			if not is_instance_valid(child) or new_parent == null or not is_instance_valid(new_parent):
+				continue
+			child.reparent(new_parent.sprite, true)
+			child.parentId = new_parent.id
+			child.parentSprite = new_parent
+		for sprite in doomed:
+			if is_instance_valid(sprite):
+				sprite.queue_free()
 		return true)
 
-	if _global.heldSprite != null and doomed.has(_global.heldSprite):
-		_global.clear_selection()
-	# One row out of the list rather than a rebuild, so the panel does not blank
-	# and the user keeps their place in a long list.
+	# The deleted layers drop out of the selection as they unregister.
+	# Rows out of the list rather than a rebuild, so the panel does not blank and
+	# the user keeps their place in a long list.
 	_global.spriteList.syncRows()
+
+
+# The nearest ancestor of `sprite` that is not itself being deleted, so a child
+# of a deleted layer inside a deleted branch still lands somewhere sensible.
+func _surviving_ancestor(sprite, doomed: Array):
+	var ancestor = sprite.parentSprite
+	while ancestor != null and is_instance_valid(ancestor) and doomed.has(ancestor):
+		ancestor = ancestor.parentSprite
+	return ancestor if ancestor != null and is_instance_valid(ancestor) else null
 
 
 # `legacy_canvas` is non-zero only when the user accepted the compatibility

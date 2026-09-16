@@ -212,6 +212,38 @@ func filter(text: String) -> void:
 			ancestor = ancestor.parentTag
 
 
+# The layers from `a` to `b` inclusive, in the order the list shows them, for a
+# shift-click range pick. Rows hidden by a collapsed parent or the filter are
+# left out: the user is picking what they can see.
+func layers_between(a, b) -> Array:
+	var visible_rows := []
+	for row in _container.get_children():
+		if row.visible and is_instance_valid(row.sprite):
+			visible_rows.append(row)
+	var first := -1
+	var last := -1
+	for index in visible_rows.size():
+		var sprite = visible_rows[index].sprite
+		if sprite == a:
+			first = index
+		if sprite == b:
+			last = index
+	if first == -1 or last == -1:
+		return [b]
+	if first > last:
+		var swap := first
+		first = last
+		last = swap
+	var picked := []
+	for index in range(first, last + 1):
+		picked.append(visible_rows[index].sprite)
+	# The active layer leads the selection, so the range starts from the one the
+	# user shift-clicked away from.
+	if picked.size() > 1 and picked[0] != a:
+		picked.reverse()
+	return picked
+
+
 func refresh_names() -> void:
 	for row in _container.get_children():
 		row.refreshName()

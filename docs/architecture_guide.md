@@ -725,6 +725,35 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 > Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
+### Selecting several layers
+
+> Added: 2026-09-16 — Command-click (Control on Windows and Linux) adds or
+> removes one layer; Shift-click takes the range between the active layer and the
+> clicked one, in list order, skipping rows hidden by a collapsed parent or the
+> filter. An ordinary click replaces the selection.
+>
+> `SelectionState` keeps the shape it had: `current` is the ACTIVE layer, the one
+> single-layer code (both sidebars, the canvas, the keyboard) reads through
+> `Global.heldSprite`, and `extras` holds the rest. `selection()` returns the
+> active layer followed by the extras, through `Global.selected_sprites()`.
+> Removing the active layer promotes the next one, so there is always an active
+> layer while anything is selected, and `forget()` drops a layer that is being
+> freed without disturbing the rest (deleting a group frees them one at a time).
+>
+> **Sidebar edits apply to the whole selection.** `MutationCommands._write_property`
+> is the one choke point for `set_layer_property` and `drag_layer_property`, so
+> the fan-out lives there: an edit aimed at the ACTIVE layer writes to every
+> selected layer inside one history entry, and an edit aimed at some other layer
+> (an eye-track target being assigned, a restore) is left alone. The left
+> sidebar's parent line reads "N layers selected" so it is clear the panel is
+> showing the active layer's values while writing to all of them. `set_layer_field`
+> does not fan out: it names one entry inside one layer's structured field (an
+> animation clip), which has no meaning on a different layer.
+>
+> Rows draw the active layer with its border, and the rest of the selection with
+> the same fill and no border, so the layer the sidebars are showing stays
+> distinguishable from the group.
+
 ### Layer context menu (right-click a row)
 
 > Added: 2026-09-16 — Right-clicking a row selects that layer and opens
@@ -747,6 +776,15 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > is the one place that decides what a layer is called: `layerName` when set,
 > otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
 > there from the row, so the layer and its row read one implementation).
+>
+> With several layers selected, the menu offers only what it can do to all of
+> them: "Duplicate N layers" and "Delete N layers...". Rename and Replace name one
+> layer and act on it, so they are hidden. Right-clicking a row that is part of
+> the selection keeps that selection; right-clicking any other row replaces it
+> with that one layer. `avatar_controller.duplicate_selected` and
+> `delete_layers` each take the whole group as one history entry, and a deleted
+> layer's surviving children climb to the nearest ancestor that is not also being
+> deleted.
 >
 > **Replace** (`import_controller.replace_layer`) swaps one layer's artwork.
 > The menu bar's Replace takes a PSD or a folder and matches layers by name; this

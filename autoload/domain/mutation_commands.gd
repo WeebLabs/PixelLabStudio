@@ -148,15 +148,42 @@ static func _run(body: Callable, gesture: String) -> bool:
 static func _write_property(sprite: Object, property: String, value: Variant, gesture: String) -> bool:
 	if not _is_live(sprite) or not _validate(property):
 		return false
-	if _same_value(sprite.get(property), value):
+	var targets := _edit_targets(sprite)
+	var pending := []
+	for target in targets:
+		if _is_live(target) and not _same_value(target.get(property), value):
+			pending.append(target)
+	if pending.is_empty():
 		return false
 	var history := _history()
 	if history != null:
 		history.begin(gesture)
-	sprite.set(property, value)
+	for target in pending:
+		target.set(property, value)
 	if history != null:
 		history.commit()
 	return true
+
+
+# Who an edit lands on. Editing the active layer while several are selected
+# edits all of them, as one history entry: that is what selecting several layers
+# in the list is for, and it matches every other layers panel. An edit aimed at
+# some OTHER layer (an eye-track target being assigned, a restore) is left alone.
+static func _edit_targets(sprite: Object) -> Array:
+	var global := _global()
+	if global == null or sprite != global.get("heldSprite"):
+		return [sprite]
+	var selected: Variant = global.call("selected_sprites")
+	if selected is Array and selected.size() > 1:
+		return selected
+	return [sprite]
+
+
+static func _global() -> Object:
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		return (loop as SceneTree).root.get_node_or_null("/root/Global")
+	return null
 
 
 # Gesture keys are scoped to the layer and property so dragging one slider,
