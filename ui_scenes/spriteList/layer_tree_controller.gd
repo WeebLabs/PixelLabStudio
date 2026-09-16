@@ -47,7 +47,20 @@ func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
 		return
 	var sprites: Array = _global.sprite_nodes()
 	if sort_by_z:
-		sprites.sort_custom(func(a, b): return a.z > b.z)
+		# Sort by z, breaking ties on registry order so the result is STABLE.
+		# Godot's sort is not stable, and rigs routinely leave many layers on the
+		# same z (20 of 54 on a real avatar), so a bare `a.z > b.z` reshuffled
+		# those layers on every rebuild: delete a layer and the list came back in
+		# a different order, with a different row at the top. Registry order is
+		# insertion order, which does not move when a layer is removed.
+		var registry_order := {}
+		for index in sprites.size():
+			registry_order[sprites[index]] = index
+		sprites.sort_custom(func(a, b):
+			if a.z != b.z:
+				return a.z > b.z
+			return registry_order[a] < registry_order[b]
+		)
 
 	var parented_rows := []
 	var rows := []
@@ -104,6 +117,60 @@ func refresh_hierarchy(pending_scroll_target = null) -> void:
 	var ordered := _flatten(rows)
 	_apply_order_and_indentation(ordered)
 	await _consume_pending_scroll(pending_scroll_target)
+
+
+# Drop one layer's row in place, for deletion. Rebuilding the list would work,
+# but it throws away the scroll position and sends the user back to the top of a
+# long list every time they delete something. The remaining rows are untouched,
+# so the deleted row simply disappears from where it was.
+#
+# The delete command unlinks the layer's children first, so their rows become
+# roots here.
+func remove_sprite_row(sprite, filter_text := "") -> void:
+	var removed = null
+	for row in _container.get_children():
+		if row.sprite == sprite:
+			removed = row
+			break
+	if removed == null:
+		return
+
+	for child_row in removed.childrenTags:
+		child_row.parentTag = null
+		child_row.parent = null
+	var parent_row = removed.parentTag
+	if parent_row != null:
+		parent_row.childrenTags.erase(removed)
+		if parent_row.childrenTags.is_empty():
+			parent_row._collapse_btn.text = ""
+			parent_row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			parent_row.collapsed = false
+
+	# Out of the container before the reorder, since queue_free() leaves it in
+	# place until the end of the frame.
+	_container.remove_child(removed)
+	removed.queue_free()
+
+	_apply_order_and_indentation(_flatten(_container.get_children()))
+	if filter_text.is_empty():
+		apply_collapse_visibility()
+	else:
+		filter(filter_text)
+
+
+# Show every row whose ancestors are all expanded. Used after the tree changes
+# shape without a rebuild: a row that was hidden under a collapsed parent has to
+# reappear once that parent is gone.
+func apply_collapse_visibility() -> void:
+	for row in _container.get_children():
+		var shown := true
+		var ancestor = row.parentTag
+		while ancestor != null:
+			if ancestor.collapsed:
+				shown = false
+				break
+			ancestor = ancestor.parentTag
+		row.visible = shown
 
 
 func clear() -> void:

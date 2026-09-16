@@ -549,12 +549,15 @@ func _on_unlink_pressed():
 func _on_trash_pressed():
 	if Global.heldSprite == null:
 		return
+	var deleted = Global.heldSprite
 	MutationCommands.structural(func():
-		Global.unlinkChildren(Global.heldSprite)
-		Global.heldSprite.queue_free()
+		Global.unlinkChildren(deleted)
+		deleted.queue_free()
 		return true)
 	Global.clear_selection()
-	Global.spriteList.updateData()
+	# Drop the one row rather than rebuilding the list, so the list stays where
+	# the user was reading it instead of jumping back to the top.
+	_layer_tree.remove_sprite_row(deleted, _filter_field.text)
 
 # --- Costume button handlers ---
 

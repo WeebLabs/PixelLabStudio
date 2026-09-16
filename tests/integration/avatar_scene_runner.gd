@@ -47,6 +47,7 @@ func _run() -> void:
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_click_cycling()
+	await _test_layer_list_deletion()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -244,6 +245,76 @@ func _pick_at(world_point: Vector2) -> Array:
 	var opaque: Array = Global.mouse._opaque_candidates(areas, world_point)
 	Global.mouse._sort_top_first(opaque)
 	return opaque
+
+
+# Deleting a layer drops its row where it was. The list must not jump back to
+# the top, and the rows around it must not reorder.
+func _test_layer_list_deletion() -> void:
+	var list = Global.spriteList
+	var rows: Array = list.container.get_children()
+	assert_true(rows.size() >= 4, "the layer list is populated before a deletion")
+	if rows.size() < 4:
+		return
+
+	# Rigs routinely share one z across many layers, which is what used to make
+	# the rebuilt order arbitrary.
+	for sprite in Global.sprite_nodes():
+		sprite.z = 0
+		sprite.setZIndex()
+	await list.updateData()
+	await get_tree().process_frame
+
+	var before := _row_sprite_ids()
+	await list.updateData()
+	await get_tree().process_frame
+	assert_equal(_row_sprite_ids(), before, "rebuilding the layer list keeps the same order at equal z")
+
+	var scroll_container: ScrollContainer = list.get_node("ScrollContainer")
+	scroll_container.scroll_vertical = 40
+	await get_tree().process_frame
+	var scroll_before: int = scroll_container.scroll_vertical
+
+	# Delete a leaf, so the test is about the list rather than about re-parenting.
+	var victim = null
+	for row in list.container.get_children():
+		if row.childrenTags.is_empty():
+			victim = row.sprite
+			break
+	assert_not_null(victim, "the layer list offers a leaf layer to delete")
+	if victim == null:
+		return
+	var expected := _row_sprite_ids()
+	expected.erase(victim.id)
+
+	Global.select_sprite(victim)
+	list._on_trash_pressed()
+	# Enough frames for a full rebuild to have finished, so the order assertion
+	# reads a settled list either way.
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	assert_equal(_row_sprite_ids(), expected, "deleting a layer removes its row and leaves the order alone")
+	assert_equal(
+		scroll_container.scroll_vertical, scroll_before,
+		"deleting a layer keeps the list where the user was reading it",
+	)
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES - 1, "deleting a layer unregisters exactly one layer")
+
+	await list.updateData()
+	await get_tree().process_frame
+	assert_equal(_row_sprite_ids(), expected, "a rebuild after a deletion keeps that order")
+
+	UndoManager.undo()
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+
+func _row_sprite_ids() -> Array:
+	var ids := []
+	for row in Global.spriteList.container.get_children():
+		if is_instance_valid(row.sprite):
+			ids.append(row.sprite.id)
+	return ids
 
 
 func _test_idle_motion() -> void:

@@ -725,6 +725,25 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 > Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
+### Deleting a layer from the list
+
+> Added: 2026-09-16 — A deletion removes that one row in place
+> (`layer_tree_controller.remove_sprite_row`), instead of calling `update_data()`
+> to rebuild the list. A rebuild threw away the scroll position, so deleting
+> anything sent the user back to the top of a long list. The row's children become
+> roots (the delete command unlinks them first), the tree is re-flattened and
+> re-indented, and `apply_collapse_visibility()` re-shows rows whose collapsed
+> ancestor has just gone. A live filter is re-applied instead.
+>
+> `update_data()`'s z sort also breaks ties on registry order (insertion order,
+> which does not move when a layer is removed). Godot's sort is not stable and
+> rigs routinely share one z across many layers (20 of 54 on a real avatar), so a
+> bare `a.z > b.z` reshuffled those layers on every rebuild: the list came back in
+> a different order with a different row at the top.
+>
+> Covered by `avatar_scene_runner._test_layer_list_deletion`, which flattens every
+> layer to one z, deletes a row and asserts the order and the scroll position.
+
 ### Auto-scroll sprite list on selection
 
 > Updated: 2026-02-16 — auto-scroll to selected layer
