@@ -868,6 +868,21 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > layer's own parent, so the rig keeps its shape and only the one layer goes. With
 > `include_children` the layer and every descendant are freed.
 
+### Panning costs one camera move
+
+> Added: 2026-09-16 — `viewport_controller.handle_unhandled_input` only updates
+> `_pan_offset` while panning; `process_frame()` already moves the camera from
+> that offset every frame. It used to call `window_size_changed()` on every
+> mouse-motion event, which re-laid out the whole right sidebar: measured on a
+> 54-layer rig, 3.3 ms per call, arriving several times per 16 ms frame, which is
+> what made a pan stutter.
+>
+> Nearly all of that 3.3 ms was the layer list's indent re-clamp writing a minimum
+> size on every row, since a minimum-size write invalidates that row's layout.
+> `updateIndent()` now returns early when the clamped width has not changed, which
+> takes a full sidebar re-layout from 3.3 ms to 175 µs and also speeds up real
+> window resizes.
+
 ### The list fits the panel
 
 > Added: 2026-09-16 — Rows take their width from the panel, and indentation is

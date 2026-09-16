@@ -143,6 +143,27 @@ func _test_idle_mode_contract(t) -> void:
 		"the collision boundary has one shape-population path",
 	)
 
+	# A pan is one camera move, which process_frame() already does from the
+	# offset. Calling the window-resize path per mouse-motion event re-laid out
+	# the whole right sidebar: 3.3 ms on a 54-layer rig, several times a frame.
+	var pan_branch := _function_body(
+		FileAccess.get_file_as_string(_source_root().path_join("main_scenes/controllers/viewport_controller.gd")),
+		"func handle_unhandled_input",
+	)
+	t.assert_false(
+		pan_branch.contains("window_size_changed()"),
+		"panning does not run the window-resize path",
+	)
+	t.assert_true(pan_branch.contains("_pan_offset -="), "panning still moves the view")
+
+	# Writing a minimum size invalidates the row's layout, so the sidebar's
+	# re-clamp has to leave an unchanged row alone.
+	var row_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/spriteList/sprite_list_object.gd"))
+	t.assert_true(
+		row_source.contains("if is_equal_approx(_indent_spacer.custom_minimum_size.x, wanted):"),
+		"an unchanged indent does not re-lay out its row",
+	)
+
 	var cursor_source := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/mouse/mouse_cursor.gd"))
 	t.assert_true(cursor_source.contains("params.collision_mask = SELECT_MASK"), "the point query names the layer bit directly")
 	t.assert_false(cursor_source.contains("params.collision_mask = area.collision_mask"), "the query no longer forces a mask onto the cursor's own area")

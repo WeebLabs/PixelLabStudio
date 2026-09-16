@@ -38,8 +38,11 @@ func handle_unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
 		_panning = event.pressed
 	elif event is InputEventMouseMotion and _panning:
+		# Only the offset. process_frame() moves the camera from it every frame, so
+		# a pan needs nothing else; it used to run the whole window-resize path
+		# instead, re-laying out the right sidebar once per mouse-motion event
+		# (3.3 ms on a 54-layer rig, several times per frame while dragging).
 		_pan_offset -= event.relative / _main.camera.zoom
-		window_size_changed()
 
 
 func window_size_changed() -> void:
