@@ -74,6 +74,12 @@ func _test_avatar_migration(t) -> void:
 	t.assert_false(second_pass["migrated"], "current avatar data does not re-run migrations")
 	t.assert_equal(second_pass["value"], avatar, "avatar normalization is idempotent")
 
+	var blink_animation := AvatarSave.normalize({
+		"0": {"type": "sprite", "path": "eyes.png", "identification": 1, "showBlink": 3, "frames": 10},
+	})
+	t.assert_true(blink_animation["ok"], "an avatar carrying a blink-animation layer normalizes")
+	t.assert_equal(blink_animation["value"]["0"]["showBlink"], 3, "blink mode 3 (play the layer's frames as a blink animation) survives normalization")
+
 
 func _test_unsigned_sprite_identifiers(t) -> void:
 	var parent_id := 4226717595

@@ -101,7 +101,10 @@ static func _normalize_sprite(value: Dictionary, key: String) -> Dictionary:
 	entry["yAmp"] = ValueCodec.float_value(value.get("yAmp"), 0.0, -100000.0, 100000.0)
 	entry["rotDrag"] = ValueCodec.float_value(value.get("rotDrag"), 0.0, -10000.0, 10000.0)
 	entry["showTalk"] = ValueCodec.int_value(value.get("showTalk"), 0, 0, 2)
-	entry["showBlink"] = ValueCodec.int_value(value.get("showBlink"), 0, 0, 2)
+	# Blink has a fourth mode the talk toggle does not: 3 plays the layer's frames as
+	# a blink animation. Clamping to 2 turned those layers into "show only while
+	# blinking", so an eyes-open layer vanished until the avatar blinked.
+	entry["showBlink"] = ValueCodec.int_value(value.get("showBlink"), 0, 0, 3)
 	entry["rLimitMin"] = ValueCodec.float_value(value.get("rLimitMin"), -180.0, -36000.0, 36000.0)
 	entry["rLimitMax"] = ValueCodec.float_value(value.get("rLimitMax"), 180.0, -36000.0, 36000.0)
 	if entry["rLimitMin"] > entry["rLimitMax"]:
