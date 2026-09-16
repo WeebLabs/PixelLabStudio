@@ -774,7 +774,12 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > `indent * INDENT_STEP` px (12, the size other tree panels use: VS Code indents 8,
 > Blender and Unity 14 to 16), clamped so the row still fits everything it cannot
 > give up (the collapse arrow, the thumbnail, the badges, the show/hide button,
-> the separations, and `MIN_NAME_WIDTH` for the name). `layer_tree_controller`
+> the separations, and a floor for the name). The name gives way first: it
+> ellipsizes as the row narrows, and indentation is only compressed once the name
+> is down to the width of `MIN_NAME_SAMPLE` ("Ab…") measured in the row's own font,
+> so the floor follows the font size rather than being a magic number. Measured on
+> a rig nesting five deep, the indentation now survives intact down to a 220 px
+> sidebar and only compresses below that. `layer_tree_controller`
 > passes the scroll area's width minus its vertical scrollbar, and `reflow()`
 > re-clamps every row when the sidebar is resized. The row's `_draw()` guide lines
 > read `indentWidth()` rather than recomputing `indent * step`, so they follow the

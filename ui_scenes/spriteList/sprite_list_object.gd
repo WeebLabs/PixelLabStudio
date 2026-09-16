@@ -9,9 +9,11 @@ const ITEM_SEPARATION := 4
 # budget clamp ever having to compress it, and the guide lines carry the
 # structure that a wider step would.
 const INDENT_STEP := 12
-# What the name is never squeezed below, so a deeply nested layer is still
-# readable rather than indented into nothing.
-const MIN_NAME_WIDTH := 56.0
+# The name gives way first, ellipsizing as the row narrows, and indentation is
+# only compressed once the name is down to this floor: enough for a couple of
+# characters and the ellipsis, measured in the row's own font so it holds at any
+# font size.
+const MIN_NAME_SAMPLE := "Ab…"
 
 var sprite = null
 var parent = null
@@ -347,6 +349,16 @@ func updateIndent(available_width: float = -1.0):
 	queue_redraw()
 
 
+# The narrowest the name is allowed to get before indentation starts giving way.
+func _min_name_width() -> float:
+	var font := _name_label.get_theme_font("font")
+	if font == null:
+		return 0.0
+	return font.get_string_size(
+		MIN_NAME_SAMPLE, HORIZONTAL_ALIGNMENT_LEFT, -1, _name_label.get_theme_font_size("font_size")
+	).x
+
+
 # How far this row is actually indented, after the budget clamp.
 func indentWidth() -> float:
 	return _indent_spacer.custom_minimum_size.x
@@ -356,7 +368,7 @@ func indentWidth() -> float:
 # indent spacer and the name, the separations between them, and the space the
 # name itself must keep.
 func _fixed_content_width() -> float:
-	var fixed := MIN_NAME_WIDTH
+	var fixed := _min_name_width()
 	var items := 0
 	for child in _hbox.get_children():
 		if not child.visible:
