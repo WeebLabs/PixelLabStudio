@@ -97,18 +97,28 @@ func _opaque_at(areas: Array, world_pos: Vector2) -> Array:
 	return opaque
 
 
-# Order the candidates the way the user sees them, topmost first: visible layers
-# before faded ones, then higher z, then later in draw order.
+# Order the candidates the way the layers are stacked, topmost first: higher z,
+# then later in draw order.
 #
-# The ordering has to be TOTAL, not just correct on z. Godot's sort is not
-# stable, and the physics query hands back its hits in whatever order the
-# broadphase holds them, which shifts as the avatar moves. Rigs routinely leave
-# several layers at the same z, and with only z to compare, those layers came
-# back in a different order from one click to the next: six distinct orders over
-# twelve clicks, measured on a moving rig. That made both the topmost pick and
-# the cycle below it arbitrary. Draw order is the real tie-break, since Godot
-# draws equal z_index in tree order, so the layer later in the tree is the one
-# actually on top.
+# The ordering has to be TOTAL and it has to be STABLE over time, because the
+# click cycle steps through it. Two things used to break that.
+#
+# Godot's sort is not stable and the physics query hands back its hits in
+# whatever order the broadphase holds them, which shifts as the avatar moves.
+# Rigs routinely leave several layers at the same z, and with only z to compare
+# those layers came back in a different order from one click to the next: six
+# distinct orders over twelve clicks, measured. Draw order is the real tie-break,
+# since Godot draws equal z_index in tree order, so the layer later in the tree
+# is the one actually on top.
+#
+# The order also used to put layers the rig is currently SHOWING ahead of the
+# ones it has faded to 20% (the talk/blink states that are not active right now,
+# which edit mode dims rather than hides). That bucket flips with the microphone
+# and the blink timer, several times a second, so the candidate order changed
+# under the user between one click and the next even with the avatar standing
+# still: measured on a real 54-layer rig with the mic live, the top of the list
+# alternated every click and the cycle never came down the stack. Stacking order
+# is what the user is pointing at, so it is the only thing the order reads.
 func _sort_top_first(areas: Array) -> void:
 	if areas.size() < 2:
 		return
@@ -116,14 +126,6 @@ func _sort_top_first(areas: Array) -> void:
 	areas.sort_custom(func(a: Area2D, b: Area2D) -> bool:
 		var obj_a = Global.sprite_from_hit_area(a)
 		var obj_b = Global.sprite_from_hit_area(b)
-		var spr_a = obj_a.get("sprite") if obj_a != null else null
-		var spr_b = obj_b.get("sprite") if obj_b != null else null
-		# Visible (alpha > 0.5) before faded/hidden
-		var vis_a = spr_a.self_modulate.a > 0.5 if spr_a != null else false
-		var vis_b = spr_b.self_modulate.a > 0.5 if spr_b != null else false
-		if vis_a != vis_b:
-			return vis_a
-		# Within same visibility group, higher z first
 		var z_a = obj_a.get("z") if obj_a != null else 0
 		var z_b = obj_b.get("z") if obj_b != null else 0
 		if z_a != z_b:
@@ -187,7 +189,17 @@ func _query_areas_at_mouse() -> Array:
 	params.collision_mask = SELECT_MASK
 	params.collide_with_areas = true
 	params.collide_with_bodies = false
-	var results = space.intersect_point(params)
+	# intersect_point defaults to 32 results and silently drops the rest, and
+	# WHICH 32 it keeps is broadphase order, which shifts as the avatar or the
+	# camera moves. Every layer's collider is its full image rectangle, so on a
+	# rig whose layers are canvas-sized almost every layer covers almost every
+	# point: measured on a real 54-layer avatar, one click point sat inside 55
+	# colliders and the query returned 32 of them. Whole layers vanished from the
+	# candidate list at random, which is why selection missed, why cycling
+	# skipped layers, and why nudging the view could make a layer pickable again.
+	# One shape per layer, so the layer count plus the handful of UI blockers is
+	# the ceiling.
+	var results = space.intersect_point(params, Global.sprite_count() + 16)
 	var found = []
 	for r in results:
 		if r.collider is Area2D:

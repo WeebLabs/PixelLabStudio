@@ -666,8 +666,19 @@ Selection in edit mode flows through these components:
 > and a click landing back on the already-selected top layer look like it had not
 > registered at all.
 >
-> **The candidate ordering is total.** `mouse_cursor._sort_top_first` orders by
-> visible-before-faded, then z, then depth-first draw order under
+> **The point query asks for room for every layer.**
+> `PhysicsDirectSpaceState2D.intersect_point` keeps 32 results by default and
+> silently drops the rest, in broadphase order. Since each layer's collider became
+> its whole image rectangle (see below), a rig of canvas-sized layers puts a
+> single click point inside far more colliders than that: on a real 54-layer
+> avatar, one point sat inside 55 and the query returned 32 of them. Whole layers
+> vanished from the candidate list at random, and the set shifted whenever the
+> avatar or the camera moved, which is why selection missed, why cycling skipped
+> layers, and why nudging the view could make a layer pickable again. The query
+> now passes `Global.sprite_count() + 16`, since each layer contributes one shape.
+>
+> **The candidate ordering is total and stable over time.**
+> `mouse_cursor._sort_top_first` orders by z, then depth-first draw order under
 > `OriginMotion/Origin`. Godot's sort is not stable and the physics query returns
 > hits in broadphase order, which shifts as the avatar moves, so with only z to
 > compare, layers sharing a z came back in a different order from one click to the
@@ -675,11 +686,22 @@ Selection in edit mode flows through these components:
 > tie-break because Godot draws equal `z_index` in tree order, so the layer later
 > in the tree is the one actually on top.
 >
+> The order deliberately does NOT read talk/blink fade, which it used to: layers
+> whose talk/blink state is not active right now are dimmed to 20% in edit mode
+> rather than hidden, and that bucket flips with the microphone and the blink
+> timer several times a second. Measured on a real rig with the mic live and the
+> avatar standing still, the top of the candidate list alternated on every click
+> and the cycle never came down the stack. Stacking order is what the user is
+> pointing at, so it is the only thing the order reads.
+>
 > `mouse_cursor` also gives the alpha test a 3-screen-pixel tolerance ring
 > (`PICK_TOLERANCE_PX`). The exact cursor pixel is tried first and decides the
 > answer whenever it hits anything; the ring only rescues a click that would
 > otherwise resolve to nothing and therefore clear the selection, which a single
 > texel sampled on a moving, soft-edged layer regularly did.
+>
+> Motion pause (see the menu bar section) also holds talk/blink at rest, so the
+> shown/dimmed layers stop swapping while a rig is being edited.
 >
 > `tests/integration/avatar_scene_runner._test_click_cycling` covers this through
 > the real pick path (physics broad phase, alpha test, ordering) with the rig in

@@ -149,6 +149,28 @@ func _test_idle_mode_contract(t) -> void:
 	var cursor_scene := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/mouse/mouse_cursor.tscn"))
 	t.assert_true(cursor_scene.contains("collision_mask = 0"), "the cursor area detects nothing, so it pairs with no layer")
 
+	# intersect_point keeps 32 results by default and silently drops the rest, in
+	# broadphase order. Each layer's collider is its whole image rectangle, so on
+	# a rig of canvas-sized layers a single click point sits inside far more than
+	# 32 of them: 55 measured on a real 54-layer avatar. Layers then dropped out
+	# of the pick at random.
+	t.assert_false(
+		cursor_source.contains("space.intersect_point(params)"),
+		"the point query does not take the 32-result default",
+	)
+	t.assert_true(
+		cursor_source.contains("space.intersect_point(params, Global.sprite_count()"),
+		"the point query asks for room for every layer",
+	)
+
+	# Ordering the pick on talk/blink fade made the candidate order flip with the
+	# microphone, several times a second, so the click cycle never came down the
+	# stack.
+	t.assert_false(
+		cursor_source.contains("self_modulate.a > 0.5"),
+		"the pick order does not read transient talk/blink fade",
+	)
+
 	# A stylebox override invalidates the control's minimum size, so writing one
 	# every frame re-measures the button text and re-runs the container layout.
 	var physics_tab := FileAccess.get_file_as_string(_source_root().path_join("ui_scenes/spriteList/physics_tab.gd"))

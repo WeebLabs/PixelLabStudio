@@ -51,7 +51,9 @@ func set_visual(modulate: Color, visibility_layer: int) -> void:
 
 
 func set_active(active: bool) -> void:
-	_owner._last_visual_key = -1
+	# Turning wiggle on or off changes which node carries the layer's visuals, so
+	# the talk/blink sync has to write again even though its state has not moved.
+	_owner._visualRuntime.invalidate_talk_blink()
 	if active:
 		if _owner.wigglePath.size() < 2:
 			auto_fit_path()

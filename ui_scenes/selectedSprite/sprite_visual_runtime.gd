@@ -1,9 +1,15 @@
 extends RefCounted
 
 const BlendModes = preload("res://effects/blend/blend_mode.gd")
+const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 
 var _owner: Node2D
 var _blend_backbuffer: BackBufferCopy = null
+
+var _last_visual_key := -1
+var _last_visual_opacity := -1.0
+var _last_visual_has_wiggle := false
+var _last_visual_has_editor := false
 
 
 func setup(owner: Node2D) -> void:
@@ -90,3 +96,35 @@ func _set_blend_backbuffer(enabled: bool) -> void:
 	elif _blend_backbuffer != null:
 		_blend_backbuffer.queue_free()
 		_blend_backbuffer = null
+
+
+# Talk/blink visibility: which layers the rig shows right now, with the inactive
+# talk/blink states dimmed to 20% in edit mode rather than hidden. Called every
+# frame, so the writes are gated on the state actually changing. The caller
+# resolves the speaking/blinking/edit-mode state, which is application state.
+func sync_talk_blink(speaking: bool, blinking: bool, edit_mode: bool) -> void:
+	var visual := SpriteVisibility.talk_blink_visual(
+		int(_owner.showOnTalk), int(_owner.showOnBlink),
+		speaking, blinking,
+		edit_mode, _owner.opacity, _owner._wiggleRuntime.is_editing_path(),
+	)
+	var visual_key: int = visual["cache_key"]
+	var visual_opacity: float = visual["opacity"]
+	var has_wiggle: bool = _owner._wiggleRuntime.has_appendage()
+	var has_editor: bool = _owner._wiggleRuntime.is_editing_path()
+	if visual_key == _last_visual_key and is_equal_approx(visual_opacity, _last_visual_opacity) \
+		and has_wiggle == _last_visual_has_wiggle and has_editor == _last_visual_has_editor:
+		return
+	_last_visual_key = visual_key
+	_last_visual_opacity = visual_opacity
+	_last_visual_has_wiggle = has_wiggle
+	_last_visual_has_editor = has_editor
+	_owner.sprite.self_modulate = visual["modulate"]
+	_owner.sprite.visibility_layer = visual["visibility_layer"]
+	_owner._wiggleRuntime.set_visual(_owner.sprite.self_modulate, _owner.sprite.visibility_layer)
+
+
+# Force the next sync_talk_blink() to write, for callers that change what the
+# layer's visuals are attached to rather than what they should look like.
+func invalidate_talk_blink() -> void:
+	_last_visual_key = -1

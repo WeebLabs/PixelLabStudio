@@ -202,10 +202,6 @@ var toggle = "null"
 var _skip_ready_reparent = false
 var _prebuilt_pma_image: Image = null
 var _prebuilt_polygons: Array = []
-var _last_visual_key := -1
-var _last_visual_opacity := -1.0
-var _last_visual_has_wiggle := false
-var _last_visual_has_editor := false
 
 func _make_premultiplied_texture(img: Image) -> ImageTexture:
 	return SpriteVisualRuntime.premultiplied_texture(img)
@@ -430,8 +426,8 @@ func _process(delta):
 		return
 	# Edit-mode motion pause: hold this layer at its authored rest pose (see
 	# sprite_rest_pose.gd) instead of advancing anything. Re-applied every frame, so
-	# a layer moved or re-rigged while paused still shows its true rest position.
-	# `tick` does not advance either: it drives frame animation and the wiggle wag.
+	# a layer moved while paused still shows its true rest position. `tick` does not
+	# advance either: it drives frame animation and the wiggle wag.
 	if Global.motion_paused():
 		_update_selection_gizmos()
 		SpriteRestPose.apply(self)
@@ -549,25 +545,16 @@ func setZIndex():
 func applyBlendMode():
 	_visualRuntime.apply_blend_mode()
 
+# Talk/blink visibility for this layer, delegated so the scene facade stays a
+# facade. Paused motion holds it at rest too: otherwise the mic and the blink
+# timer keep swapping which layers show and which dim to 20%, several times a
+# second, which is movement, and which also reshuffles what a click can pick.
 func talkBlink():
-	var visual := SpriteVisibility.talk_blink_visual(
-		int(showOnTalk), int(showOnBlink), Global.speaking, Global.blink,
-		Global.main.editMode, opacity, _wiggleRuntime.is_editing_path(),
+	var paused := Global.motion_paused()
+	_visualRuntime.sync_talk_blink(
+		Global.speaking and not paused, Global.blink and not paused, Global.main.editMode
 	)
-	var visual_key: int = visual["cache_key"]
-	var visual_opacity: float = visual["opacity"]
-	var has_wiggle := _wiggleRuntime.has_appendage()
-	var has_editor := _wiggleRuntime.is_editing_path()
-	if visual_key == _last_visual_key and is_equal_approx(visual_opacity, _last_visual_opacity) \
-		and has_wiggle == _last_visual_has_wiggle and has_editor == _last_visual_has_editor:
-		return
-	_last_visual_key = visual_key
-	_last_visual_opacity = visual_opacity
-	_last_visual_has_wiggle = has_wiggle
-	_last_visual_has_editor = has_editor
-	sprite.self_modulate = visual["modulate"]
-	sprite.visibility_layer = visual["visibility_layer"]
-	_wiggleRuntime.set_visual(sprite.self_modulate, sprite.visibility_layer)
+
 
 func blinkAnimation():
 	if showOnBlink != 3 or frames <= 1:
