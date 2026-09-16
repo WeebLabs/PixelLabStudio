@@ -53,6 +53,7 @@ func _run() -> void:
 	await _test_layer_rename()
 	await _test_layer_context_menu()
 	await _test_duplicate_placement()
+	await _test_layer_list_indentation()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -359,6 +360,23 @@ func _test_layer_deletion_children() -> void:
 	for _frame in range(3):
 		await get_tree().process_frame
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "undoing a deletion with children restores both layers")
+
+
+# A child layer's row is indented under its parent's.
+func _test_layer_list_indentation() -> void:
+	var list = Global.spriteList
+	await list.updateData()
+	await get_tree().process_frame
+
+	var indent_for := {}
+	for row in list.container.get_children():
+		if is_instance_valid(row.sprite):
+			indent_for[row.sprite.id] = [row.indent, row._indent_spacer.custom_minimum_size.x]
+
+	# BASE is a root, COSTUME_TWO is its child, NESTED is a child of that.
+	assert_equal(indent_for.get(BASE_ID), [0, 0.0], "a root layer's row is not indented")
+	assert_equal(indent_for.get(COSTUME_TWO_ID), [1, 19.0], "a child layer's row is indented one step")
+	assert_equal(indent_for.get(NESTED_ID), [2, 38.0], "a grandchild's row is indented two steps")
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

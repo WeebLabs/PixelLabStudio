@@ -759,6 +759,18 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > layer's own parent, so the rig keeps its shape and only the one layer goes. With
 > `include_children` the layer and every descendant are freed.
 
+### Row indentation
+
+> Added: 2026-09-16 — `_apply_order_and_indentation` sets `row.indent` from the
+> depth of the row's ancestor chain, and then calls `row.updateIndent()` on
+> **every** row. `updateIndent()` is what actually widens the row's indent spacer,
+> and it used to be called only for rows that had children of their own, so a leaf
+> layer carried the right `indent` value with a zero-width spacer and rendered
+> flush against the left edge: a parent appeared indented past its own children.
+> The spacer is the first child of the row's HBox, so one write moves the collapse
+> arrow, the thumbnail and the name together (measured on a real rig: 19 px per
+> level for all three).
+
 ### Deleting a layer from the list
 
 > Added: 2026-09-16 — Layers appearing or disappearing reconcile the existing

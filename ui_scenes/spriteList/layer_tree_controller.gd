@@ -167,13 +167,6 @@ func sync_rows(sort_by_z := true) -> void:
 		row.parentTag = parent_row
 		parent_row.childrenTags.append(row)
 
-	for row in rows:
-		if row.childrenTags.is_empty():
-			row.collapsed = false
-			row._collapse_btn.text = ""
-			row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		elif row.collapsed:
-			row._collapse_btn.text = "▶"
 	_apply_order_and_indentation(_flatten(rows))
 	apply_collapse_visibility()
 
@@ -257,10 +250,18 @@ func _apply_order_and_indentation(rows: Array) -> void:
 			visited[ancestor] = true
 			row.indent += 1
 			ancestor = ancestor.parentTag
-		if not row.childrenTags.is_empty():
-			row._collapse_btn.text = "▼"
+		if row.childrenTags.is_empty():
+			row._collapse_btn.text = ""
+			row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			row.collapsed = false
+		else:
+			row._collapse_btn.text = "▶" if row.collapsed else "▼"
 			row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-			row.updateIndent()
+		# Every row, not just the ones with children. updateIndent() is what
+		# actually widens the indent spacer, so while it was called only for
+		# parents, a child layer rendered flush against the left edge and nothing
+		# below a parent looked like it belonged to it.
+		row.updateIndent()
 
 
 func _consume_pending_scroll(target) -> void:
