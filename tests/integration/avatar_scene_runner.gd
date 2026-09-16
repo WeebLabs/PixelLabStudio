@@ -58,6 +58,7 @@ func _run() -> void:
 	await _test_multi_selection()
 	await _test_mixed_value_indicator()
 	await _test_transform_entry()
+	await _test_costume_keeps_selection()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -631,6 +632,31 @@ func _test_transform_entry() -> void:
 		await get_tree().process_frame
 	sprite = Global.sprite_by_id(BASE_ID)
 
+	# A click anywhere outside the field hands the keyboard back too, since
+	# clicking a label or a panel's blank area does not move focus by itself.
+	position_fields._x.grab_focus()
+	await get_tree().process_frame
+	var elsewhere := InputEventMouseButton.new()
+	elsewhere.button_index = MOUSE_BUTTON_LEFT
+	elsewhere.pressed = true
+	elsewhere.position = position_fields._x.get_global_rect().position - Vector2(40, 40)
+	Global._release_text_focus_outside(elsewhere)
+	await get_tree().process_frame
+	assert_false(position_fields._x.has_focus(), "clicking away releases the field")
+
+	# A click inside the field keeps it, or typing would be impossible.
+	position_fields._x.grab_focus()
+	await get_tree().process_frame
+	var inside := InputEventMouseButton.new()
+	inside.button_index = MOUSE_BUTTON_LEFT
+	inside.pressed = true
+	inside.position = position_fields._x.get_global_rect().get_center()
+	Global._release_text_focus_outside(inside)
+	await get_tree().process_frame
+	assert_true(position_fields._x.has_focus(), "a click inside the field keeps it")
+	position_fields._x.release_focus()
+	await get_tree().process_frame
+
 	# Committing a field nobody changed leaves no history entry to undo through.
 	var before_entry: Vector2 = sprite.authoredPosition()
 	var depth: int = UndoManager._undo_stack.size()
@@ -649,6 +675,26 @@ func _test_transform_entry() -> void:
 	assert_equal(sprite.authoredPosition(), held, "an unreadable entry changes nothing")
 	Global.spriteEdit.setImage()
 	await get_tree().process_frame
+
+
+# Switching costume changes what is shown, not what is being edited.
+func _test_costume_keeps_selection() -> void:
+	var first = Global.sprite_by_id(BASE_ID)
+	var second = Global.sprite_by_id(COSTUME_ONE_ID)
+	if first == null or second == null:
+		return
+	Global.select_sprite(first)
+	Global.toggle_sprite_selection(second)
+	var before: int = Global.selected_sprites().size()
+
+	_main.changeCostume(2)
+	await get_tree().process_frame
+	assert_equal(Global.selected_sprites().size(), before, "changing costume keeps the selection")
+	assert_true(Global.heldSprite == first, "changing costume keeps the active layer")
+
+	_main.changeCostume(1)
+	await get_tree().process_frame
+	Global.clear_selection()
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

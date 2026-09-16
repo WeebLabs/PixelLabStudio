@@ -265,9 +265,11 @@ func apply_replacement(matched: Array, new_items: Array, orphaned: Array, remove
 	return {"replaced": replaced, "added": added, "removed": removed}
 
 
+# Switching costume changes which layers are shown, not which are being edited,
+# so it leaves the selection alone. It used to clear it, which meant any key
+# bound to a costume dropped whatever the user had selected.
 func change_costume(new_costume: int) -> void:
 	_main.costume = new_costume
-	_global.clear_selection()
 	for sprite in _global.sprite_nodes():
 		sprite.applyCostumeVisibility()
 	_main.spriteList.updateAllVisible()

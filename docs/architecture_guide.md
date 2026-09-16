@@ -735,11 +735,15 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > Enter or on focus leaving. A field that does not read as a number is ignored, so
 > a stray keystroke and a click away cannot move a layer to zero.
 >
-> **Enter also releases focus**, because `Global._is_any_field_focused()`
-> suppresses the app's own shortcuts while a `LineEdit` holds focus: a field that
-> kept focus after Enter swallowed Ctrl+Z, and undo appeared not to work until the
-> user clicked away. Both commits also report whether anything actually moved, so
-> a field that was only visited leaves no empty history entry to undo through.
+> **Enter releases focus, and so does a click outside the field.**
+> `Global._is_any_field_focused()` suppresses the app's own shortcuts while a
+> `LineEdit` holds focus, so a field that kept focus swallowed Ctrl+Z and undo
+> appeared not to work. Enter hands focus back, and `Global._release_text_focus_outside`
+> does the same for a click anywhere outside the focused field, since clicking a
+> label, a panel's blank area or the canvas does not move focus by itself. That
+> applies to every text field in the app, not just these two. Both commits also
+> report whether anything actually moved, so a field that was only visited leaves
+> no empty history entry to undo through.
 >
 > Position goes through `setAuthoredPosition`, which is what a wiggle-following
 > child needs. Offset goes through `SpriteOrigin.set_offset`
@@ -755,7 +759,11 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 ### Selecting several layers
 
-> Added: 2026-09-16 — Command-click (Control on Windows and Linux) adds or
+> Added: 2026-09-16 — Switching costume leaves the selection alone: it changes
+> which layers are SHOWN, not which are being edited, and clearing it meant any
+> key bound to a costume dropped whatever the user had selected.
+>
+> Command-click (Control on Windows and Linux) adds or
 > removes one layer. macOS turns Control-click into a right click before Godot
 > sees it, so on a Mac the multi-select modifier is Command, and a Control-click
 > opens the context menu instead; the row handler accepts `ctrl_pressed` as well

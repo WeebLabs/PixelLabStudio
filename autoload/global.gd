@@ -585,7 +585,26 @@ func _is_any_field_focused() -> bool:
 	var focused = get_viewport().gui_get_focus_owner()
 	return focused is LineEdit or focused is TextEdit
 
+# A click anywhere outside a focused text field hands the keyboard back. Clicking
+# a label, a panel's blank area or the canvas does not move focus by itself, so a
+# field kept focus and went on swallowing the app's shortcuts (undo among them)
+# until something else focusable was clicked.
+func _release_text_focus_outside(event: InputEventMouseButton) -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var focused := vp.gui_get_focus_owner()
+	if not (focused is LineEdit or focused is TextEdit):
+		return
+	if focused.get_global_rect().has_point(event.position):
+		return
+	focused.release_focus()
+
+
 func _input(event):
+	if event is InputEventMouseButton and event.pressed:
+		_release_text_focus_outside(event)
+
 	# Refresh screen-to-world offset whenever the cursor is inside the window,
 	# so out-of-window tracking can extrapolate from DisplayServer.mouse_get_position().
 	if event is InputEventMouseMotion and main != null:
