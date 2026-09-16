@@ -759,6 +759,35 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > layer's own parent, so the rig keeps its shape and only the one layer goes. With
 > `include_children` the layer and every descendant are freed.
 
+### The list fits the panel
+
+> Added: 2026-09-16 — Rows take their width from the panel, and indentation is
+> the first thing to give. Each row's `custom_minimum_size` is height only; it
+> used to carry a fixed 290 px width, which meant the rows, and therefore the
+> `ScrollContainer` around them (horizontal scrolling is disabled, so its minimum
+> width is its content's), refused to shrink with the sidebar. The whole list then
+> hung outside the panel, carrying the show/hide buttons off the right edge:
+> measured on a deep rig, 26 px over at a 260 px sidebar and 66 px at 220 px, and
+> dragging the sidebar wider was the only way back.
+>
+> `updateIndent(available_width)` treats depth as a budget: the indent spacer gets
+> `indent * INDENT_STEP` px, clamped so the row still fits everything it cannot
+> give up (the collapse arrow, the thumbnail, the badges, the show/hide button,
+> the separations, and `MIN_NAME_WIDTH` for the name). `layer_tree_controller`
+> passes the scroll area's width minus its vertical scrollbar, and `reflow()`
+> re-clamps every row when the sidebar is resized. The row's `_draw()` guide lines
+> read `indentWidth()` rather than recomputing `indent * step`, so they follow the
+> clamped positions.
+>
+> `viewer._apply_size` leaves `container.custom_minimum_size.x` at 0 and gives the
+> column `SIZE_EXPAND_FILL`: the scroll container then sizes it, which keeps it
+> clear of the scrollbar, and without the fill flag it would settle at the widest
+> row's minimum and leave a dead strip down the right of the panel.
+>
+> `avatar_scene_runner._test_layer_list_fits_panel` chains fixture layers into a
+> deep hierarchy and asserts, at three sidebar widths, that no show/hide button
+> crosses the panel's right edge and that every name keeps some room.
+
 ### Row indentation
 
 > Added: 2026-09-16 — `_apply_order_and_indentation` sets `row.indent` from the

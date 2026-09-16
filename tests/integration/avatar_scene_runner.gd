@@ -54,6 +54,7 @@ func _run() -> void:
 	await _test_layer_context_menu()
 	await _test_duplicate_placement()
 	await _test_layer_list_indentation()
+	await _test_layer_list_fits_panel()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -377,6 +378,60 @@ func _test_layer_list_indentation() -> void:
 	assert_equal(indent_for.get(BASE_ID), [0, 0.0], "a root layer's row is not indented")
 	assert_equal(indent_for.get(COSTUME_TWO_ID), [1, 19.0], "a child layer's row is indented one step")
 	assert_equal(indent_for.get(NESTED_ID), [2, 38.0], "a grandchild's row is indented two steps")
+
+
+# Deep hierarchies and a narrow sidebar must not push the show/hide button off
+# the panel. Rows shrink with the panel, and indentation gives way first.
+func _test_layer_list_fits_panel() -> void:
+	var list = Global.spriteList
+	var original_width: float = list.panel_width
+
+	# Chain the flat fixture layers into one deep hierarchy, as one history entry
+	# so the rig can be put back exactly as it was.
+	var chain := [4000000004, 4000000005, 4000000006, 4000000007, 4000000008, 4000000009]
+	MutationCommands.structural(func():
+		for index in range(1, chain.size()):
+			var child = Global.sprite_by_id(chain[index])
+			var parent = Global.sprite_by_id(chain[index - 1])
+			if child != null and parent != null:
+				Global.linkSprite(child, parent)
+		return true)
+	await list.updateData()
+	await get_tree().process_frame
+
+	var deepest := 0
+	for row in list.container.get_children():
+		deepest = maxi(deepest, row.indent)
+	assert_true(deepest >= 5, "the test rig nests deeply enough to crowd a row")
+
+	for width in [320.0, 260.0, 220.0]:
+		list.panel_width = width
+		list._apply_size()
+		for _frame in range(3):
+			await get_tree().process_frame
+		# The panel's own right edge, not the scroll container's: with a fixed
+		# minimum row width the scroll container itself refuses to shrink and
+		# hangs outside the sidebar, taking the buttons with it.
+		var right_edge: float = list.position.x + list.panel_width
+		var overflow := 0.0
+		var narrowest := 9999.0
+		for row in list.container.get_children():
+			var button_right: float = row._vis_btn.global_position.x + row._vis_btn.size.x
+			overflow = maxf(overflow, button_right - right_edge)
+			narrowest = minf(narrowest, row._name_label.size.x)
+		assert_true(overflow <= 0.0, "at %d px the show/hide button stays inside the panel (over by %.1f)" % [int(width), overflow])
+		assert_true(narrowest > 0.0, "at %d px the layer name keeps some room" % int(width))
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	for id in chain.slice(1):
+		var restored = Global.sprite_by_id(id)
+		assert_true(restored != null and restored.parentId == BASE_ID, "the test rig's hierarchy is put back")
+	list.panel_width = original_width
+	list._apply_size()
+	await list.updateData()
+	await get_tree().process_frame
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

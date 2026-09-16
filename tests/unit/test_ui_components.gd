@@ -21,7 +21,7 @@ class FakeLayerRow extends HBoxContainer:
 		add_child(_collapse_btn)
 		add_child(_name_label)
 
-	func updateIndent() -> void:
+	func updateIndent(_available_width: float = -1.0) -> void:
 		pass
 
 	func _set_descendants_visible(value: bool) -> void:

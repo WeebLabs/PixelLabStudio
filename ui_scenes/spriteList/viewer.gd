@@ -193,8 +193,8 @@ func _create_controls():
 	_unlink_spr = _build_icon_button(unlink_tex, icon_scale, _on_unlink_pressed, 1)
 	_trash_spr = _build_icon_button(trash_tex, icon_scale, _on_trash_pressed, 1)
 
-# Build an icon-style button (Button + Sprite2D inside) and add to _controls.
-# Returns the inner Sprite2D so callers can tint/animate it.
+# An icon-style button (Button + Sprite2D inside) on _controls. Returns the inner
+# Sprite2D so callers can tint or animate it.
 func _build_icon_button(tex: Texture2D, icon_scale: Vector2, on_pressed: Callable, hframes: int) -> Sprite2D:
 	var btn = Button.new()
 	btn.flat = true
@@ -244,8 +244,8 @@ func _create_costume_buttons():
 	_costume_select.visible = false
 	add_child(_costume_select)
 
-# Build the Opacity + Blend strip and hand it the shared slider styles. The sidebar
-# positions it in _apply_size (bottom of the layer-list region, above the divider).
+# The Opacity + Blend strip, with the shared slider styles. The sidebar positions
+# it in _apply_size (bottom of the layer-list region, above the divider).
 func _create_blend_section():
 	_blend_section_helper = BlendOpacitySection.new()
 	_blend_section = _blend_section_helper.build(self, _slider_fill_enabled,
@@ -307,8 +307,8 @@ func _create_eye_tracking():
 	_eye_tracking.build(self, _eye_content, Global, UndoManager, SidebarUIFactory, _slider_theme)
 
 func _create_vis_toggle():
-	# Divider above the vis-toggle section — kept as a ColorRect for now since
-	# it's positioned independently from both sections.
+	# Divider above the vis-toggle section, a ColorRect because it is positioned
+	# independently from both sections.
 	_divider4 = SidebarUIFactory.create_divider(Vector2(panel_width - 16, 1))
 	add_child(_divider4)
 
@@ -388,7 +388,10 @@ func _apply_size():
 
 	$ScrollContainer.offset_top = y
 	$ScrollContainer.offset_right = panel_width - 10
-	container.custom_minimum_size.x = panel_width - 20
+	# The scroll container sizes the column (see layer_tree_controller.reflow).
+	container.custom_minimum_size.x = 0
+	container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_layer_tree.reflow()
 	var scroll_bottom = panel_height * _divider_ratio
 	# Opacity + Blend strip rides the bottom of the layer-list region, just above the
 	# draggable divider — it reads as part of the list (like the filter field caps the top).
@@ -677,9 +680,7 @@ func updateData(sort_by_z: bool = true):
 func refreshNames():
 	_layer_tree.refresh_names()
 
-
-# Bring the rows into line with the live layers, in place. Used wherever layers
-# appear or disappear (delete, duplicate, undo) so the panel never blanks.
+# Rows in line with the live layers, in place (delete, duplicate, undo).
 func syncRows(sort_by_z: bool = true):
 	_layer_tree.sync_rows(sort_by_z)
 	if not _filter_field.text.is_empty():

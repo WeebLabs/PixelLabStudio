@@ -261,7 +261,27 @@ func _apply_order_and_indentation(rows: Array) -> void:
 		# actually widens the indent spacer, so while it was called only for
 		# parents, a child layer rendered flush against the left edge and nothing
 		# below a parent looked like it belonged to it.
-		row.updateIndent()
+		row.updateIndent(_row_width())
+
+
+# What one row has to work with: the scroll area minus its vertical scrollbar,
+# which appears as soon as the list is longer than the panel.
+func _row_width() -> float:
+	if _scroll_container == null:
+		return -1.0
+	var width := _scroll_container.size.x
+	var bar := _scroll_container.get_v_scroll_bar()
+	if bar != null and bar.visible:
+		width -= bar.size.x
+	return width
+
+
+# Re-clamp the indentation after the sidebar is resized, since the budget each
+# row has to spend on depth moved with it.
+func reflow() -> void:
+	var width := _row_width()
+	for row in _container.get_children():
+		row.updateIndent(width)
 
 
 func _consume_pending_scroll(target) -> void:

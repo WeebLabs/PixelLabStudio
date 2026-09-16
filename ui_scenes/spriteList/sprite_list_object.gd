@@ -3,6 +3,13 @@ extends PanelContainer
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 
+const ROW_HEIGHT := 42
+const ITEM_SEPARATION := 4
+const INDENT_STEP := 19
+# What the name is never squeezed below, so a deeply nested layer is still
+# readable rather than indented into nothing.
+const MIN_NAME_WIDTH := 56.0
+
 var sprite = null
 var parent = null
 var spritePath = ""
@@ -20,6 +27,7 @@ var _normal_badge: Label
 var _eye_target_badge: Label
 var _eye_track_badge: TextureRect
 var _indent_spacer: Control
+var _hbox: HBoxContainer
 var _hovered = false
 var _was_selected = false
 var _was_visible = true       # tracks effective (in-tree) visibility to refresh the eye
@@ -38,14 +46,18 @@ static var _eye_tex: Texture2D = null
 func _ready():
 	_init_styles()
 
-	custom_minimum_size = Vector2(290, 42)
+	# Height only. A fixed minimum WIDTH makes every row demand that width from
+	# the list, so a narrower sidebar cannot shrink the rows: they overflow to the
+	# right and the show/hide button goes off the edge of the panel.
+	custom_minimum_size = Vector2(0, ROW_HEIGHT)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	add_theme_stylebox_override("panel", _style_normal)
 
 	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 4)
+	_hbox = hbox
+	hbox.add_theme_constant_override("separation", ITEM_SEPARATION)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(hbox)
@@ -257,12 +269,15 @@ func _draw():
 	# Ancestor guide lines — each child draws a segment for every parent in its chain
 	var ancestor = parentTag
 	while ancestor != null:
-		var line_x = 18 + ancestor.indent * 19
+		# The ancestor's own spacer, not depth times the step: indentation is
+		# clamped to what the panel can spare, so the arithmetic version drifts
+		# away from where the rows actually sit.
+		var line_x = 18 + ancestor.indentWidth()
 		draw_line(Vector2(line_x, 0), Vector2(line_x, size.y), Color(0.4, 0.4, 0.48, 0.45), 1.5, true)
 		ancestor = ancestor.parentTag
 	# Own guide line — parent draws from arrow center down when expanded
 	if childrenTags.size() > 0 and not collapsed:
-		var my_x = 18 + indent * 19
+		var my_x = 18 + indentWidth()
 		draw_line(Vector2(my_x, size.y * 0.5), Vector2(my_x, size.y), Color(0.4, 0.4, 0.48, 0.45), 1.5, true)
 
 func _process(_delta):
@@ -315,10 +330,39 @@ func _update_eye_track_badge():
 	if on:
 		_eye_track_badge.modulate = Color(0.78, 0.78, 0.82) if Global.eyeTrackingGloballyEnabled else Color(0.4, 0.4, 0.45)
 
-func updateIndent():
-	_indent_spacer.custom_minimum_size.x = indent * 19
+# Indentation is a budget, not a fixed step. Depth would otherwise push the
+# thumbnail, the name and the show/hide button along until the right-hand end of
+# the row left the panel; the row cannot grow to fit, so what falls off the end
+# is the controls. `available_width` is what the list has to give (-1 when the
+# caller does not know yet, which keeps the plain step).
+func updateIndent(available_width: float = -1.0):
+	var wanted := float(indent * INDENT_STEP)
+	if available_width >= 0.0:
+		wanted = minf(wanted, maxf(0.0, available_width - _fixed_content_width()))
+	_indent_spacer.custom_minimum_size.x = wanted
 	_update_vis_display()
 	queue_redraw()
+
+
+# How far this row is actually indented, after the budget clamp.
+func indentWidth() -> float:
+	return _indent_spacer.custom_minimum_size.x
+
+
+# Everything in the row that cannot be given up: each visible item except the
+# indent spacer and the name, the separations between them, and the space the
+# name itself must keep.
+func _fixed_content_width() -> float:
+	var fixed := MIN_NAME_WIDTH
+	var items := 0
+	for child in _hbox.get_children():
+		if not child.visible:
+			continue
+		items += 1
+		if child == _indent_spacer or child == _name_label:
+			continue
+		fixed += child.get_combined_minimum_size().x
+	return fixed + maxf(0.0, items - 1) * ITEM_SEPARATION
 
 func updateVis():
 	_update_vis_display()
