@@ -311,9 +311,10 @@ func ndi_mark_dirty():
 		ndi_manager.mark_dirty()
 
 func _process(delta):
-	# Freeze bounce while dragging the NDI crop box
+	# Freeze bounce while dragging the NDI crop box, and while edit-mode motion is
+	# paused — both want the avatar held at its resting height rather than mid-arc.
 	var crop_frozen = ndi_manager != null and ndi_manager.crop_dragging
-	if crop_frozen:
+	if crop_frozen or Global.motion_paused():
 		origin.get_parent().position.y = 0
 		yVel = 0
 		bounceChange = 0

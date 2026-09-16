@@ -193,6 +193,24 @@ func update(delta: float) -> void:
 	apply_to_children()
 
 
+# Hold the chain at its rest shape (edit-mode motion pause). Same bookkeeping as
+# update(), minus the physics step: the chain is snapped onto the rest path and
+# linked children are re-placed on it, which by construction puts each of them
+# back at the position it was authored at.
+func rest() -> void:
+	if appendage == null:
+		set_active(true)
+		if appendage == null:
+			return
+	_owner.sprite.rotation = 0.0
+	_owner.sprite.scale = Vector2.ONE
+	if appendage.segment_count != clampi(int(_owner.wiggleSegments), 2, 48):
+		apply_geometry()
+	appendage.reset()
+	attach_children()
+	apply_to_children()
+
+
 func parameters() -> Dictionary:
 	return {
 		"stiffness": _owner.wiggleStiffness,

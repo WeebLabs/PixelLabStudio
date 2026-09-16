@@ -7,6 +7,7 @@ const SpriteCollisionRuntime = preload("res://ui_scenes/selectedSprite/sprite_co
 const SpriteHierarchy = preload("res://ui_scenes/selectedSprite/sprite_hierarchy.gd")
 const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 const SpriteVisualRuntime = preload("res://ui_scenes/selectedSprite/sprite_visual_runtime.gd")
+const SpriteRestPose = preload("res://ui_scenes/selectedSprite/sprite_rest_pose.gd")
 const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
 const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
 const WiggleRuntime = preload("res://effects/wiggle/wiggle_runtime.gd")
@@ -427,21 +428,20 @@ func _process(delta):
 	# stabilizes.
 	if Global.main != null and Global.main.resize_active:
 		return
+	# Edit-mode motion pause: hold this layer at its authored rest pose (see
+	# sprite_rest_pose.gd) instead of advancing anything. Re-applied every frame, so
+	# a layer moved or re-rigged while paused still shows its true rest position.
+	# `tick` does not advance either: it drives frame animation and the wiggle wag.
+	if Global.motion_paused():
+		_update_selection_gizmos()
+		SpriteRestPose.apply(self)
+		_update_path_editor()
+		talkBlink()
+		return
+
 	tick += 1
 	_anim_update(delta)
-	if Global.heldSprite == self:
-
-		grabArea.visible = true
-		originSprite.visible = true
-
-		var cam_zoom = Global.main.camera.zoom.x
-		for child in grabArea.get_children():
-			if child is Line2D:
-				child.width = 3.0 / cam_zoom
-
-	else:
-		grabArea.visible = false
-		originSprite.visible = false
+	_update_selection_gizmos()
 	
 	if staticElement:
 		# Follow drag, wobble, rotation, and stretch as normal — but cancel the
@@ -507,6 +507,22 @@ func _process(delta):
 
 	if !blinkAnimation():
 		animation()
+
+# Selection chrome: the grab outline and origin handle, shown only while this is
+# the held sprite, the outline kept a constant on-screen thickness as we zoom.
+func _update_selection_gizmos():
+	if Global.heldSprite == self:
+		grabArea.visible = true
+		originSprite.visible = true
+
+		var cam_zoom = Global.main.camera.zoom.x
+		for child in grabArea.get_children():
+			if child is Line2D:
+				child.width = 3.0 / cam_zoom
+	else:
+		grabArea.visible = false
+		originSprite.visible = false
+
 
 func animation():
 	if frames <= 1:

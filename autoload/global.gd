@@ -65,6 +65,12 @@ var eyeTrackPickBroadcast: bool = false
 # Sprite-level eyeTrack flags are never modified by this switch.
 var eyeTrackingGloballyEnabled: bool = true
 var originMode = false
+# Edit-mode motion pause. While on, every motion system (bounce, wobble/animation
+# clips, eye tracking, rotational drag, stretch, frame animation, wiggle) is held
+# at its authored rest pose instead of advancing, so layers can be rigged against
+# what they actually look like at rest. Runtime-only: never saved, and gated on
+# edit mode by motion_paused() so player mode always animates.
+var motionPaused = false
 # On while tracing a layer's wiggle ribbon path on the canvas (entered from the
 # Physics tab). Canvas clicks are routed to the WigglePathEditor instead of the
 # usual sprite selection while this is set.
@@ -205,6 +211,7 @@ func detach_main(main_node: Node) -> void:
 	reparentMode = false
 	originMode = false
 	wigglePathMode = false
+	motionPaused = false
 	eyeTrackPickMode = false
 	eyeTrackPickSource = null
 	eyeTrackPickBroadcast = false
@@ -260,6 +267,13 @@ func sprite_from_hit_area(area: Area2D) -> Node:
 			return null
 		current = current.get_parent()
 	return current
+
+
+# The one place that decides whether motion is frozen. The pause is an editing
+# aid, so it only applies while the editor is up: swapping to player mode resumes
+# motion without clearing the toggle.
+func motion_paused() -> bool:
+	return motionPaused and main != null and main.editMode
 
 
 func is_text_entry_active() -> bool:

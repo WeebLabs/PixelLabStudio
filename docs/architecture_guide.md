@@ -75,6 +75,7 @@ PNGTuberPlus/
 │   │   ├── sprite_collision_builder.gd Alpha/fallback hitbox construction
 │   │   ├── sprite_collision_runtime.gd Shape lifecycle and active-state coordination
 │   │   ├── sprite_hierarchy.gd   Pure child/descendant lookup policy
+│   │   ├── sprite_rest_pose.gd   Authored rest pose for the edit-mode motion pause (2026-09-16)
 │   │   ├── sprite_visibility_policy.gd Pure talk/blink/costume visibility
 │   │   └── sprite_visual_runtime.gd Texture, normal, blend, and depth synchronization
 │   ├── spriteEditMenu/
@@ -380,8 +381,31 @@ a row pinned to both edges; the center zone sits in its own full-width
 Edit mode keeps its editing actions in the center and puts the mode switch in the
 left zone; the viewer bar uses all three.
 
-- **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center. The file now only declares items; it owns no styling.
+- **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center; `Pause Motion` right. The file now only declares items; it owns no styling.
 - **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a gear icon for Settings, right.
+
+> Added: 2026-09-16 — **Motion pause** (edit bar, right zone). A toggle button
+> that holds the whole avatar at its authored rest pose so a rig can be edited
+> against what it actually looks like at rest. It sets `Global.motionPaused`; every
+> consumer reads `Global.motion_paused()`, which also requires `main.editMode`, so
+> swapping to player mode resumes motion without clearing the toggle. The flag is
+> runtime-only: never saved, never in undo, and cleared by `Global.detach_main`.
+> Two consumers. `main.gd` `_process` folds it into the existing NDI crop freeze
+> branch, pinning `OriginMotion.position.y`, `yVel` and `bounceChange` at rest.
+> `spriteObject._process` takes an early branch that calls
+> `SpriteRestPose.apply(self)` (`ui_scenes/selectedSprite/sprite_rest_pose.gd`)
+> instead of advancing anything: the animator is reset and `_animRot`/`_animTrans`,
+> eye-track offset/rotation and `_micRot` are zeroed, `wob` returns to origin, the
+> dragger and `DragOrigin` snap onto it, sprite rotation/scale reset, frame
+> animation returns to frame 0, and `_wiggleRuntime.rest()` snaps the chain onto
+> its rest path and re-places linked children on it (which by construction lands
+> each child exactly where it was authored). `tick` does not advance, so frame
+> animation and the wiggle auto-wag are frozen too. The rest pose is re-applied
+> every frame rather than once on entry, so a layer moved or re-rigged while
+> paused still shows its true rest position. The rest pass arms `_force_drag_snap`
+> so unpausing does not read the pause as one huge frame of movement and feed it
+> into rotational drag and stretch. The selection chrome moved out of `_process`
+> into `_update_selection_gizmos()` so both the live and paused paths draw it.
 
 > Updated: 2026-08-17 — The two mic controls are **threshold markers, not
 > knobs**. Each is a meter with a slider riding on it, both on the same scale
