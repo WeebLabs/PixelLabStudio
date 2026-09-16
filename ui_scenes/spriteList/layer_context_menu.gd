@@ -31,11 +31,20 @@ static func open(list: Node, sprite) -> PopupMenu:
 	menu.id_pressed.connect(func(id: int): _activate(list, sprite, id))
 	menu.popup_hide.connect(func(): menu.queue_free())
 	list.get_tree().root.add_child(menu)
-	# The OS cursor position, not the Control's: the viewport is stretched
-	# (window/stretch/scale), so control coordinates are not screen pixels and a
-	# popup placed from them lands short of the cursor.
-	menu.popup(Rect2i(DisplayServer.mouse_get_position(), Vector2i(0, 0)))
+	menu.popup(Rect2i(_cursor_position(list), Vector2i(0, 0)))
 	return menu
+
+
+# Where to put the menu, which depends on who is drawing it. Godot embeds
+# subwindows in the main viewport by default, and an embedded popup is placed in
+# the VIEWPORT's coordinates, not the screen's. Handing it screen pixels put the
+# menu far to the right of the viewport, where it was clamped into the top-right
+# corner. Only a popup that is a real OS window wants screen pixels.
+static func _cursor_position(list: Node) -> Vector2i:
+	var root := list.get_tree().root
+	if root.gui_embed_subwindows:
+		return Vector2i(root.get_mouse_position())
+	return DisplayServer.mouse_get_position()
 
 
 static func _activate(list: Node, sprite, id: int) -> void:
@@ -77,20 +86,24 @@ static func confirm_delete(list: Node, sprite) -> void:
 	dialog.set_panel_min_size(DELETE_PANEL)
 	dialog.set_title("Delete \"%s\"?" % sprite.displayName())
 
-	var with_children: CheckBox = null
 	if children > 0:
 		dialog.add_message(
 			"This layer has %d layer%s under it. They are kept by default and move up to this layer's own parent."
 			% [children, "" if children == 1 else "s"]
 		)
-		with_children = dialog.add_checkbox("Also delete the layers under it", false)
+	else:
+		dialog.add_message("Nothing is linked under this layer.")
+	# The checkbox is always on the prompt, greyed when there is nothing under
+	# this layer, so the choice reads the same way every time.
+	var with_children := dialog.add_checkbox("Also delete the layers under it", false)
+	with_children.disabled = children == 0
 
 	dialog.add_actions([
 		{
 			"text": "Delete",
 			"danger": true,
 			"callback": func():
-				var include := with_children != null and with_children.button_pressed
+				var include := with_children.button_pressed
 				dialog.queue_free()
 				if is_instance_valid(sprite):
 					Global.main.delete_layer(sprite, include),

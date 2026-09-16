@@ -730,9 +730,16 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > Added: 2026-09-16 — Right-clicking a row selects that layer and opens
 > `ui_scenes/spriteList/layer_context_menu.gd`: Duplicate, Rename, Delete. The
 > menu is built per click and frees itself on close, so it never outlives the row
-> it belongs to. It pops at `DisplayServer.mouse_get_position()` rather than the
-> row's `get_screen_position()`, because the viewport is stretched
-> (`window/stretch/scale`) and control coordinates are not screen pixels.
+> it belongs to.
+>
+> It opens at `root.get_mouse_position()`. Godot embeds subwindows in the main
+> viewport by default, and an embedded popup is positioned in VIEWPORT
+> coordinates; `root.get_mouse_position()` is the cursor in exactly that space
+> (`(screen cursor - window position) / content_scale_factor`, measured). Screen
+> pixels from `DisplayServer.mouse_get_position()` are far outside a viewport that
+> the 1.5 content scale makes smaller than the window, so the menu was clamped
+> into the top-right corner. `Control.get_screen_position()` is wrong for the same
+> reason.
 >
 > **Rename** writes `layerName`, a normal layer field: in `SpriteState`'s
 > `SIMPLE_FIELDS`, so it is saved, undone and copied by duplication for free, and
@@ -741,9 +748,10 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
 > there from the row, so the layer and its row read one implementation).
 >
-> **Delete** asks first, through a `ModalDialogUI` prompt. When the layer has
-> descendants the prompt says how many and offers "Also delete the layers under
-> it", unchecked. The sidebar's trash button opens the same prompt.
+> **Delete** asks first, through a `ModalDialogUI` prompt. "Also delete the layers
+> under it" is always on the prompt and always starts unchecked, greyed out when
+> nothing is linked under the layer, so the choice reads the same way every time.
+> The sidebar's trash button opens the same prompt.
 >
 > `avatar_controller.delete_layer(sprite, include_children)` is the one delete
 > path. By default the direct children survive: `unlinkChildren` lifts them to the

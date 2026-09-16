@@ -3,6 +3,7 @@ extends Node
 const MAIN_SCENE := preload("res://main_scenes/main.tscn")
 const AvatarSaveControllerScript = preload("res://main_scenes/controllers/save_controller.gd")
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 
 const REGRESSION_FIXTURE := "res://tests/fixtures/avatar_scene_regression.json"
 const INVALID_FIXTURE := "res://tests/fixtures/avatar_duplicate_id.json"
@@ -50,6 +51,7 @@ func _run() -> void:
 	await _test_layer_list_deletion()
 	await _test_layer_deletion_children()
 	await _test_layer_rename()
+	await _test_layer_context_menu()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -356,6 +358,65 @@ func _test_layer_deletion_children() -> void:
 	for _frame in range(3):
 		await get_tree().process_frame
 	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "undoing a deletion with children restores both layers")
+
+
+# The right-click menu opens where the cursor is, and the delete prompt always
+# offers the choice about the layers underneath.
+func _test_layer_context_menu() -> void:
+	var list = Global.spriteList
+	var sprite = Global.sprite_by_id(COSTUME_TWO_ID)
+	if sprite == null:
+		return
+
+	var menu: PopupMenu = LayerContextMenu.open(list, sprite)
+	await get_tree().process_frame
+	assert_not_null(menu, "right-clicking a layer opens its menu")
+	if menu == null:
+		return
+	assert_equal(menu.item_count, 4, "the layer menu offers duplicate, rename and delete")
+	# Subwindows are embedded by default, and an embedded popup is positioned in
+	# viewport coordinates. Screen coordinates put the menu off the right edge of
+	# the viewport, where it was clamped into the corner.
+	assert_true(get_tree().root.gui_embed_subwindows, "this project embeds its subwindows")
+	assert_equal(
+		Vector2i(menu.position), Vector2i(get_tree().root.get_mouse_position()),
+		"the menu opens at the cursor",
+	)
+	menu.hide()
+	await get_tree().process_frame
+
+	# The prompt for a layer with children, and for one without.
+	for target in [sprite, Global.sprite_by_id(NESTED_ID)]:
+		if target == null:
+			continue
+		LayerContextMenu.confirm_delete(list, target)
+		await get_tree().process_frame
+		var checkbox := _prompt_checkbox()
+		assert_not_null(checkbox, "the delete prompt always shows the child-layer choice")
+		if checkbox != null:
+			assert_false(checkbox.button_pressed, "the child-layer choice starts unchecked")
+			assert_equal(
+				checkbox.disabled, target.getAllDescendants().is_empty(),
+				"the child-layer choice is only usable when there are layers underneath",
+			)
+		_dismiss_prompt()
+		await get_tree().process_frame
+
+
+func _prompt_checkbox() -> CheckBox:
+	for dialog in _main.get_node("UILayer").get_children():
+		if not dialog.has_method("add_checkbox"):
+			continue
+		for item in dialog.column.get_children():
+			if item is CheckBox:
+				return item
+	return null
+
+
+func _dismiss_prompt() -> void:
+	for dialog in _main.get_node("UILayer").get_children():
+		if dialog.has_method("add_checkbox"):
+			dialog.queue_free()
 
 
 # A renamed layer reads by its own name everywhere the list shows one, and the
