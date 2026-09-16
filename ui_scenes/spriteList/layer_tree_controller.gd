@@ -45,22 +45,7 @@ func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
 	await _owner.get_tree().process_frame
 	if generation != _update_generation:
 		return
-	var sprites: Array = _global.sprite_nodes()
-	if sort_by_z:
-		# Sort by z, breaking ties on registry order so the result is STABLE.
-		# Godot's sort is not stable, and rigs routinely leave many layers on the
-		# same z (20 of 54 on a real avatar), so a bare `a.z > b.z` reshuffled
-		# those layers on every rebuild: delete a layer and the list came back in
-		# a different order, with a different row at the top. Registry order is
-		# insertion order, which does not move when a layer is removed.
-		var registry_order := {}
-		for index in sprites.size():
-			registry_order[sprites[index]] = index
-		sprites.sort_custom(func(a, b):
-			if a.z != b.z:
-				return a.z > b.z
-			return registry_order[a] < registry_order[b]
-		)
+	var sprites := _sorted_sprites(sort_by_z)
 
 	var parented_rows := []
 	var rows := []
@@ -119,43 +104,78 @@ func refresh_hierarchy(pending_scroll_target = null) -> void:
 	await _consume_pending_scroll(pending_scroll_target)
 
 
-# Drop one layer's row in place, for deletion. Rebuilding the list would work,
-# but it throws away the scroll position and sends the user back to the top of a
-# long list every time they delete something. The remaining rows are untouched,
-# so the deleted row simply disappears from where it was.
-#
-# The delete command unlinks the layer's children first, so their rows become
-# roots here.
-func remove_sprite_row(sprite, filter_text := "") -> void:
-	var removed = null
+# Live layers in list order: by z, breaking ties on registry order so the result
+# is STABLE. Godot's sort is not stable, and rigs routinely leave many layers on
+# the same z (20 of 54 on a real avatar), so a bare `a.z > b.z` reshuffled those
+# layers whenever the input array changed: delete a layer and the list came back
+# in a different order, with a different row at the top. Registry order is
+# insertion order, which does not move when a layer is removed.
+func _sorted_sprites(sort_by_z: bool) -> Array:
+	var sprites: Array = _global.sprite_nodes()
+	sprites = sprites.filter(func(sprite): return not sprite.is_queued_for_deletion())
+	if not sort_by_z:
+		return sprites
+	var registry_order := {}
+	for index in sprites.size():
+		registry_order[sprites[index]] = index
+	sprites.sort_custom(func(a, b):
+		if a.z != b.z:
+			return a.z > b.z
+		return registry_order[a] < registry_order[b]
+	)
+	return sprites
+
+
+# Bring the existing rows into line with the live layers: drop rows whose layer
+# is gone, add rows for layers that have appeared, then re-flatten and re-indent.
+# Deleting, duplicating and undoing all go through here rather than update_data(),
+# because a rebuild clears every row and builds the list again a frame later,
+# which blanks the panel and throws away both the scroll position and which
+# groups the user had collapsed.
+func sync_rows(sort_by_z := true) -> void:
+	var sprites := _sorted_sprites(sort_by_z)
+	var row_for := {}
 	for row in _container.get_children():
-		if row.sprite == sprite:
-			removed = row
-			break
-	if removed == null:
-		return
+		if is_instance_valid(row.sprite) and not row.sprite.is_queued_for_deletion():
+			row_for[row.sprite] = row
+			continue
+		_container.remove_child(row)
+		row.queue_free()
 
-	for child_row in removed.childrenTags:
-		child_row.parentTag = null
-		child_row.parent = null
-	var parent_row = removed.parentTag
-	if parent_row != null:
-		parent_row.childrenTags.erase(removed)
-		if parent_row.childrenTags.is_empty():
-			parent_row._collapse_btn.text = ""
-			parent_row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			parent_row.collapsed = false
+	var rows := []
+	for sprite in sprites:
+		var row = row_for.get(sprite)
+		if row == null:
+			row = _row_script.new()
+			row.spritePath = sprite.path
+			row.sprite = sprite
+			_container.add_child(row)
+		rows.append(row)
 
-	# Out of the container before the reorder, since queue_free() leaves it in
-	# place until the end of the frame.
-	_container.remove_child(removed)
-	removed.queue_free()
+	var sprite_to_row := {}
+	for row in rows:
+		row.childrenTags = []
+		row.parentTag = null
+		row.parent = row.sprite.parentSprite
+		if row.parent == null and row.sprite.parentId != null:
+			row.parent = _global.sprite_by_id(row.sprite.parentId)
+		sprite_to_row[row.sprite] = row
+	for row in rows:
+		var parent_row = sprite_to_row.get(row.parent) if row.parent != null else null
+		if parent_row == null:
+			continue
+		row.parentTag = parent_row
+		parent_row.childrenTags.append(row)
 
-	_apply_order_and_indentation(_flatten(_container.get_children()))
-	if filter_text.is_empty():
-		apply_collapse_visibility()
-	else:
-		filter(filter_text)
+	for row in rows:
+		if row.childrenTags.is_empty():
+			row.collapsed = false
+			row._collapse_btn.text = ""
+			row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		elif row.collapsed:
+			row._collapse_btn.text = "▶"
+	_apply_order_and_indentation(_flatten(rows))
+	apply_collapse_visibility()
 
 
 # Show every row whose ancestors are all expanded. Used after the tree changes
@@ -197,6 +217,11 @@ func filter(text: String) -> void:
 		while ancestor != null:
 			ancestor.visible = true
 			ancestor = ancestor.parentTag
+
+
+func refresh_names() -> void:
+	for row in _container.get_children():
+		row.refreshName()
 
 
 func update_all_visible() -> void:

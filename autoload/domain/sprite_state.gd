@@ -25,6 +25,7 @@ const SIMPLE_FIELDS := {
 	"animSpeed": "animSpeed",
 	"clipped": "clipped",
 	"toggle": "toggle",
+	"layerName": "layerName",
 	"eyeTrack": "eyeTrack",
 	"eyeTrackDistance": "eyeTrackDistance",
 	"eyeTrackSpeed": "eyeTrackSpeed",

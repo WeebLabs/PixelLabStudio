@@ -52,9 +52,13 @@ func on_state_restored(scope: Dictionary) -> void:
 		_main.onWindowSizeChange()
 		return
 	if scope.get("structure_changed", false):
-		_global.spriteList.updateData()
+		# Reconcile rather than rebuild: undoing a deletion used to blank the
+		# whole list and build it again a frame later.
+		_global.spriteList.syncRows()
 	elif scope.get("hierarchy_changed", false):
 		_global.spriteList.refreshHierarchy()
+	# A restore can change layer names without changing the tree at all.
+	_global.spriteList.refreshNames()
 	if _global.heldSprite != null:
 		_global.spriteEdit.setImage()
 
@@ -136,8 +140,44 @@ func duplicate_selected() -> void:
 	else:
 		sprite.position = source.authoredPosition()
 	_global.select_sprite(sprite)
-	_global.spriteList.updateData()
+	_global.spriteList.syncRows()
 	_global.notify_user("Duplicated sprite.")
+
+
+# Delete one layer, optionally taking its descendants with it.
+#
+# By default the children survive: they keep their world position and re-attach
+# to the deleted layer's own parent, so the rest of the rig keeps its shape and
+# only the one layer disappears. With `include_children` the layer and everything
+# under it go, which is the destructive choice the delete prompt asks about.
+func delete_layer(sprite, include_children: bool) -> void:
+	if sprite == null or not is_instance_valid(sprite):
+		return
+	var doomed := [sprite]
+	if include_children:
+		doomed.append_array(sprite.getAllDescendants())
+	var orphans: Array = [] if include_children else sprite.getAllLinkedSprites()
+	var grandparent = sprite.parentSprite
+
+	MutationCommands.structural(func():
+		if not orphans.is_empty():
+			# Lifts the children out to the root, keeping their world position.
+			_global.unlinkChildren(sprite)
+			if grandparent != null and is_instance_valid(grandparent):
+				for child in orphans:
+					child.reparent(grandparent.sprite, true)
+					child.parentId = grandparent.id
+					child.parentSprite = grandparent
+		for layer in doomed:
+			if is_instance_valid(layer):
+				layer.queue_free()
+		return true)
+
+	if _global.heldSprite != null and doomed.has(_global.heldSprite):
+		_global.clear_selection()
+	# One row out of the list rather than a rebuild, so the panel does not blank
+	# and the user keeps their place in a long list.
+	_global.spriteList.syncRows()
 
 
 # `legacy_canvas` is non-zero only when the user accepted the compatibility

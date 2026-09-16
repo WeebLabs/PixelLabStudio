@@ -199,6 +199,9 @@ var tick = 0
 
 #Vis toggle
 var toggle = "null"
+# User-given name for this layer. Empty means the name is read off the image
+# path, which is where every layer's name came from before renaming existed.
+var layerName = ""
 var _skip_ready_reparent = false
 var _prebuilt_pma_image: Image = null
 var _prebuilt_polygons: Array = []
@@ -589,6 +592,14 @@ func blinkAnimation():
 				sprite.frame += 1
 
 	return true
+
+# What this layer is called in the UI: its own name if it has been renamed, and
+# otherwise the image file's name.
+func displayName() -> String:
+	if layerName != "":
+		return layerName
+	return SpriteHierarchy.display_name(path)
+
 
 func delete():
 	queue_free()

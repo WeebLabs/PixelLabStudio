@@ -725,15 +725,45 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 > Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
+### Layer context menu (right-click a row)
+
+> Added: 2026-09-16 — Right-clicking a row selects that layer and opens
+> `ui_scenes/spriteList/layer_context_menu.gd`: Duplicate, Rename, Delete. The
+> menu is built per click and frees itself on close, so it never outlives the row
+> it belongs to. It pops at `DisplayServer.mouse_get_position()` rather than the
+> row's `get_screen_position()`, because the viewport is stretched
+> (`window/stretch/scale`) and control coordinates are not screen pixels.
+>
+> **Rename** writes `layerName`, a normal layer field: in `SpriteState`'s
+> `SIMPLE_FIELDS`, so it is saved, undone and copied by duplication for free, and
+> absent from older saves, where it defaults to empty. `spriteObject.displayName()`
+> is the one place that decides what a layer is called: `layerName` when set,
+> otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
+> there from the row, so the layer and its row read one implementation).
+>
+> **Delete** asks first, through a `ModalDialogUI` prompt. When the layer has
+> descendants the prompt says how many and offers "Also delete the layers under
+> it", unchecked. The sidebar's trash button opens the same prompt.
+>
+> `avatar_controller.delete_layer(sprite, include_children)` is the one delete
+> path. By default the direct children survive: `unlinkChildren` lifts them to the
+> root keeping their world position, and they are then re-attached to the deleted
+> layer's own parent, so the rig keeps its shape and only the one layer goes. With
+> `include_children` the layer and every descendant are freed.
+
 ### Deleting a layer from the list
 
-> Added: 2026-09-16 — A deletion removes that one row in place
-> (`layer_tree_controller.remove_sprite_row`), instead of calling `update_data()`
-> to rebuild the list. A rebuild threw away the scroll position, so deleting
-> anything sent the user back to the top of a long list. The row's children become
-> roots (the delete command unlinks them first), the tree is re-flattened and
-> re-indented, and `apply_collapse_visibility()` re-shows rows whose collapsed
-> ancestor has just gone. A live filter is re-applied instead.
+> Added: 2026-09-16 — Layers appearing or disappearing reconcile the existing
+> rows (`layer_tree_controller.sync_rows`, via `viewer.syncRows()`) instead of
+> calling `update_data()` to rebuild the list. Rows whose layer is gone are
+> dropped, rows for new layers are added, and the tree is re-flattened and
+> re-indented; `apply_collapse_visibility()` re-shows rows whose collapsed
+> ancestor has just gone, and a live filter is re-applied. A rebuild clears every
+> row and builds the list again a frame later, which blanks the panel and throws
+> away both the scroll position and which groups were collapsed: deleting sent the
+> user back to the top of a long list, and undoing a deletion visibly flashed the
+> whole panel. Deletion, duplication and undo restores all go through the
+> reconciler; `update_data()` stays for avatar loads and costume switches.
 >
 > `update_data()`'s z sort also breaks ties on registry order (insertion order,
 > which does not move when a layer is removed). Godot's sort is not stable and

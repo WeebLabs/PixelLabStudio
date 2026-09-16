@@ -48,6 +48,8 @@ func _run() -> void:
 	await _test_idle_motion()
 	await _test_click_cycling()
 	await _test_layer_list_deletion()
+	await _test_layer_deletion_children()
+	await _test_layer_rename()
 	await _test_wiggle_child_follow()
 	await _test_costumes()
 	await _test_command_history()
@@ -287,7 +289,7 @@ func _test_layer_list_deletion() -> void:
 	expected.erase(victim.id)
 
 	Global.select_sprite(victim)
-	list._on_trash_pressed()
+	_main.delete_layer(victim, false)
 	# Enough frames for a full rebuild to have finished, so the order assertion
 	# reads a settled list either way.
 	for _frame in range(3):
@@ -307,6 +309,83 @@ func _test_layer_list_deletion() -> void:
 	UndoManager.undo()
 	await get_tree().process_frame
 	await get_tree().process_frame
+
+
+# Deleting a layer keeps the layers under it by default, moving them up to the
+# deleted layer's own parent. Only the checkbox on the prompt takes them too.
+func _test_layer_deletion_children() -> void:
+	var list = Global.spriteList
+	var scroll_container: ScrollContainer = list.get_node("ScrollContainer")
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var child = Global.sprite_by_id(NESTED_ID)
+	assert_not_null(parent, "the fixture has a layer with a child to delete")
+	assert_not_null(child, "the fixture has a child layer to keep")
+	if parent == null or child == null:
+		return
+	var grandparent_id = parent.parentId
+	var child_id = child.id
+
+	scroll_container.scroll_vertical = 30
+	_main.delete_layer(parent, false)
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	assert_true(is_instance_valid(child), "deleting a layer keeps the layers under it by default")
+	assert_equal(child.parentId, grandparent_id, "a kept child moves up to the deleted layer's parent")
+	assert_true(_row_sprite_ids().has(child_id), "a kept child keeps its row")
+	assert_false(_row_sprite_ids().has(COSTUME_TWO_ID), "the deleted layer loses its row")
+	assert_equal(scroll_container.scroll_vertical, 30, "deleting through the command keeps the scroll position")
+
+	# Undo has to put the layer back without blanking the list.
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "undoing a deletion restores the layer")
+	assert_true(_row_sprite_ids().has(COSTUME_TWO_ID), "undoing a deletion restores its row")
+	assert_equal(scroll_container.scroll_vertical, 30, "undoing a deletion keeps the scroll position")
+
+	# The checkbox path: the layer and everything under it.
+	var again = Global.sprite_by_id(COSTUME_TWO_ID)
+	_main.delete_layer(again, true)
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES - 2, "deleting with children takes the descendants too")
+	assert_false(_row_sprite_ids().has(NESTED_ID), "a deleted child loses its row")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "undoing a deletion with children restores both layers")
+
+
+# A renamed layer reads by its own name everywhere the list shows one, and the
+# name is ordinary layer state: undoable, saved, copied by duplication.
+func _test_layer_rename() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	var original: String = sprite.displayName()
+	MutationCommands.set_layer_property(sprite, "layerName", "Body")
+	Global.spriteList.refreshNames()
+	await get_tree().process_frame
+
+	assert_equal(sprite.displayName(), "Body", "a renamed layer reports its own name")
+	assert_true(_row_names().has("Body"), "the list row shows the new name")
+	assert_true(SpriteState.capture_save(sprite).has("layerName"), "the name is written to the save file")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_by_id(BASE_ID).displayName(), original, "undo restores the previous name")
+	assert_false(_row_names().has("Body"), "undo puts the old name back on the row")
+
+
+func _row_names() -> Array:
+	var names := []
+	for row in Global.spriteList.container.get_children():
+		if is_instance_valid(row.sprite):
+			names.append(row._name_label.text)
+	return names
 
 
 func _row_sprite_ids() -> Array:

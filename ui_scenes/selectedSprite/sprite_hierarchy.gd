@@ -28,3 +28,17 @@ static func descendants(sprite_nodes: Array, root_id: Variant) -> Array:
 		result.append(current)
 		stack.append_array(children_by_parent.get(current.id, []))
 	return result
+
+
+# A layer's fallback name: the image file's own name, with the import-scheme
+# prefixes and the extension taken off.
+static func display_name(path: String) -> String:
+	if path.begins_with("psd://"):
+		return path.substr(6)
+	if path.begins_with("animated://"):
+		return path.substr(11)
+	var filename := path.get_file()
+	var extension := filename.get_extension()
+	if extension != "":
+		filename = filename.substr(0, filename.length() - extension.length() - 1)
+	return filename

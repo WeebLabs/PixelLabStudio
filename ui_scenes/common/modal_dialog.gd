@@ -32,6 +32,7 @@ const BUTTON_MIN_SIZE := Vector2(160, 28)
 const BUTTON_SEPARATION := 16
 const BUTTON_DANGER_HOVER := Color(1.0, 0.6, 0.65)
 
+const FIELD_HEIGHT := 28
 const PROGRESS_HEIGHT := 20
 const PROGRESS_TRACK_COLOR := Color(0.2, 0.2, 0.22)
 const PROGRESS_FILL_COLOR := SidebarUIFactory.SLIDER_FILL_ENABLED
@@ -163,6 +164,34 @@ func add_actions(actions: Array) -> HBoxContainer:
 		button.pressed.connect(action["callback"])
 		row.add_child(button)
 	return row
+
+
+# An option the prompt's action reads when it fires, e.g. "also delete the
+# children". Centred with the rest of the column.
+func add_checkbox(text: String, pressed := false) -> CheckBox:
+	var box := CheckBox.new()
+	box.text = text
+	box.button_pressed = pressed
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_theme_font_size_override("font_size", BODY_FONT_SIZE)
+	box.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
+	column.add_child(box)
+	return box
+
+
+# A single-line entry, focused and fully selected so the user can just type.
+# `submitted` fires on Enter, for prompts whose confirm action is one field.
+func add_text_field(initial: String, submitted := Callable()) -> LineEdit:
+	var field := LineEdit.new()
+	field.text = initial
+	field.custom_minimum_size = Vector2(0, FIELD_HEIGHT)
+	field.add_theme_font_size_override("font_size", BODY_FONT_SIZE)
+	if submitted.is_valid():
+		field.text_submitted.connect(func(_text: String): submitted.call())
+	column.add_child(field)
+	field.call_deferred("grab_focus")
+	field.call_deferred("select_all")
+	return field
 
 
 func set_panel_min_size(minimum: Vector2) -> void:

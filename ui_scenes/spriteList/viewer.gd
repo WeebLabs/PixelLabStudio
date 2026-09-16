@@ -6,6 +6,7 @@ const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_controller.gd")
 const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
 const LayerDetailsPanel = preload("res://ui_scenes/spriteList/layer_details_panel.gd")
+const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 
 @onready var container = $ScrollContainer/VBoxContainer
 var SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
@@ -549,15 +550,7 @@ func _on_unlink_pressed():
 func _on_trash_pressed():
 	if Global.heldSprite == null:
 		return
-	var deleted = Global.heldSprite
-	MutationCommands.structural(func():
-		Global.unlinkChildren(deleted)
-		deleted.queue_free()
-		return true)
-	Global.clear_selection()
-	# Drop the one row rather than rebuilding the list, so the list stays where
-	# the user was reading it instead of jumping back to the top.
-	_layer_tree.remove_sprite_row(deleted, _filter_field.text)
+	LayerContextMenu.confirm_delete(self, Global.heldSprite)
 
 # --- Costume button handlers ---
 
@@ -680,6 +673,18 @@ func updateData(sort_by_z: bool = true):
 	var pending_target = _pending_scroll_target
 	_pending_scroll_target = null
 	await _layer_tree.update_data(sort_by_z, pending_target)
+
+func refreshNames():
+	_layer_tree.refresh_names()
+
+
+# Bring the rows into line with the live layers, in place. Used wherever layers
+# appear or disappear (delete, duplicate, undo) so the panel never blanks.
+func syncRows(sort_by_z: bool = true):
+	_layer_tree.sync_rows(sort_by_z)
+	if not _filter_field.text.is_empty():
+		_layer_tree.filter(_filter_field.text)
+
 
 func refreshHierarchy():
 	var pending_target = _pending_scroll_target

@@ -1,6 +1,7 @@
 extends PanelContainer
 
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 
 var sprite = null
 var parent = null
@@ -90,7 +91,7 @@ func _ready():
 
 	# Sprite name — expands to fill, absorbs remaining space as indent grows
 	_name_label = Label.new()
-	_name_label.text = _display_name(spritePath)
+	_name_label.text = sprite.displayName()
 	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_name_label.clip_text = true
 	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -208,9 +209,23 @@ func _on_vis_toggled():
 	_update_vis_display()
 
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	if event.button_index == MOUSE_BUTTON_LEFT:
 		_select()
 		accept_event()
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
+		# Right-click acts on the row under the cursor, so it selects first: the
+		# menu's actions and the panels behind it all read the held layer.
+		_select()
+		LayerContextMenu.open(Global.spriteList, sprite)
+		accept_event()
+
+
+# Re-read the layer's name, after a rename.
+func refreshName():
+	if is_instance_valid(sprite):
+		_name_label.text = sprite.displayName()
 
 func _select():
 	# A layer row is a Control, so it never reaches the canvas click path and its
@@ -234,7 +249,7 @@ func _select():
 	Global.select_sprite(sprite)
 	Global.spriteEdit.setImage()
 
-	Global.notify_user("Selected sprite \"" + _display_name(sprite.path) + "\".")
+	Global.notify_user("Selected sprite \"" + sprite.displayName() + "\".")
 
 	sprite.set_physics_process(true)
 
@@ -323,14 +338,3 @@ func _set_descendants_visible(vis: bool):
 			child._set_descendants_visible(false)
 		else:
 			child._set_descendants_visible(true)
-
-static func _display_name(p: String) -> String:
-	if p.begins_with("psd://"):
-		return p.substr(6)
-	if p.begins_with("animated://"):
-		return p.substr(11)
-	var filename = p.get_file()
-	var ext = filename.get_extension()
-	if ext != "":
-		filename = filename.substr(0, filename.length() - ext.length() - 1)
-	return filename
