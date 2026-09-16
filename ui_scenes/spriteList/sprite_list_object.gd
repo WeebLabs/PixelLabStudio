@@ -248,7 +248,10 @@ func _gui_input(event: InputEvent):
 	if not (event is InputEventMouseButton and event.pressed):
 		return
 	if event.button_index == MOUSE_BUTTON_LEFT:
-		if event.is_command_or_control_pressed():
+		# Command on macOS, Control elsewhere, and Control on macOS too whenever
+		# the OS lets it through as a left click rather than turning it into a
+		# right click, which is the platform's own convention.
+		if event.is_command_or_control_pressed() or event.ctrl_pressed:
 			# Add or remove this one layer.
 			Global.toggle_sprite_selection(sprite)
 			Global.spriteEdit.setImage()
@@ -262,7 +265,9 @@ func _gui_input(event: InputEvent):
 	elif event.button_index == MOUSE_BUTTON_RIGHT:
 		# Right-click acts on the row under the cursor, so it selects first,
 		# unless that row is already part of a multi-selection: then the menu is
-		# about the group the user built.
+		# about the group the user built. A Control-click on macOS arrives here,
+		# as the OS turns it into a right click, so a row already in the selection
+		# keeps the group rather than collapsing it to one layer.
 		if not Global.is_sprite_selected(sprite) or Global.selected_sprites().size() < 2:
 			_select()
 		LayerContextMenu.open(Global.spriteList, sprite)

@@ -750,7 +750,12 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 ### Selecting several layers
 
 > Added: 2026-09-16 — Command-click (Control on Windows and Linux) adds or
-> removes one layer; Shift-click takes the range between the active layer and the
+> removes one layer. macOS turns Control-click into a right click before Godot
+> sees it, so on a Mac the multi-select modifier is Command, and a Control-click
+> opens the context menu instead; the row handler accepts `ctrl_pressed` as well
+> for the platforms where it does arrive as a left click. A right click on a row
+> that is already part of a multi-selection keeps the group, so a Control-click
+> inside the selection does not collapse it. Shift-click takes the range between the active layer and the
 > clicked one, in list order, skipping rows hidden by a collapsed parent or the
 > filter. An ordinary click replaces the selection.
 >
