@@ -59,6 +59,7 @@ func _run() -> void:
 	await _test_mixed_value_indicator()
 	await _test_transform_entry()
 	await _test_costume_keeps_selection()
+	await _test_layer_name_display()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -695,6 +696,34 @@ func _test_costume_keeps_selection() -> void:
 	_main.changeCostume(1)
 	await get_tree().process_frame
 	Global.clear_selection()
+
+
+# The left sidebar names the layer it is editing, without path or extension.
+func _test_layer_name_display() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	var heading: Label = Global.spriteEdit._name_heading
+
+	Global.select_sprite(sprite)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_equal(heading.text, sprite.displayName(), "the sidebar names the selected layer")
+	assert_false(heading.text.contains("/"), "the name carries no path")
+	assert_false(heading.text.contains("."), "the name carries no extension")
+
+	MutationCommands.set_layer_property(sprite, "layerName", "Left Arm")
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_equal(heading.text, "Left Arm", "a renamed layer shows its own name")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	Global.clear_selection()
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_equal(heading.text, "", "no selection, no name")
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

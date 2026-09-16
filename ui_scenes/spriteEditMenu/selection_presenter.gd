@@ -56,6 +56,7 @@ func sync_rotation_limits() -> void:
 
 func _clear() -> void:
 	_ui.preview.texture = null
+	_ui.name_heading.text = ""
 	_ui.parent_label.text = ""
 	_ui.position_fields.show_text("")
 	_ui.offset_fields.show_text("")
@@ -97,6 +98,10 @@ func _update_preview(sprite) -> float:
 
 
 func _update_parent(sprite) -> void:
+	# The layer's own name, with no path and no extension: displayName() already
+	# answers that, and follows a rename.
+	_ui.name_heading.text = sprite.displayName()
+
 	# With several layers selected, say so: every control below this line writes
 	# to all of them, and the values shown are the active layer's.
 	var selected: Array = _global.selected_sprites()

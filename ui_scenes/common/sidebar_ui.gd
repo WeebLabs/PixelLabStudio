@@ -29,6 +29,18 @@ static func create_panel_background(color := DEFAULT_PANEL_COLOR) -> ColorRect:
 	return background
 
 
+# A section heading: the sidebars' one place for a line of text that names what
+# is below it, rather than each panel re-deciding the size and colour.
+static func create_heading(text: String, font_size := 14) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", TEXT_HEADING)
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return label
+
+
 static func create_divider(size: Vector2, color := DEFAULT_DIVIDER_COLOR) -> ColorRect:
 	var divider := ColorRect.new()
 	divider.color = color

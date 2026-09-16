@@ -725,6 +725,19 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 > Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
 
+### The left sidebar names its layer
+
+> Added: 2026-09-16 — The position section opens with the selected layer's name,
+> a heading built by `SidebarUIFactory.create_heading()` and written by
+> `selection_presenter._update_parent()` from `spriteObject.displayName()`, which
+> already strips the path and the extension and follows a rename. It clips with an
+> ellipsis, so a long name cannot widen the panel. With several layers selected it
+> names the ACTIVE layer, the one whose values the panel is showing, while the
+> line under it reads "N layers selected".
+>
+> The two scene labels that used to print position and offset are gone, replaced
+> by the entry rows below.
+
 ### Position and offset entry (left sidebar)
 
 > Added: 2026-09-16 — The position and offset readouts are two numeric fields

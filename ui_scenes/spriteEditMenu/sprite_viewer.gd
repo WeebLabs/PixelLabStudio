@@ -12,6 +12,7 @@ const SelectionPresenter = preload("res://ui_scenes/spriteEditMenu/selection_pre
 
 var _preview: Sprite2D
 var _parent_label: Label
+var _name_heading: Label
 
 
 @onready var coverCollider = $Area2D/CollisionShape2D
@@ -84,8 +85,6 @@ var _anim_speed_slider: HSlider
 
 # Position section — parent label + 3 info labels (position / offset / layer).
 var _position_vbox: VBoxContainer
-var _pos_label: Label
-var _offset_label: Label
 var _pos_fields = VectorFieldRow.new()
 var _offset_fields = VectorFieldRow.new()
 var _layer_label: Label
@@ -118,30 +117,27 @@ func _ready():
 	_preview.position = Vector2(123, 65)
 	add_child(_preview)
 
-	# Position section — parent label + 3 info labels in a VBoxContainer.
-	# Replaces the prior offset-by-hand layout (and the offset shifts that used
-	# to push Label/Label2/Label3 down to make room for _parent_label).
+	# Position section, in a VBoxContainer: the layer's name, its parent, the
+	# position and offset entries, and its z. Replaces the prior hand-placed
+	# layout and the offset shifts that made room for _parent_label.
+	_name_heading = SidebarUIFactory.create_heading("")
 	_parent_label = Label.new()
 	_parent_label.text = "Root Element"
-	_pos_label = get_node("Position/Label")
-	_offset_label = get_node("Position/Label2")
+	get_node("Position/Label").visible = false
+	get_node("Position/Label2").visible = false
 	_layer_label = get_node("Position/Label3")
 	# Position and offset are typed in, not just read: the labels they replace
 	# only ever displayed what the canvas drag had already done.
 	_pos_fields.build("position")
 	_offset_fields.build("offset")
 	_position_vbox = _build_section_vbox($Position, Vector2(10, 155), 226,
-		[_parent_label, _pos_fields.row, _offset_fields.row, _layer_label])
-	_pos_label.visible = false
-	_offset_label.visible = false
+		[_name_heading, _parent_label, _pos_fields.row, _offset_fields.row, _layer_label])
 
-	# (Section position shifts are consolidated into a single block below the
-	# VBox creation — see "Section layout" comment further down.)
+	# (Section position shifts are consolidated below — see "Section layout".)
 
-	# Containerize the label+slider sections. Each scene-defined section node
-	# (Slider, Rotation, Animation) gets a VBoxContainer placed
-	# at the original first-widget offset; the section's existing children are
-	# reparented into it in display order, sliders set to SIZE_EXPAND_FILL.
+	# Containerize the label+slider sections: each scene-defined section (Slider,
+	# Rotation, Animation) gets a VBoxContainer at the original first-widget
+	# offset, its children reparented in display order, sliders SIZE_EXPAND_FILL.
 
 	# Slider — single drag label + DragSlider
 	_drag_label = get_node("Slider/Label")
@@ -219,7 +215,7 @@ func _ready():
 		_rdrag_label, _squash_label,
 		_rot_min_label, _rot_max_label,
 		_anim_frames_label, _anim_speed_label,
-		_pos_label, _offset_label, _layer_label,
+		_layer_label,
 		_parent_label,
 	]
 	for label in _labels:
@@ -338,8 +334,7 @@ func _selection_ui() -> Dictionary:
 	return {
 		"preview": _preview,
 		"parent_label": _parent_label,
-		"position_label": _pos_label,
-		"offset_label": _offset_label,
+		"name_heading": _name_heading,
 		"position_fields": _pos_fields,
 		"offset_fields": _offset_fields,
 		"layer_label": _layer_label,
