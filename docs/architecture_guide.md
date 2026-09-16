@@ -748,7 +748,7 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
 > there from the row, so the layer and its row read one implementation).
 >
-> **Replace image** (`import_controller.replace_layer`) swaps one layer's artwork.
+> **Replace** (`import_controller.replace_layer`) swaps one layer's artwork.
 > The menu bar's Replace takes a PSD or a folder and matches layers by name; this
 > one is aimed at a layer the user has already picked, so it offers PNG files only
 > and hands straight to the existing single-image path, which names and acts on

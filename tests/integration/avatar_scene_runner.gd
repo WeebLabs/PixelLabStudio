@@ -528,7 +528,7 @@ func _test_layer_context_menu() -> void:
 	var labels := []
 	for index in menu.item_count:
 		labels.append(menu.get_item_text(index))
-	assert_true(labels.has("Replace image..."), "the layer menu can replace this layer's image")
+	assert_true(labels.has("Replace"), "the layer menu can replace this layer's image")
 	# Subwindows are embedded by default, and an embedded popup is positioned in
 	# viewport coordinates. Screen coordinates put the menu off the right edge of
 	# the viewport, where it was clamped into the corner.

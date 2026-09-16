@@ -27,7 +27,7 @@ static func open(list: Node, sprite) -> PopupMenu:
 	var menu := PopupMenu.new()
 	menu.add_item("Duplicate", ITEM_DUPLICATE)
 	menu.add_item("Rename...", ITEM_RENAME)
-	menu.add_item("Replace image...", ITEM_REPLACE)
+	menu.add_item("Replace", ITEM_REPLACE)
 	menu.add_separator()
 	menu.add_item("Delete...", ITEM_DELETE)
 	menu.id_pressed.connect(func(id: int): _activate(list, sprite, id))
