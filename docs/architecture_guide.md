@@ -1342,6 +1342,21 @@ write behavior are specified in `docs/save_format.md`.
 > from `Global`, and reports worker-start failures without leaving modal UI or
 > stale thread references behind.
 
+> Updated: 2026-09-17 — `MAX_DECODED_BYTES` is 2 GB, raised from 512 MB. The
+> ceiling has to cover the parser's peak, and that peak is roughly twice the
+> canvas: `parse` decodes EVERY layer's channels into byte arrays first, then
+> walks the layers a second time to compose each RGBA `Image`, freeing a layer's
+> channel arrays only after composing it. A Clip Studio Paint export writes every
+> layer at full canvas size, so 145 untrimmed 1150x1200 layers are budgeted at
+> 1.5 GB (measured peak: 795 MB; the guard's 4 + min(channels, 4) bytes per pixel
+> is an upper bound). Such a file is only 15 MB on disk because PackBits collapses
+> the transparency: about 100 KB per layer against 5.26 MB of pixels, a 51x ratio.
+> The ceiling is a stopgap. The fix is to stream one layer at a time (decode →
+> compose → free) and crop each composed image to its opaque rectangle, carrying
+> the crop as the layer's offset, which would cut both the peak and the per-sprite
+> memory by about that same ratio. `decoded_images_fit`, and so the APNG frame
+> budget, shares the constant and was raised with it.
+
 > Updated: 2026-08-06 — Post-PSD premultiplication and alpha-polygon work uses
 > one `WorkerThreadPool` group task with an isolated result slot per layer,
 > replacing the previous coordinator that created one OS thread per selected

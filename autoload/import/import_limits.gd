@@ -8,7 +8,13 @@ const MAX_FILE_BYTES := 512 * 1024 * 1024
 const MAX_CHUNK_BYTES := 256 * 1024 * 1024
 const MAX_IMAGE_DIMENSION := 16384
 const MAX_IMAGE_PIXELS := 64 * 1024 * 1024
-const MAX_DECODED_BYTES := 512 * 1024 * 1024
+# Raised from 512 MB (2026-09-17) to admit PSDs whose every layer spans the full
+# canvas, which is how Clip Studio Paint exports them: 145 untrimmed layers of
+# 1150x1200 need about 1.5 GB, because the parser decodes every layer's channels
+# before it composes any of them and so holds both sets at once. The real fix is
+# to stream one layer at a time and crop each composed image to its opaque
+# rectangle; until then the ceiling is where the memory actually lands.
+const MAX_DECODED_BYTES := 2 * 1024 * 1024 * 1024
 const MAX_LAYERS := 10000
 const MAX_FRAMES := 4096
 const MAX_CHANNELS := 64
