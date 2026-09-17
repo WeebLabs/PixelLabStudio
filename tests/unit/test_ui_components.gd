@@ -5,6 +5,7 @@ const MenuBarComponent = preload("res://ui_scenes/common/menu_bar.gd")
 const MicMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 const LayerTreeController = preload("res://ui_scenes/spriteList/layer_tree_controller.gd")
 const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.gd")
+const TabStrip = preload("res://ui_scenes/common/tab_bar.gd")
 
 
 class FakeLayerRow extends HBoxContainer:
@@ -74,6 +75,7 @@ func run(t) -> void:
 	_test_sidebar_call_sites(t)
 	_test_layer_tree_controller(t)
 	_test_eye_tracking_policy(t)
+	_test_tab_underline_slide(t)
 
 
 func _test_decorative_controls_do_not_capture_input(t) -> void:
@@ -499,3 +501,49 @@ func _source_root() -> String:
 		if argument.begins_with("--source-root="):
 			return argument.trim_prefix("--source-root=").simplify_path()
 	return ""
+
+
+# Picking a tab slides the pink underline across; a reflow or the owner's
+# startup restore snaps it. The slide is polled rather than tweened, so the
+# thing that matters most is that it stops polling once it arrives.
+func _test_tab_underline_slide(t) -> void:
+	var bar = TabStrip.new()
+	bar.add_tab("One")
+	bar.add_tab("Two")
+	bar.add_tab("Three")
+	bar.set_bar_size(300.0)
+	var underline: ColorRect = bar._underline
+
+	bar.set_active(2)
+	t.assert_equal(underline.position.x, 200.0, "a programmatic restore snaps the underline to its tab")
+	t.assert_false(bar.is_processing(), "an idle tab strip does not poll")
+
+	bar.set_active(0, true)
+	t.assert_equal(underline.position.x, 200.0, "a picked tab leaves the underline where it was, to slide from there")
+	t.assert_true(bar.is_processing(), "picking a tab starts the slide")
+
+	bar._process(1.0 / 60.0)
+	var first_step: float = underline.position.x
+	t.assert_true(first_step < 200.0 and first_step > 0.0, "the first frame moves part of the way, not all of it")
+
+	for _frame in range(120):
+		if not bar.is_processing():
+			break
+		bar._process(1.0 / 60.0)
+	t.assert_equal(underline.position.x, 0.0, "the slide lands exactly on the target")
+	t.assert_false(bar.is_processing(), "the slide switches its own processing off on arrival")
+
+	# A resize mid-slide retargets rather than snapping, and the underline
+	# re-widths to the new segment.
+	bar.set_active(2, true)
+	bar._process(1.0 / 60.0)
+	bar.set_bar_size(600.0)
+	t.assert_equal(underline.size.x, 200.0, "a reflow re-widths the underline to the new segment")
+	t.assert_true(bar.is_processing(), "a reflow does not cancel a slide in flight")
+	for _frame in range(120):
+		if not bar.is_processing():
+			break
+		bar._process(1.0 / 60.0)
+	t.assert_equal(underline.position.x, 400.0, "the slide finishes at the resized target")
+
+	bar.free()

@@ -579,6 +579,22 @@ button.
 > it too. It builds its children on demand rather than only in `_ready`, so a
 > caller may add tabs before the strip enters the tree.
 
+> Updated: 2026-09-17 — **The underline slides between tabs.** `_layout()` now
+> only owns the underline's *target* (`_active * segment`) and its width; the
+> position is held in `_underline_x` and eased toward that target by `_process`.
+> The slide covers `SLIDE_WEIGHT` (0.25) of the remaining distance per 60 fps
+> frame, run through `MotionTiming.smooth()` so it takes the same time at any
+> frame rate, and snaps once it is within `SLIDE_SNAP` (0.5 px). It is polled
+> rather than tweened, matching the rest of the app, but `_process` is switched
+> off in `_ensure_built()` and again on arrival, so an idle strip costs nothing:
+> defining `_process` turns processing on by default, which is why the explicit
+> disable is there. Only a tab the user picked slides (`set_active(i, true)`);
+> the owner's startup restore passes `emit = false` and snaps, so the strip does
+> not animate in from the first tab on every launch, and a reflow snaps too
+> unless a slide is already in flight. The target is recomputed from the current
+> width each frame, so resizing the sidebar mid-slide retargets rather than
+> jumping. Covered by `test_ui_components._test_tab_underline_slide`.
+
 ---
 
 ## Modal Dialogs
