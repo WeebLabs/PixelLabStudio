@@ -293,6 +293,20 @@ func _test_modal_selection_guard(t) -> void:
 	var row := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/spriteList/sprite_list_object.gd"))
 	t.assert_true(_function_body(row, "func _select").contains("Global.main.fileSystemOpen"), "layer rows honour the same modal guard as the canvas")
 
+	# The ribbon path editor follows Global.heldSprite, so a selection change while
+	# it is open opens an editor on the newly clicked layer and auto-fits a ribbon
+	# path onto it. The canvas path was guarded; the layer list was not.
+	var cursor := FileAccess.get_file_as_string(source_root.path_join("ui_scenes/mouse/mouse_cursor.gd"))
+	var global_source := FileAccess.get_file_as_string(source_root.path_join("autoload/global.gd"))
+	var lock := _function_body(global_source, "func selection_locked")
+	t.assert_true(lock.contains("wigglePathMode"), "ribbon path editing locks the selection")
+	t.assert_true(lock.contains("originMode"), "origin adjustment locks the selection too")
+	t.assert_true(cursor.contains("Global.selection_locked()"), "canvas clicks read the shared selection lock")
+	t.assert_true(
+		_function_body(row, "func _gui_input").contains("Global.selection_locked()"),
+		"layer rows honour the selection lock the canvas path already had",
+	)
+
 
 # The body of a top-level function, for assertions about one call site.
 func _function_body(source: String, signature: String) -> String:

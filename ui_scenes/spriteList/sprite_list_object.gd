@@ -247,6 +247,15 @@ func _on_vis_toggled():
 func _gui_input(event: InputEvent):
 	if not (event is InputEventMouseButton and event.pressed):
 		return
+	# A layer row is a Control, so it bypasses the canvas click path and the
+	# selection lock that guards it. Without this the ribbon path editor followed
+	# the click onto the clicked layer and auto-fitted a ribbon path there. The
+	# row's own eye button is a separate Control and keeps working.
+	if Global.selection_locked():
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			Global.notify_user("Finish editing this layer before selecting another.")
+		accept_event()
+		return
 	if event.button_index == MOUSE_BUTTON_LEFT:
 		# Command on macOS, Control elsewhere, and Control on macOS too whenever
 		# the OS lets it through as a left click rather than turning it into a

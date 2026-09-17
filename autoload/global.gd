@@ -348,6 +348,15 @@ func begin_reparenting() -> bool:
 	return true
 
 
+# True while a click must not move the selection. The ribbon path editor lives
+# on the held layer and follows it, so letting a click move the selection opens
+# an editor on the newly clicked layer, which auto-fits a ribbon path onto
+# artwork the user never asked about. Origin mode pins the selection for the
+# same reason: the drag belongs to the layer it started on.
+func selection_locked() -> bool:
+	return wigglePathMode or originMode
+
+
 func set_wiggle_path_editing(enabled: bool) -> void:
 	wigglePathMode = enabled and heldSprite != null
 	if wigglePathMode:
