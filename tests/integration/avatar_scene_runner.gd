@@ -812,7 +812,41 @@ func _test_motion_is_time_based() -> void:
 	)
 	sprite.rdragStr = 0
 	sprite.dragSpeed = 0
+
+	# A sprite sheet steps on elapsed time, including at the Unlimited FPS
+	# setting, where max_fps is 0 and the old frame-count divisor collapsed to a
+	# step every frame.
+	var cap := Engine.max_fps
+	sprite.frames = 4
+	sprite.animSpeed = 12          # 12 frames per six seconds: one step every 0.5 s
+	sprite.changeFrames()
+	for setting in [60, 0]:
+		Engine.max_fps = setting
+		# Four seconds at one step per half second, so seven or eight depending on
+		# where the last boundary lands. What matters is that the two rates agree.
+		var at_60 := _sheet_steps(sprite, sixty, 60 * 4)
+		var at_240 := _sheet_steps(sprite, sixty / 4.0, 240 * 4)
+		assert_equal(at_240, at_60, "a sheet steps the same number of times at 60 and 240 fps (max_fps %d)" % setting)
+		assert_true(at_60 >= 7 and at_60 <= 8, "and about once a half second (max_fps %d, got %d)" % [setting, at_60])
+	Engine.max_fps = cap
+	sprite.frames = 1
+	sprite.animSpeed = 0
+	sprite.changeFrames()
 	Global.clear_selection()
+
+
+# How many times the sheet advances over `steps` frames of `step` seconds.
+func _sheet_steps(sprite, step: float, steps: int) -> int:
+	sprite._frameClock = 0.0
+	sprite.sprite.frame = 0
+	var advances := 0
+	var last := 0
+	for i in steps:
+		sprite.animation(step)
+		if sprite.sprite.frame != last:
+			advances += 1
+			last = sprite.sprite.frame
+	return advances
 
 
 # Step the avatar by hand for `steps` frames of `step` seconds, and report where

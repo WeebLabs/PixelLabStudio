@@ -177,13 +177,15 @@ var _wiggleBind = {}
 
 #Blink Animation
 var _blinkAnimPlaying = false
-var _blinkAnimTick = 0
 var _prevBlink = false
 var _blinkQueue = 0
 
 #Animation
 var frames = 1
 var animSpeed = 0
+# Seconds since this layer's sprite sheet last stepped, for the two animation
+# paths below.
+var _frameClock := 0.0
 
 var remadePolygon = false
 
@@ -509,8 +511,8 @@ func _process(delta):
 		if mouse_pos.distance_to(sprite.global_position) <= 24.0:
 			Global.mouse.text = "Drag origin"
 
-	if !blinkAnimation():
-		animation()
+	if !blinkAnimation(delta):
+		animation(delta)
 
 # Selection chrome: the grab outline and origin handle, shown only while this is
 # the held sprite, the outline kept a constant on-screen thickness as we zoom.
@@ -528,17 +530,27 @@ func _update_selection_gizmos():
 		originSprite.visible = false
 
 
-func animation():
+# A sprite sheet steps on elapsed time. It used to count frames against a
+# divisor derived from Engine.max_fps, which held the right rate while that
+# setting matched reality but collapsed to a step EVERY frame at the Unlimited
+# setting, where max_fps is 0: a sheet then ran at whatever rate the machine hit.
+func animation(delta):
 	if frames <= 1:
 		return
-	var speed = max(float(animSpeed),Engine.max_fps*6.0)
-	if animSpeed > 0:
-		if Global.animationTick % int((speed)/float(animSpeed)) == 0:
-			if sprite.frame == frames - 1:
-				sprite.frame = 0
-			else:
-				sprite.frame += 1
+	if animSpeed > 0 and _advance_frame_clock(delta):
+		sprite.frame = 0 if sprite.frame == frames - 1 else sprite.frame + 1
 	remakePolygon()
+
+
+# True once per step of the sheet. The interval is the one the app has always
+# used at 60 fps: animSpeed frames every six seconds.
+func _advance_frame_clock(delta: float) -> bool:
+	var interval := 6.0 / float(animSpeed)
+	_frameClock += minf(delta, interval)
+	if _frameClock < interval:
+		return false
+	_frameClock -= interval
+	return true
 
 func setZIndex():
 	sprite.z_index = z
@@ -564,7 +576,7 @@ func talkBlink():
 	)
 
 
-func blinkAnimation():
+func blinkAnimation(delta):
 	if showOnBlink != 3 or frames <= 1:
 		return false
 
@@ -573,7 +585,7 @@ func blinkAnimation():
 			_blinkQueue += 1
 		else:
 			_blinkAnimPlaying = true
-			_blinkAnimTick = 0
+			_frameClock = 0.0
 			sprite.frame = 0
 	_prevBlink = Global.blink
 
@@ -581,20 +593,16 @@ func blinkAnimation():
 		sprite.frame = 0
 		return true
 
-	_blinkAnimTick += 1
-	var speed = max(float(animSpeed), Engine.max_fps * 6.0)
-	if animSpeed > 0:
-		if _blinkAnimTick % max(int(speed / float(animSpeed)), 1) == 0:
-			if sprite.frame >= frames - 1:
-				if _blinkQueue > 0:
-					_blinkQueue -= 1
-					_blinkAnimTick = 0
-					sprite.frame = 0
-				else:
-					_blinkAnimPlaying = false
-					sprite.frame = 0
+	if animSpeed > 0 and _advance_frame_clock(delta):
+		if sprite.frame >= frames - 1:
+			if _blinkQueue > 0:
+				_blinkQueue -= 1
+				sprite.frame = 0
 			else:
-				sprite.frame += 1
+				_blinkAnimPlaying = false
+				sprite.frame = 0
+		else:
+			sprite.frame += 1
 
 	return true
 

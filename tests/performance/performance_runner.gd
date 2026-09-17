@@ -152,7 +152,7 @@ func _benchmark_runtime_services() -> Dictionary:
 	const ITERATIONS := 100000
 	var started := Time.get_ticks_usec()
 	for index in ITERATIONS:
-		scheduler.advance_with_roll(0.0, index)
+		scheduler.advance_with_roll(0.0, float(index % 97) / 97.0)
 		sensitivity = MicrophoneMonitor.next_sensitivity(sensitivity, 0.1, 0.5, 1.0 / 60.0)
 	var elapsed := Time.get_ticks_usec() - started
 	return {"iterations": ITERATIONS, "total_ms": float(elapsed) / 1000.0, "final_sensitivity": sensitivity}

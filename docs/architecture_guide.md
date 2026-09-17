@@ -1128,9 +1128,19 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 > delta-correct and is where the `1 - pow(1 - w, delta * 60)` idiom came from.
 > `spriteObject.motionTime` is the time-based companion to `tick`: the same number
 > at 60 fps, but honest about elapsed time, and it drives everything that
-> oscillates. `tick` still counts frames for sprite-sheet animation, and the blink
-> scheduler still rolls per frame; both are discrete events rather than continuous
-> motion, so they are a separate question.
+> oscillates.
+>
+> **The two discrete clocks followed** (2026-09-17). A sprite sheet steps on
+> elapsed time through `_advance_frame_clock()`, at the interval the app has
+> always used at 60 fps (`animSpeed` frames every six seconds). It used to count
+> frames against a divisor derived from `Engine.max_fps`, which held the right
+> rate while that setting matched reality and collapsed to a step EVERY frame at
+> the **Unlimited** setting, where `max_fps` is 0: measured, a sheet then ran at
+> whatever rate the machine hit. `BlinkScheduler.advance(step)` takes how many
+> 60 fps frames the frame was worth and scales both its wait and its per-roll
+> chance by it, so the blink rate no longer follows the frame rate: the same
+> settings gave 1 blink in ten seconds at 60 fps and 3 at 240, and now measure
+> 6.6, 6.8 and 7.2 blinks a minute at 60, 30 and 240.
 >
 > A residual remains in the bounce apex: a bigger step overshoots the true apex by
 > more (2.2 px between 30 and 60 fps on a 31.25 px bounce), because the arc is

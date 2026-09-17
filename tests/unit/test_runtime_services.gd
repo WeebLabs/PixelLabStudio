@@ -16,20 +16,57 @@ func _test_blink_scheduler(t) -> void:
 	scheduler.speed = 1.0
 	scheduler.chance = 2
 	scheduler.tick = 5.0
-	t.assert_true(scheduler.advance_with_roll(0.0, 4), "a successful deterministic roll starts a blink")
+	t.assert_true(scheduler.advance_with_roll(0.0, 0.0), "a successful deterministic roll starts a blink")
 	t.assert_equal(scheduler.tick, -12.0, "a blink retains the legacy twelve-frame duration")
 	for _frame in range(11):
-		scheduler.advance_with_roll(0.0, 1)
+		scheduler.advance_with_roll(0.0, 1.0)
 	t.assert_true(scheduler.active, "blink remains active before its final duration frame")
-	scheduler.advance_with_roll(0.0, 1)
+	scheduler.advance_with_roll(0.0, 1.0)
 	t.assert_false(scheduler.active, "blink clears on the final duration frame")
+
+	# The chance is per 60 fps frame, so a longer frame is proportionally more
+	# likely to blink and the rate does not follow the frame rate.
+	scheduler.chance = 2
+	scheduler.tick = 100.0
+	scheduler.active = false
+	t.assert_false(scheduler.advance_with_roll(0.0, 0.6, 1.0), "a roll above the per-frame chance does not blink")
+	scheduler.tick = 100.0
+	t.assert_true(scheduler.advance_with_roll(0.0, 0.6, 2.0), "the same roll blinks on a frame worth two")
+	scheduler.tick = 100.0
+	scheduler.active = false
+	t.assert_false(scheduler.advance_with_roll(0.0, 0.3, 0.5), "and does not on a frame worth half")
+
+	# The same elapsed time gives the same blink count whatever the step.
+	t.assert_equal(
+		_blinks_over(BlinkScheduler.new(), 600, 1.0), _blinks_over(BlinkScheduler.new(), 150, 4.0),
+		"blink count follows elapsed time, not frame count",
+	)
 
 	scheduler.chance = 0
 	scheduler.speed = -5.0
 	scheduler.tick = 1.0
-	scheduler.advance_with_roll(0.0, 1)
+	scheduler.advance_with_roll(0.0, 0.0)
 	t.assert_true(scheduler.chance == 0, "invalid caller configuration is handled without mutating public preferences")
 	t.assert_true(scheduler.active, "zero chance input is safely evaluated as one-in-one without division by zero")
+
+
+# Blinks over `steps` steps, each worth `step` 60 fps frames, with a fixed roll
+# sequence so the two step sizes see the same randomness per unit of time.
+func _blinks_over(scheduler, steps: int, step: float) -> int:
+	scheduler.speed = 1.0
+	scheduler.chance = 60
+	var blinks := 0
+	var was := false
+	var elapsed := 0.0
+	for index in steps:
+		elapsed += step
+		# One deterministic "roll" per 60 fps frame worth of time.
+		var roll := 0.0 if int(elapsed) % 120 < int(step) else 1.0
+		var now: bool = scheduler.advance_with_roll(0.0, roll, step)
+		if now and not was:
+			blinks += 1
+		was = now
+	return blinks
 
 
 func _test_microphone_envelope(t) -> void:

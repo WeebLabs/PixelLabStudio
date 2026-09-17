@@ -1,6 +1,7 @@
 extends Node
 
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
 
 # What a control shows in place of a number when the selected layers disagree.
 const MIXED_VALUE := "—"
@@ -911,7 +912,7 @@ func blinking():
 	_blink_scheduler.chance = maxi(int(blinkChance), 1)
 	_blink_scheduler.active = blink
 	_blink_scheduler.tick = blinkTick
-	blink = _blink_scheduler.advance()
+	blink = _blink_scheduler.advance(MotionTiming.frames(get_process_delta_time()))
 	blinkTick = _blink_scheduler.tick
 	
 func epicFail(err):

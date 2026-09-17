@@ -33,7 +33,7 @@ static func apply(layer: Node2D) -> void:
 	if layer.frames > 1:
 		layer.sprite.frame = 0
 	layer._blinkAnimPlaying = false
-	layer._blinkAnimTick = 0
+	layer._frameClock = 0.0
 	layer._blinkQueue = 0
 
 	# The path editor works over the static Sprite2D, so there is no chain to rest.
