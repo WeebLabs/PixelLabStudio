@@ -9,8 +9,10 @@ const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
 
 class FakeSprite extends RefCounted:
 	var path: String
-	func _init(sprite_path: String) -> void:
+	var layerName: String = ""
+	func _init(sprite_path: String, renamed: String = "") -> void:
 		path = sprite_path
+		layerName = renamed
 
 
 func run(t) -> void:
@@ -113,6 +115,38 @@ func _test_import_matching(t) -> void:
 	t.assert_equal(result["new_items"][0]["name"], "Eyes", "new-layer metadata remains intact")
 	t.assert_equal(result["orphaned"].size(), 1, "live layers missing from the source are reported as orphans")
 	t.assert_true(result["orphaned"][0] == mouth, "orphan calculation returns the exact live layer")
+
+	# Renaming a layer must not cost it its match: the source name is still the
+	# second thing tried, so the layer the artist has not renamed still lands.
+	var renamed_hat := FakeSprite.new("psd://Hat", "Left ear")
+	var kept := ImportMatcher.match_items(
+		[renamed_hat],
+		[{"name": "Hat", "image": image, "position": Vector2.ZERO}],
+	)
+	t.assert_equal(kept["matched"].size(), 1, "a renamed layer still matches the name it was imported under")
+	t.assert_true(kept["matched"][0]["sprite"] == renamed_hat, "the match lands on the renamed layer itself")
+	t.assert_equal(kept["orphaned"].size(), 0, "renaming a layer does not orphan it")
+
+	# And renaming a layer onto a source layer's new name re-points it there,
+	# which is the only way to follow a layer the artist renamed in the PSD.
+	var repointed := FakeSprite.new("psd://Hat", "Cap")
+	var follow := ImportMatcher.match_items(
+		[repointed],
+		[{"name": "Cap", "image": image, "position": Vector2.ZERO}],
+	)
+	t.assert_equal(follow["matched"].size(), 1, "a layer renamed to a source layer's name matches it")
+	t.assert_equal(follow["new_items"].size(), 0, "the source layer it took is not offered as a new layer as well")
+
+	# The layer's own name is tried before the imported one, so a rename decides
+	# which of two layers takes a source layer both could claim.
+	var by_source := FakeSprite.new("psd://Cap", "")
+	var by_rename := FakeSprite.new("psd://Brim", "Cap")
+	var contested := ImportMatcher.match_items(
+		[by_source, by_rename],
+		[{"name": "Cap", "image": image, "position": Vector2.ZERO}],
+	)
+	t.assert_equal(contested["matched"].size(), 2, "every layer claiming the name is matched, as duplicates always were")
+	t.assert_true(contested["matched"][0]["sprite"] == by_rename, "the renamed layer is matched first")
 
 
 # The player page pays for nothing it cannot use. Hiding a node does not stop its

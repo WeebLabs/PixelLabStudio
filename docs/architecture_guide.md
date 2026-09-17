@@ -258,6 +258,25 @@ Key child nodes:
 > exercise load/save, duplicate, replacement, costume, hierarchy, and shutdown
 > through the real controller graph.
 
+> Updated: 2026-09-17 — **A replace matches a layer's own name first.**
+> `ImportMatcher.match_items` runs two rounds: `layerName` (via
+> `renamed_match_name`, blank for a layer that was never renamed), then the name
+> the layer was imported under (`source_match_name`, which is `sprite_name(path)`).
+> A layer claimed in the first round is not offered again in the second, and
+> duplicate names still match every layer that carries them, as before. The
+> second round is what keeps a rename free: rename a layer and it still matches
+> the source layer it came from. The first round is the only way to follow a
+> layer the artist renamed in the PSD, by renaming the rig's layer to the new
+> name. The cost is that renaming a layer onto another layer's source name takes
+> that match, which the review shows before anything is applied.
+>
+> `replace_review_dialog` names every row with `displayName()` and adds
+> `imported as "<source>"` underneath when the two differ, for matched rows and
+> orphans alike. The orphan list is where the user decides what to delete, so it
+> could not go on naming layers by a name the layer list no longer shows. The
+> single-PNG replace prompt in `ImportController` reads `displayName()` for the
+> same reason, and its `_extract_sprite_name` facade is gone with its last caller.
+
 > Updated: 2026-08-18 — **Legacy full-canvas replace compatibility.** Rigs built
 > before PSD import existed carry one full-canvas PNG per layer: the artwork sits
 > inside its own transparent padding, so layers line up by construction. PSD

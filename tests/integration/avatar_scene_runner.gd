@@ -55,6 +55,7 @@ func _run() -> void:
 	await _test_layer_rename()
 	await _test_layer_context_menu()
 	await _test_layer_replace_target()
+	await _test_replace_review_names()
 	await _test_duplicate_placement()
 	await _test_multi_selection()
 	await _test_mixed_value_indicator()
@@ -954,6 +955,57 @@ func _test_layer_replace_target() -> void:
 	_main.import_controller._layer_replace_dialog.hide()
 	await get_tree().process_frame
 	assert_false(_main.import_controller.is_replace_dialog_open(), "dismissing it releases the canvas")
+
+
+# The replace review names each layer the way the layer list does, so a rig with
+# renamed layers is still readable against the file being imported. The source
+# name it was imported under is what the match is made on, so it is named too.
+func _test_replace_review_names() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	var dialog = _main.replaceReviewDialog
+	var source: String = dialog._extract_sprite_name(sprite.path)
+	MutationCommands.set_layer_property(sprite, "layerName", "Left ear")
+	var image := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+
+	dialog.setup([{"sprite": sprite, "name": source, "image": image, "position": Vector2.ZERO}], [], [], Vector2.ZERO)
+	await get_tree().process_frame
+	var labels := _review_labels(dialog)
+	assert_true(labels.has("Left ear"), "a matched row is named the way the layer list names it")
+	assert_true(labels.has("imported as \"%s\"" % source), "a matched row names the source layer it matched")
+
+	dialog.setup([], [], [sprite], Vector2.ZERO)
+	await get_tree().process_frame
+	labels = _review_labels(dialog)
+	assert_true(labels.has("Left ear"), "an orphan row is named the way the layer list names it")
+	assert_true(labels.has("imported as \"%s\"" % source), "an orphan row names the source layer it came from")
+
+	# A layer that has not been renamed carries no note, which would only repeat
+	# the name above it.
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	sprite = Global.sprite_by_id(BASE_ID)
+	dialog.setup([{"sprite": sprite, "name": source, "image": image, "position": Vector2.ZERO}], [], [], Vector2.ZERO)
+	await get_tree().process_frame
+	labels = _review_labels(dialog)
+	assert_true(labels.has(source), "an unrenamed row is named by its source layer")
+	assert_false(labels.has("imported as \"%s\"" % source), "an unrenamed row carries no source note")
+	dialog.visible = false
+	await get_tree().process_frame
+
+
+func _review_labels(dialog) -> Array:
+	var found := []
+	var pending: Array = [dialog._layerList]
+	while not pending.is_empty():
+		var node: Node = pending.pop_back()
+		for child in node.get_children():
+			if child is Label:
+				found.append(child.text)
+			pending.append(child)
+	return found
 
 
 func _prompt_checkbox() -> CheckBox:

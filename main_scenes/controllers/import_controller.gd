@@ -586,9 +586,6 @@ func _on_replace_file_selected(path: String):
 	else:
 		_global.notify_user("Unsupported file type: " + path.get_extension())
 
-static func _extract_sprite_name(sprite_path: String) -> String:
-	return ImportMatcher.sprite_name(sprite_path)
-
 func _handle_replace_from_psd(path: String):
 	_begin_psd_parse(path, true)
 
@@ -687,7 +684,9 @@ func _handle_replace_single_png(path: String):
 		return
 
 	# Show simple confirmation dialog
-	var sprite_name = _extract_sprite_name(_global.heldSprite.path)
+	# The prompt names the layer the way the layer list does, so a renamed layer
+	# is recognisable in it.
+	var sprite_name = _global.heldSprite.displayName()
 	var file_name = path.get_file()
 	_show_single_replace_confirm(path, sprite_name, file_name)
 

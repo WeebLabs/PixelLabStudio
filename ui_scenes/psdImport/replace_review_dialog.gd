@@ -194,10 +194,17 @@ func _add_matched_entry(entry: Dictionary):
 	var info = VBoxContainer.new()
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
+	# The rig's own name leads, because that is what the user sees in the layer
+	# list; the source layer it matched is named underneath whenever the two
+	# differ, so a renamed layer is still identifiable against the file.
 	var name_label = Label.new()
-	name_label.text = entry["name"]
+	name_label.text = _layer_name(entry["sprite"], entry["name"])
 	name_label.add_theme_font_size_override("font_size", 14)
 	info.add_child(name_label)
+
+	var source_note := _source_note(entry["sprite"])
+	if source_note != "":
+		info.add_child(_make_source_label(source_note))
 
 	var dims = entry["image"].get_size()
 	var dims_label = Label.new()
@@ -254,13 +261,53 @@ func _add_orphan_entry(sprite_node):
 	warn_label.custom_minimum_size = Vector2(24, 24)
 	row.add_child(warn_label)
 
-	var name_label = Label.new()
-	name_label.text = _extract_sprite_name(sprite_node.path)
-	name_label.add_theme_font_size_override("font_size", 14)
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(name_label)
+	# An orphan is the one row the user has to make a decision about, so it is
+	# named the way the layer list names it, with its source name alongside when
+	# it has been renamed.
+	var info = VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
+	var name_label = Label.new()
+	name_label.text = _layer_name(sprite_node, "")
+	name_label.add_theme_font_size_override("font_size", 14)
+	info.add_child(name_label)
+
+	var source_note := _source_note(sprite_node)
+	if source_note != "":
+		info.add_child(_make_source_label(source_note))
+
+	row.add_child(info)
 	_layerList.add_child(row)
+
+
+# What to call this layer: its own name, falling back to the source name the
+# match was made on for anything that cannot answer.
+static func _layer_name(sprite_node, fallback: String) -> String:
+	if sprite_node != null and is_instance_valid(sprite_node) and sprite_node.has_method("displayName"):
+		var shown: String = sprite_node.displayName()
+		if shown != "":
+			return shown
+	return fallback
+
+
+# The line under the name, or "" when the layer still carries its source name and
+# the note would only repeat it. A matched row's own name is the name it matched
+# on either way, so the note only has to supply the one the user cannot see.
+static func _source_note(sprite_node) -> String:
+	if sprite_node == null or not is_instance_valid(sprite_node):
+		return ""
+	var source := _extract_sprite_name(sprite_node.path)
+	if _layer_name(sprite_node, source).to_lower() == source.to_lower():
+		return ""
+	return "imported as \"%s\"" % source
+
+
+static func _make_source_label(text: String) -> Label:
+	var label = Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 11)
+	label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
+	return label
 
 func _make_thumbnail(img: Image) -> TextureRect:
 	var thumb_rect = TextureRect.new()
