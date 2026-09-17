@@ -44,3 +44,25 @@ See `docs/architecture_guide.md` for the full architecture reference. **Keep it 
 ## Debugging
 
 - When the user reports a crash or error, **always ask for the exact error text** (message + script:line) before attempting a fix. Don't guess from symptoms alone — Godot runtime errors point you at the right line, and the wrong fix wastes a round-trip. Only proceed without it if the user has already given enough context to pin the cause.
+
+## Release notes
+
+A correction is not a specification. When a bug is fixed and a build pushed, the
+release notes say **what was broken and that it is fixed**. They do not restate
+the repaired behaviour as though it were new, and they do not carry the reasoning
+that produced the fix.
+
+- **Announce a feature once.** If a release already listed "rename a layer", a
+  later fix to renaming is a fix, not a second announcement of renaming.
+- **Describe the symptom the user saw**, in their terms: "renaming a layer did
+  nothing". Not the cause, not the file, not the call that was wrong.
+- **Leave the implementation out.** Internals, the mechanism of the fix, the
+  numbers behind a limit, and anything that reads as a how-to for the repaired
+  feature all belong in the commit and the architecture guide, not the notes.
+- **Never publish the conversation.** Options weighed, alternatives rejected,
+  work planned for later, and anything said about the person who reported it are
+  between us. A release note is not a changelog of our discussion.
+- **A visible change in how something is reached is worth one plain sentence**
+  ("renaming now happens on the row"), with no walkthrough of the interaction.
+- **Rebuilt assets on an existing tag deserve a line** saying the downloads were
+  replaced and who should re-download.
