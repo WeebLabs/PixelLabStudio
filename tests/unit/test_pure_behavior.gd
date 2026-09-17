@@ -32,6 +32,7 @@ func run(t) -> void:
 	_test_sprite_policies(t)
 	_test_settings_source_contract(t)
 	_test_legacy_canvas_compat(t)
+	_test_motion_timing(t)
 
 func _test_animation_curves(t) -> void:
 	t.assert_approx(Animator.envelope("smooth", 0.0), 0.0, 0.00001, "smooth curve starts at rest")
@@ -194,3 +195,43 @@ func _test_legacy_canvas_compat(t) -> void:
 		Vector2(40, -20),
 		"a replacement that spans the whole canvas is a no-op",
 	)
+
+
+# Motion was tuned against a 60 fps frame step, so the correction has to be an
+# identity there and has to cover the same ground per second everywhere else.
+func _test_motion_timing(t) -> void:
+	var timing := preload("res://autoload/domain/motion_timing.gd")
+	var sixty := 1.0 / 60.0
+
+	t.assert_true(is_equal_approx(timing.frames(sixty), 1.0), "one 60 fps frame counts as one")
+	t.assert_true(is_equal_approx(timing.frames(sixty * 2.0), 2.0), "a doubled frame counts as two")
+	for weight in [0.15, 0.25, 0.5, 0.72]:
+		t.assert_true(
+			is_equal_approx(timing.smooth(weight, sixty), weight),
+			"a %s weight is unchanged at 60 fps" % weight,
+		)
+
+	# Two half-steps have to land where one whole step lands, or the motion
+	# depends on how the frames happen to be sliced.
+	var one_step: float = timing.smooth(0.25, sixty * 2.0)
+	var first_half: float = timing.smooth(0.25, sixty)
+	var after_two: float = first_half + (1.0 - first_half) * timing.smooth(0.25, sixty)
+	t.assert_true(
+		absf(one_step - after_two) < 0.0001,
+		"two 60 fps steps cover the same ground as one 30 fps step (%f vs %f)" % [after_two, one_step],
+	)
+
+	# A per-frame displacement read as a speed: the same movement over twice the
+	# time is half the value.
+	t.assert_true(is_equal_approx(timing.per_frame(10.0, sixty), 10.0), "movement per 60 fps frame is itself")
+	t.assert_true(
+		is_equal_approx(timing.per_frame(10.0, sixty * 2.0), 5.0),
+		"the same movement over two frames reads as half the speed",
+	)
+
+	# A stall slows the avatar down rather than teleporting it.
+	t.assert_true(
+		timing.frames(2.0) <= timing.MAX_STEP * timing.REFERENCE_FPS + 0.001,
+		"a long stall is clamped",
+	)
+	t.assert_true(timing.smooth(0.25, 0.0) == 0.0, "no time, no movement")

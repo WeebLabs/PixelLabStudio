@@ -48,6 +48,7 @@ func _run() -> void:
 	await _test_sidebar_selection_state()
 	await _test_edit_commands()
 	await _test_idle_motion()
+	await _test_motion_is_time_based()
 	await _test_click_cycling()
 	await _test_layer_list_deletion()
 	await _test_layer_deletion_children()
@@ -778,6 +779,56 @@ func _row_for(sprite):
 		if row.sprite == sprite:
 			return row
 	return null
+
+
+# The avatar has to reach the same place after the same amount of TIME, whether
+# that time arrived as one long frame or two short ones. Frames are stepped by
+# hand here, so the assertion is about the motion and not about real timing.
+func _test_motion_is_time_based() -> void:
+	var sprite = Global.sprite_by_id(COSTUME_ONE_ID)
+	if sprite == null:
+		return
+	sprite.rdragStr = 3
+	sprite.rLimitMin = -45
+	sprite.rLimitMax = 45
+	sprite.dragSpeed = 4.0
+	var sixty := 1.0 / 60.0
+
+	var coarse := _bounce_trace(sprite, sixty * 2.0, 30)
+	var fine := _bounce_trace(sprite, sixty, 60)
+
+	# The bounce height after the same elapsed time. The remaining couple of
+	# pixels is the discrete step overshooting the true apex (31.25 px here), by
+	# less the more often the avatar is stepped; it used to be the whole arc that
+	# changed, not the top two pixels of it.
+	assert_true(
+		absf(coarse["height"] - fine["height"]) < 3.0,
+		"the bounce reaches the same height at 30 and 60 fps (%.2f vs %.2f)" % [coarse["height"], fine["height"]],
+	)
+	# And the angle rotational drag produced from it.
+	assert_true(
+		absf(coarse["rotation"] - fine["rotation"]) < 1.0,
+		"rotational drag settles at the same angle (%.2f deg vs %.2f deg)" % [coarse["rotation"], fine["rotation"]],
+	)
+	sprite.rdragStr = 0
+	sprite.dragSpeed = 0
+	Global.clear_selection()
+
+
+# Step the avatar by hand for `steps` frames of `step` seconds, and report where
+# the bounce and one layer's rotational drag ended up.
+func _bounce_trace(sprite, step: float, steps: int) -> Dictionary:
+	_main.origin.get_parent().position.y = 0.0
+	_main.yVel = 0.0
+	sprite._micRot = 0.0
+	sprite._force_drag_snap = true
+	_main.onSpeak()
+	var height := 0.0
+	for i in steps:
+		_main._process(step)
+		sprite._process(step)
+		height = minf(height, _main.origin.get_parent().position.y)
+	return {"height": height, "rotation": rad_to_deg(sprite._micRot)}
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

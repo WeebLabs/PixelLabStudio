@@ -117,8 +117,9 @@ func reset() -> void:
 		_points.append([_points[-1], pos, ang, 0.0])
 	_update_mesh()
 
-# Advance one frame. frame_tick drives auto-wag (a per-layer frame counter).
-func tick(delta: float, frame_tick: int) -> void:
+# Advance one frame. `frame_tick` drives auto-wag: elapsed time counted in 60 fps
+# frames, so the sway keeps its speed whatever the frame rate.
+func tick(delta: float, frame_tick: float) -> void:
 	if delta <= 0.0 or _points.size() < 2:
 		return
 	# Auto-wag is a clean sinusoidal sway of the root direction; the chain follows

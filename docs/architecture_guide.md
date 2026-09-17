@@ -1096,6 +1096,47 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 
 ---
 
+## Motion timing
+
+> Added: 2026-09-17 — Every motion value in the app was tuned against a 60 fps
+> frame step: the bounce integrated a hardcoded `0.0166` per frame, `drag()`
+> lerped by `1/dragSpeed` per frame, `rotationalDrag()` and `stretch()` read how
+> far the layer moved THIS FRAME, and the oscillating clips and the wiggle's
+> auto-wag took their sine phase from a frame counter. That is correct only while
+> frames arrive exactly 60 times a second; otherwise the motion speeds up, slows
+> down and jitters, and rotational drag shows it worst because it renders a
+> displacement as an angle. Measured before the change: the same bounce over the
+> same elapsed time produced -6.59° of rotational drag at 30 fps and -0.02° at 60.
+>
+> `autoload/domain/motion_timing.gd` keeps the tuning and changes the clock:
+>
+> - `frames(delta)` — how many 60 fps frames this delta is worth. A per-frame
+>   displacement or increment multiplies by it.
+> - `smooth(weight, delta)` — a per-frame lerp weight tuned at 60 fps, corrected to
+>   cover the same fraction per SECOND: `1 - (1 - weight)^frames`.
+> - `per_frame(distance, delta)` — a per-frame displacement read as a speed, for
+>   rotational drag and squash.
+>
+> **At delta = 1/60 all three are identities**, so nothing looks or feels different
+> at 60 fps; that is the point, and the unit tests assert it. A hitch is clamped to
+> `MAX_STEP` (1/15 s) so a stall slows the avatar rather than teleporting it.
+>
+> Applied to: the bounce and its soft landing (`main.gd`), `drag`,
+> `rotationalDrag`, `stretch` and the eye-track smoothing (`spriteObject`), the
+> oscillating clips (`LayerAnimator.evaluate` takes a float phase), and the wiggle
+> auto-wag (`WiggleAppendage.tick`). The wiggle chain itself was already
+> delta-correct and is where the `1 - pow(1 - w, delta * 60)` idiom came from.
+> `spriteObject.motionTime` is the time-based companion to `tick`: the same number
+> at 60 fps, but honest about elapsed time, and it drives everything that
+> oscillates. `tick` still counts frames for sprite-sheet animation, and the blink
+> scheduler still rolls per frame; both are discrete events rather than continuous
+> motion, so they are a separate question.
+>
+> A residual remains in the bounce apex: a bigger step overshoots the true apex by
+> more (2.2 px between 30 and 60 fps on a 31.25 px bounce), because the arc is
+> integrated in steps. The integration scheme was left alone; the arc's shape and
+> timing now match, which is what the eye reads.
+
 ## Key Systems
 
 ### Undo/Redo (`undo_manager.gd`)

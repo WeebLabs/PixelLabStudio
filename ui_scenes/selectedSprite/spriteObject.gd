@@ -11,6 +11,8 @@ const SpriteRestPose = preload("res://ui_scenes/selectedSprite/sprite_rest_pose.
 const LegacyCompat = preload("res://autoload/domain/legacy_canvas_compat.gd")
 const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
 const WiggleRuntime = preload("res://effects/wiggle/wiggle_runtime.gd")
+const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
+const SpriteEyeTracking = preload("res://ui_scenes/selectedSprite/sprite_eye_tracking.gd")
 
 var type = "sprite"
 
@@ -196,6 +198,8 @@ var loadedNormalImage: Image = null
 var loadedNormalData: String = ""
 
 var tick = 0
+# Elapsed time in 60 fps frames: `tick` for oscillators, but honest about time.
+var motionTime := 0.0
 
 #Vis toggle
 var toggle = "null"
@@ -439,6 +443,7 @@ func _process(delta):
 		return
 
 	tick += 1
+	motionTime += MotionTiming.frames(delta)
 	_anim_update(delta)
 	_update_selection_gizmos()
 	
@@ -446,7 +451,7 @@ func _process(delta):
 		# Follow drag, wobble, rotation, and stretch as normal — but cancel the
 		# avatar-wide bounce by lerping the dragger toward the un-bounced wob
 		# position instead of the bounced one.
-		wobble()
+		wobble(delta)
 		var bounce_offset = Global.main.origin.get_parent().position
 		var target = wob.global_position - bounce_offset
 		var glob = dragger.global_position
@@ -470,16 +475,16 @@ func _process(delta):
 		# A snap-frame teleports the dragger; don't let that feed stretch/rotation
 		var did_snap = _force_drag_snap
 		drag(delta)
-		wobble()
+		wobble(delta)
 
 		var length = 0.0 if did_snap else (glob.y - dragger.global_position.y)
 
 		rotationalDrag(length,delta)
 		stretch(length,delta)
 
-	# Eye-track Rotation composes with the mic rotational sway. rotationalDrag smooths
-	# into its own _micRot (not sprite.rotation), so the look-at is added cleanly here
-	# without feeding back into that smoothing (which compounded into a runaway spin).
+	# Eye-track Rotation composes with the mic rotational sway. rotationalDrag
+	# smooths into its own _micRot (not sprite.rotation), so the look-at adds
+	# cleanly here rather than feeding back into it (a runaway spin).
 	sprite.rotation = _micRot + _eyeTrackRotation
 
 	# Animation rotation rides on DragOrigin (outermost on the layer), so it swings
@@ -731,10 +736,11 @@ func drag(delta):
 	if dragSpeed == 0:
 		dragger.global_position = wob.global_position
 	else:
-		dragger.global_position = lerp(dragger.global_position,wob.global_position,1/dragSpeed)
+		dragger.global_position = lerp(
+			dragger.global_position, wob.global_position, MotionTiming.smooth(1.0 / dragSpeed, delta))
 		dragOrigin.global_position = dragger.global_position
 
-func wobble():
+func wobble(delta):
 	# Skip wobble while the NDI crop box is being dragged (frozen at worst-case-down)
 	if Global.main.ndi_manager != null and Global.main.ndi_manager.crop_dragging:
 		return
@@ -743,81 +749,29 @@ func wobble():
 	# Eye-track then adds its offset on top, below.
 	wob.position = _animTrans
 
-	# Look-at target: either the cursor (mode 0) or another sprite's live position (mode 1).
-	# Global.eyeTrackingGloballyEnabled is the kill switch from global-scope UI; sprite-level
-	# eyeTrack flag is the per-sprite enable. Both must be on to track.
-	var target_world_pos = Vector2.ZERO
-	var have_target = false
-	if eyeTrack and Global.eyeTrackingGloballyEnabled and not (Global.main.editMode and Global.heldSprite == self):
-		if eyeTrackMode == 1:
-			if eyeTrackTargetId != null:
-				var target_sprite := Global.sprite_by_id(eyeTrackTargetId)
-				if target_sprite != null and target_sprite != self:
-					target_world_pos = target_sprite.global_position
-					have_target = true
-		else:
-			target_world_pos = Global.cursorWorldPos
-			have_target = true
+	# Eye tracking then adds its own offset or tilt on top.
+	SpriteEyeTracking.apply(self, delta)
 
-	if have_target:
-		var rest_pos = global_position
-		var to_target = target_world_pos - rest_pos
-		if eyeTrackType == 1:
-			# Rotation = LIMITED head-tilt that tracks the cursor's VERTICAL position on
-			# whichever side it's on: the side nearest the cursor lifts toward an upper
-			# cursor and drops toward a lower one. It's a saddle — the screen-frame
-			# horizontal × vertical cursor offset — so it's 0 when the cursor is straight
-			# up/down or straight to a side, peaks (±eyeTrackDistance°) at the diagonals,
-			# and reverses across the artwork's center lines. Referenced from the artwork's
-			# VISUAL CENTER (not the origin), so the reversal lands on the artwork's 50%
-			# line wherever the origin sits. Default (no invert): cursor upper-left -> top
-			# tilts right (left side lifts), upper-right -> top left; lower mirrors. Invert
-			# flips the lean.
-			var center_world = rest_pos
-			var ur = get_image_used_rect()
-			if imageData != null and ur.size.x > 0 and ur.size.y > 0:
-				center_world = dragOrigin.to_global(_tex_to_local(Vector2(ur.position) + Vector2(ur.size) * 0.5))
-			var d = target_world_pos - center_world
-			var max_rad = deg_to_rad(eyeTrackDistance)
-			var target_rot = 0.0
-			if d.length() > 0.001:
-				var u = d.normalized()
-				var sgn = -1.0 if eyeTrackInvert else 1.0
-				target_rot = clampf(sgn * 2.0 * max_rad * u.x * u.y, -max_rad, max_rad)
-			_eyeTrackRotation = lerp_angle(_eyeTrackRotation, target_rot, eyeTrackSpeed)
-			_eyeTrackOffset = _eyeTrackOffset.lerp(Vector2.ZERO, 0.15)
-			if _eyeTrackOffset.length() > 0.01:
-				wob.position += _eyeTrackOffset
-		else:
-			# Position mode: translate toward the target, capped at eyeTrackDistance px.
-			var direction = to_target
-			if eyeTrackInvert:
-				direction = -direction
-			var target_offset = direction.normalized() * min(direction.length(), eyeTrackDistance)
-			_eyeTrackOffset = _eyeTrackOffset.lerp(target_offset, eyeTrackSpeed)
-			wob.position += _eyeTrackOffset
-			_eyeTrackRotation = lerp(_eyeTrackRotation, 0.0, eyeTrackSpeed)
-	else:
-		_eyeTrackOffset = _eyeTrackOffset.lerp(Vector2.ZERO, 0.15)
-		if _eyeTrackOffset.length() > 0.01:
-			wob.position += _eyeTrackOffset
-		_eyeTrackRotation = lerp(_eyeTrackRotation, 0.0, 0.15)
 
-func rotationalDrag(length,delta):
-	var yvel = (length * rdragStr)
-	
+# `length` is how far the layer moved since the last frame, so on its own a
+# longer frame reads as a bigger movement and renders as a bigger angle: frame
+# noise straight onto the artwork, which is what made dragged layers jitter. Per
+# 60 fps frame it is a speed, and means the same at any frame rate.
+func rotationalDrag(length, delta):
+	var yvel = MotionTiming.per_frame(length, delta) * rdragStr
+
 	#Calculate Max angle
-	
+
 	yvel = clamp(yvel,rLimitMin,rLimitMax)
 
-	_micRot = lerp_angle(_micRot, deg_to_rad(yvel), 0.25)
+	_micRot = lerp_angle(_micRot, deg_to_rad(yvel), MotionTiming.smooth(0.25, delta))
 	sprite.rotation = _micRot
 
-func stretch(length,delta):
-	var yvel = (length * stretchAmount * 0.01)
+func stretch(length, delta):
+	var yvel = MotionTiming.per_frame(length, delta) * stretchAmount * 0.01
 	var target = Vector2(1.0-yvel,1.0+yvel)
 
-	sprite.scale = lerp(sprite.scale,target,0.5)
+	sprite.scale = lerp(sprite.scale, target, MotionTiming.smooth(0.5, delta))
 
 # --- Animation clips ---
 
@@ -834,7 +788,7 @@ func _anim_update(delta):
 	_anim_had_clips = true
 	if _animator == null:
 		_animator = LayerAnimator.new()
-	_animator.evaluate(animClips, tick, delta)
+	_animator.evaluate(animClips, motionTime, delta)
 	_animRot = _animator.rot
 	_animTrans = _animator.trans
 
@@ -858,8 +812,8 @@ func getAnimSample(i: int) -> Dictionary:
 	return _animator.sample(i)
 
 # Back-compat: fold a legacy wobble (xFrq/xAmp/yFrq/yAmp) into an always-on
-# oscillate/translation clip. Called on load for avatars saved before animClips
-# existed. The legacy fields are left intact (older app builds still read them).
+# oscillate/translation clip, on load for avatars saved before animClips existed.
+# The legacy fields are left intact (older app builds still read them).
 func migrateLegacyWobble():
 	if xAmp == 0.0 and yAmp == 0.0:
 		return
@@ -873,9 +827,9 @@ func migrateLegacyWobble():
 
 # --- Wiggle (physics) ---
 
-# Turn wiggle on/off for this layer. When on, the Sprite2D is hidden and a
-# deformable textured mesh (WiggleAppendage2D) is shown in its place, bending along
-# the spring chain. The Physics tab calls this; safe to call any time.
+# Turn wiggle on/off. When on, the Sprite2D is hidden and a deformable textured
+# mesh (WiggleAppendage2D) bends along the spring chain in its place. The Physics
+# tab calls this; safe to call any time.
 func setWiggle(on: bool):
 	wiggleEnabled = on
 	_set_wiggle_active(on)   # _set_wiggle_active(false) releases linked children

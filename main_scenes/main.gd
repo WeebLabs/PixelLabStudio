@@ -8,6 +8,7 @@ const AvatarControllerScene = preload("res://main_scenes/controllers/avatar_cont
 const ImportControllerScene = preload("res://main_scenes/controllers/import_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 const InputCommands = preload("res://autoload/input/input_commands.gd")
+const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
 
 var editMode = true
 
@@ -320,8 +321,13 @@ func _process(delta):
 		bounceChange = 0
 	else:
 		var hold = origin.get_parent().position.y
+		# Tuned per frame at 60 fps; scaled by how many 60 fps frames this one is
+		# worth, so the bounce keeps its shape at any frame rate.
+		# The tuning is per frame at 60 fps, so a frame counts for as many 60 fps
+		# frames as it lasted. Same arc, honest clock.
+		var span := 0.0166 * MotionTiming.frames(delta)
 
-		origin.get_parent().position.y += yVel * 0.0166
+		origin.get_parent().position.y += yVel * span
 		var p = origin.get_parent().position.y
 		if p > 0.0:
 			# Soft landing: ease the avatar into rest instead of a dead stop at the
@@ -331,14 +337,14 @@ func _process(delta):
 			# eases back to rest over a few frames (a small settle-dip), so the
 			# landing reads as smoothly as the rise. Snap to exact rest once tiny so
 			# there's no sub-pixel jitter; gravity only applies while airborne.
-			yVel = lerp(yVel, 0.0, 0.72)
-			p = lerp(p, 0.0, 0.45)
+			yVel = lerp(yVel, 0.0, MotionTiming.smooth(0.72, delta))
+			p = lerp(p, 0.0, MotionTiming.smooth(0.45, delta))
 			if p < 0.4 and absf(yVel) < 6.0:
 				p = 0.0
 				yVel = 0.0
 			origin.get_parent().position.y = p
 		elif p < 0.0:
-			yVel += bounceGravity*0.0166
+			yVel += bounceGravity * span
 		bounceChange = hold - origin.get_parent().position.y
 	
 	if Input.is_action_just_pressed("openFolder") and not Global.is_text_entry_active():

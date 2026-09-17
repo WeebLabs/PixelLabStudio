@@ -190,7 +190,7 @@ func update(delta: float) -> void:
 	if appendage.segment_count != clampi(int(_owner.wiggleSegments), 2, 48):
 		apply_geometry()
 	appendage.configure(parameters())
-	appendage.tick(delta, _owner.tick)
+	appendage.tick(delta, _owner.motionTime)
 	attach_children()
 	apply_to_children()
 
