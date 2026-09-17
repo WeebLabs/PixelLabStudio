@@ -40,3 +40,18 @@ static func talk_blink_visual(
 static func costume_visible(costume_layers: Array, costume: int, user_hidden: bool) -> bool:
 	var index := costume - 1
 	return not user_hidden and index >= 0 and index < costume_layers.size() and costume_layers[index] == 1
+
+
+# A linked child is a real node descendant of its parent, so Godot's inherited
+# visibility hides it whenever an ancestor is off for the current costume,
+# whatever the child's own costume bit says. `chain` is that layer's ancestors'
+# costumeLayers, nearest parent first; the result says whether the chain lets
+# the costume through, so the UI can show the state the viewer actually gets.
+static func costume_allowed_by_ancestors(chain: Array, costume: int) -> bool:
+	var index := costume - 1
+	if index < 0:
+		return false
+	for layers in chain:
+		if index >= layers.size() or layers[index] != 1:
+			return false
+	return true

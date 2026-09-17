@@ -8,6 +8,7 @@ const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.
 const LayerDetailsPanel = preload("res://ui_scenes/spriteList/layer_details_panel.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 const VisibilityToggleSection = preload("res://ui_scenes/spriteList/visibility_toggle_section.gd")
+const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 
 @onready var container = $ScrollContainer/VBoxContainer
 var SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
@@ -435,9 +436,15 @@ func _process(_delta):
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
 		_blinking_spr.frame = Global.heldSprite.showOnBlink
 
-		# Costume button frames
+		# Costume button frames. A costume the layer belongs to still reads as off
+		# when an ancestor is out of that costume, because the parent's hidden
+		# node hides this one too. Showing it lit would promise a layer the
+		# viewer never sees.
+		var ancestor_layers := _ancestor_costume_chain(Global.heldSprite)
 		for i in range(10):
-			if Global.heldSprite.costumeLayers[i] == 1:
+			var on: bool = Global.heldSprite.costumeLayers[i] == 1 \
+				and SpriteVisibility.costume_allowed_by_ancestors(ancestor_layers, i + 1)
+			if on:
 				_costume_btns[i].self_modulate = Color(1, 1, 1, 1)
 			else:
 				_costume_btns[i].self_modulate = Color(0.5, 0.5, 0.5, 0.7)
@@ -502,6 +509,22 @@ func _on_trash_pressed():
 	LayerContextMenu.confirm_delete(self, Global.heldSprite)
 
 # --- Costume button handlers ---
+
+# This layer's ancestors' costumeLayers, nearest parent first. Guarded against a
+# cycle in parentId so a malformed save can't spin the sidebar refresh.
+func _ancestor_costume_chain(sprite) -> Array:
+	var chain := []
+	var seen := {}
+	var current = sprite.parentId
+	while current != null and not seen.has(current):
+		seen[current] = true
+		var ancestor = Global.sprite_by_id(current)
+		if ancestor == null or not is_instance_valid(ancestor):
+			break
+		chain.append(ancestor.costumeLayers)
+		current = ancestor.parentId
+	return chain
+
 
 func _on_costume_btn_pressed(index: int):
 	if Global.heldSprite == null:

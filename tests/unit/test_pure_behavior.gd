@@ -116,6 +116,10 @@ func _test_sprite_policies(t) -> void:
 	t.assert_false(SpriteVisibility.costume_visible([1, 0], 2, false), "disabled costume slots remain hidden")
 	t.assert_false(SpriteVisibility.costume_visible([1, 1], 1, true), "manual hiding overrides costume membership")
 	t.assert_false(SpriteVisibility.costume_visible([1], 3, false), "invalid costume indexes fail closed")
+	t.assert_true(SpriteVisibility.costume_allowed_by_ancestors([], 2), "an unlinked layer has no ancestor to suppress it")
+	t.assert_true(SpriteVisibility.costume_allowed_by_ancestors([[1, 1], [1, 1]], 2), "a chain that includes the costume lets it through")
+	t.assert_false(SpriteVisibility.costume_allowed_by_ancestors([[1, 1], [1, 0]], 2), "a grandparent out of the costume suppresses the layer")
+	t.assert_false(SpriteVisibility.costume_allowed_by_ancestors([[1]], 2), "a short ancestor membership array fails closed")
 
 	var root := FakeLayer.new(1, null)
 	var child := FakeLayer.new(2, 1)
