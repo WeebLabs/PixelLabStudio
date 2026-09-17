@@ -32,6 +32,8 @@ var collapsed = false
 var _collapse_btn: Button
 var _thumbnail: TextureRect
 var _name_label: Label
+var _name_edit: LineEdit
+var _rename_reverting := false
 var _vis_btn: Button
 var _normal_badge: Label
 var _eye_target_badge: Label
@@ -123,6 +125,23 @@ func _ready():
 	_name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_name_label)
+
+	# The inline rename field, in the name's own slot so the row does not reflow
+	# when it opens. It replaces the label rather than sitting beside it, and is
+	# only ever visible while a rename is in progress.
+	_name_edit = LineEdit.new()
+	_name_edit.visible = false
+	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_edit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_name_edit.custom_minimum_size = Vector2(0, 26)
+	_name_edit.add_theme_font_size_override("font_size", 15)
+	_name_edit.text_submitted.connect(func(_text: String): _commit_rename())
+	# Clicking away is a commit, the same as Enter. Global releases text focus on
+	# any click outside the focused field, so this covers a click on another row,
+	# on a panel, or on the canvas.
+	_name_edit.focus_exited.connect(_commit_rename)
+	_name_edit.gui_input.connect(_gui_input_rename)
+	hbox.add_child(_name_edit)
 
 	# Normal map indicator
 	_normal_badge = Label.new()
@@ -268,6 +287,12 @@ func _gui_input(event: InputEvent):
 			# Everything between the active layer and this one, as the list reads.
 			Global.select_sprites(Global.spriteList.layersBetween(Global.heldSprite, sprite))
 			Global.spriteEdit.setImage()
+		elif event.double_click:
+			# Double-clicking a row renames it in place, the same edit the menu's
+			# Rename opens. The first click of the pair already selected the row,
+			# so this only has to open the field.
+			_select()
+			beginRename()
 		else:
 			_select()
 		accept_event()
@@ -289,6 +314,61 @@ func refreshName():
 	if is_instance_valid(sprite):
 		_name_label.text = sprite.displayName()
 		updateIndent()
+
+
+# Start renaming this layer in place. The field takes the name's slot, starts on
+# the current name with it all selected, and takes the keyboard: Global's
+# shortcut handling stands down while a LineEdit has focus.
+func beginRename() -> void:
+	if _name_edit == null or not is_instance_valid(sprite):
+		return
+	if _name_edit.visible:
+		_name_edit.grab_focus()
+		return
+	_rename_reverting = false
+	_name_edit.text = sprite.displayName()
+	_name_label.visible = false
+	_name_edit.visible = true
+	_name_edit.grab_focus()
+	_name_edit.select_all()
+
+
+func isRenaming() -> bool:
+	return _name_edit != null and _name_edit.visible
+
+
+# Escape abandons the edit. The flag is what tells the focus_exited handler that
+# this close is a cancel, since releasing focus is how the field is closed either
+# way.
+func _gui_input_rename(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if event.keycode == KEY_ESCAPE:
+		_rename_reverting = true
+		_end_rename()
+		_name_edit.accept_event()
+
+
+func _commit_rename() -> void:
+	if _name_edit == null or not _name_edit.visible:
+		return
+	var wanted: String = _name_edit.text.strip_edges()
+	_end_rename()
+	if _rename_reverting or not is_instance_valid(sprite):
+		return
+	# An empty field is not a name. Leaving it empty would drop the layer back to
+	# its filename, which is not what an unfinished edit means.
+	if wanted.is_empty() or wanted == sprite.displayName():
+		return
+	MutationCommands.set_layer_property(sprite, "layerName", wanted)
+	Global.spriteList.refreshNames()
+
+
+func _end_rename() -> void:
+	_name_edit.visible = false
+	_name_label.visible = true
+	if _name_edit.has_focus():
+		_name_edit.release_focus()
 
 func _select():
 	# A layer row is a Control, so it never reaches the canvas click path and its
@@ -447,7 +527,9 @@ func _fixed_content_width() -> float:
 		if not child.visible:
 			continue
 		items += 1
-		if child == _indent_spacer or child == _name_label:
+		# The rename field stands in for the name, so it is measured the same way:
+		# by the name's own floor, not by the field's minimum width.
+		if child == _indent_spacer or child == _name_label or child == _name_edit:
 			continue
 		fixed += child.get_combined_minimum_size().x
 	return fixed + maxf(0.0, items - 1) * ITEM_SEPARATION

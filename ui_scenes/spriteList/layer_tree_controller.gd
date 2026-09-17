@@ -256,6 +256,15 @@ func refresh_names() -> void:
 		row.refreshName()
 
 
+# The row showing this layer, or null while the list does not have one (a layer
+# filtered out of the list, or one deleted since the caller looked it up).
+func row_for(sprite) -> Node:
+	for row in _container.get_children():
+		if row.sprite == sprite:
+			return row
+	return null
+
+
 func update_all_visible() -> void:
 	for row in _container.get_children():
 		row.updateVis()

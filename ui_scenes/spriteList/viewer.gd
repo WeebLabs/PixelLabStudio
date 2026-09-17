@@ -631,6 +631,18 @@ func layersBetween(a, b) -> Array:
 func refreshNames():
 	_layer_tree.refresh_names()
 
+func rowFor(sprite) -> Node:
+	return _layer_tree.row_for(sprite)
+
+# Rename this layer on its own row. Returns false when the list has no row to
+# edit, which is the caller's cue that nothing happened.
+func beginRename(sprite) -> bool:
+	var row := rowFor(sprite)
+	if row == null or not row.visible:
+		return false
+	row.beginRename()
+	return true
+
 # Widen the sidebar so the deepest layer in this avatar shows its indentation in
 # full, rather than having it compressed away by the row budget. Called when an
 # avatar is loaded, since that is when the rig's depth is known and when the user

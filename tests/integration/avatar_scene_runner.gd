@@ -993,6 +993,74 @@ func _test_layer_rename() -> void:
 	assert_equal(Global.sprite_by_id(BASE_ID).displayName(), original, "undo restores the previous name")
 	assert_false(_row_names().has("Body"), "undo puts the old name back on the row")
 
+	# Renaming from the menu edits the row in place: no prompt, Enter commits.
+	sprite = Global.sprite_by_id(BASE_ID)
+	var row = Global.spriteList.rowFor(sprite)
+	assert_not_null(row, "the list has a row for this layer")
+	if row == null:
+		return
+	LayerContextMenu.begin_rename(Global.spriteList, sprite)
+	for _frame in range(2):
+		await get_tree().process_frame
+	assert_true(row.isRenaming(), "renaming from the menu opens the field on the row")
+	assert_equal(row._name_edit.text, original, "the field starts on the layer's current name")
+	assert_true(row._name_edit.has_focus(), "the field takes the keyboard")
+	assert_true(Global.has_text_entry_focus(), "shortcuts stand down while the name is being typed")
+	row._name_edit.text = "Torso"
+	row._name_edit.text_submitted.emit("Torso")
+	await get_tree().process_frame
+	assert_false(row.isRenaming(), "Enter closes the field")
+	assert_equal(sprite.displayName(), "Torso", "Enter commits the new name")
+	assert_true(_row_names().has("Torso"), "the row shows the name that was typed")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# Double-clicking the row opens the same field.
+	sprite = Global.sprite_by_id(BASE_ID)
+	row = Global.spriteList.rowFor(sprite)
+	var double := InputEventMouseButton.new()
+	double.button_index = MOUSE_BUTTON_LEFT
+	double.pressed = true
+	double.double_click = true
+	row._gui_input(double)
+	await get_tree().process_frame
+	assert_true(row.isRenaming(), "double-clicking a row renames it in place")
+	assert_equal(row._name_edit.text, original, "the field starts on the layer's current name")
+	row._name_edit.release_focus()
+	await get_tree().process_frame
+
+	# Clicking away commits too, which reaches the field as a lost focus.
+	sprite = Global.sprite_by_id(BASE_ID)
+	row = Global.spriteList.rowFor(sprite)
+	row.beginRename()
+	await get_tree().process_frame
+	row._name_edit.text = "Chest"
+	row._name_edit.release_focus()
+	await get_tree().process_frame
+	assert_equal(sprite.displayName(), "Chest", "clicking away commits the new name")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# Escape abandons the edit, and an empty field is not a name.
+	sprite = Global.sprite_by_id(BASE_ID)
+	row = Global.spriteList.rowFor(sprite)
+	for typed in ["Discarded", ""]:
+		row.beginRename()
+		await get_tree().process_frame
+		row._name_edit.text = typed
+		if typed.is_empty():
+			row._name_edit.release_focus()
+		else:
+			var escape := InputEventKey.new()
+			escape.keycode = KEY_ESCAPE
+			escape.pressed = true
+			row._name_edit.gui_input.emit(escape)
+		await get_tree().process_frame
+		assert_false(row.isRenaming(), "the field closes without renaming")
+		assert_equal(sprite.displayName(), original, "the layer keeps the name it had")
+
 
 func _row_names() -> Array:
 	var names := []

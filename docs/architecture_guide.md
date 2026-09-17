@@ -850,6 +850,23 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > into the top-right corner. `Control.get_screen_position()` is wrong for the same
 > reason.
 >
+> Updated: 2026-09-17 — **Rename is inline on the row, not a prompt.**
+> **Double-clicking a row** opens it (the plain left-click branch of the row's
+> `_gui_input`, after the Command- and Shift-click cases, so a modifier click
+> still extends the selection), and so does the menu item, which calls `LayerContextMenu.begin_rename`, which defers to
+> `viewer.beginRename(sprite)` → `layer_tree_controller.row_for(sprite)` →
+> `sprite_list_object.beginRename()`. The row carries a hidden `_name_edit`
+> `LineEdit` in the name label's own HBox slot: `beginRename` hides the label,
+> shows the field on the current name with it all selected, and grabs focus. The
+> grab is deferred by one frame because the menu still holds the focus as it
+> closes. **Enter** (`text_submitted`) and **clicking away** (`focus_exited`, which
+> Global's click-outside focus release drives) both commit; **Escape** closes the
+> field without writing. An empty field is not a name and is treated as a cancel,
+> since the fallback would be the filename rather than what an abandoned edit
+> means. `_fixed_content_width` measures the field as it measures the label, by
+> the name's own floor, so the row's indentation does not jump while it is open.
+> The old `ModalDialogUI` rename prompt is gone; the delete prompt is unchanged.
+>
 > **Rename** writes `layerName`, a normal layer field: in `SpriteState`'s
 > `SIMPLE_FIELDS`, so it is saved, undone and copied by duplication for free, and
 > absent from older saves, where it defaults to empty. `spriteObject.displayName()`
