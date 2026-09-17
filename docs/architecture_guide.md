@@ -948,6 +948,20 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > arrow, the thumbnail and the name together (measured on a real rig: 19 px per
 > level for all three).
 
+### Collapse survives a hierarchy change
+
+> Added: 2026-09-17 — `refresh_hierarchy()` (the path a link or unlink takes)
+> keeps each row's collapsed flag and ends with `apply_collapse_visibility()`, so
+> a layer linked into a collapsed group is hidden along with the rest of it and
+> the group stays collapsed.
+>
+> It used to clear every collapsed flag and never touch row visibility, which left
+> the two out of step: the group came back with an expanded arrow while its
+> children stayed hidden, and a layer linked in from outside stayed visible inside
+> a group that was supposed to be closed. `_apply_order_and_indentation` still
+> clears the flag for a row that has no children left, which is the one case where
+> dropping it is correct.
+
 ### Deleting a layer from the list
 
 > Added: 2026-09-16 — Layers appearing or disappearing reconcile the existing

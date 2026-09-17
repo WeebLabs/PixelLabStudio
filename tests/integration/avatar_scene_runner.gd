@@ -60,6 +60,7 @@ func _run() -> void:
 	await _test_transform_entry()
 	await _test_costume_keeps_selection()
 	await _test_layer_name_display()
+	await _test_link_into_collapsed_group()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -724,6 +725,59 @@ func _test_layer_name_display() -> void:
 	Global.spriteEdit.setImage()
 	await get_tree().process_frame
 	assert_equal(heading.text, "", "no selection, no name")
+
+
+# Linking a layer into a collapsed group hides it with the rest of that group,
+# and the group stays collapsed.
+func _test_link_into_collapsed_group() -> void:
+	var list = Global.spriteList
+	await list.updateData()
+	await get_tree().process_frame
+
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var child = Global.sprite_by_id(NESTED_ID)
+	var newcomer = Global.sprite_by_id(COSTUME_ONE_ID)
+	if parent == null or child == null or newcomer == null:
+		return
+	var parent_row = _row_for(parent)
+	var original_parent = newcomer.parentId
+
+	parent_row._on_collapse_toggled()
+	await get_tree().process_frame
+	assert_true(parent_row.collapsed, "the group is collapsed to begin with")
+	assert_false(_row_for(child).visible, "its child is hidden")
+	assert_true(_row_for(newcomer).visible, "the layer to link is visible outside it")
+
+	MutationCommands.structural(func():
+		Global.linkSprite(newcomer, parent)
+		return true)
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	assert_true(parent_row.collapsed, "the group is still collapsed after a link")
+	assert_equal(parent_row._collapse_btn.text, "▶", "and still says so")
+	assert_false(_row_for(newcomer).visible, "the newly linked layer is hidden with the group")
+	assert_false(_row_for(child).visible, "the layers already in the group stay hidden")
+
+	# Expanding shows everything in the group, including the newcomer.
+	parent_row._on_collapse_toggled()
+	await get_tree().process_frame
+	assert_true(_row_for(newcomer).visible, "expanding shows the newly linked layer")
+	assert_true(_row_for(child).visible, "expanding shows the rest of the group")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(Global.sprite_by_id(COSTUME_ONE_ID).parentId, original_parent, "the test rig is put back")
+	await list.updateData()
+	await get_tree().process_frame
+
+
+func _row_for(sprite):
+	for row in Global.spriteList.container.get_children():
+		if row.sprite == sprite:
+			return row
+	return null
 
 
 # A duplicate belongs beside the layer it came from, under the same parent.

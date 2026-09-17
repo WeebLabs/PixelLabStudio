@@ -78,6 +78,15 @@ func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
 	await _consume_pending_scroll(pending_scroll_target)
 
 
+# Re-read the tree after a link or unlink, keeping the rows themselves. Each
+# row's collapsed flag is carried over (`_apply_order_and_indentation` clears it
+# for a row that has no children left), and visibility is re-derived at the end,
+# so a layer linked into a collapsed group is hidden with the rest of that group
+# rather than left showing inside it.
+#
+# It used to clear every collapsed flag here and never touch visibility, which
+# left the two out of step: a collapsed parent came back claiming to be expanded
+# while its children stayed hidden.
 func refresh_hierarchy(pending_scroll_target = null) -> void:
 	var rows := _container.get_children()
 	if rows.is_empty():
@@ -87,9 +96,6 @@ func refresh_hierarchy(pending_scroll_target = null) -> void:
 		row.childrenTags = []
 		row.parentTag = null
 		row.indent = 0
-		row.collapsed = false
-		row._collapse_btn.text = ""
-		row._collapse_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.parent = row.sprite.parentSprite
 		sprite_to_row[row.sprite] = row
 	for row in rows:
@@ -101,6 +107,7 @@ func refresh_hierarchy(pending_scroll_target = null) -> void:
 			parent_row.childrenTags.append(row)
 	var ordered := _flatten(rows)
 	_apply_order_and_indentation(ordered)
+	apply_collapse_visibility()
 	await _consume_pending_scroll(pending_scroll_target)
 
 
