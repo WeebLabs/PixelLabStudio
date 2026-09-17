@@ -66,7 +66,9 @@ func _ready():
 	custom_minimum_size = Vector2(0, ROW_HEIGHT)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# The row keeps the ordinary arrow. A pointing hand reads as a link, and the
+	# row's own hover highlight already says it is clickable.
+	mouse_default_cursor_shape = Control.CURSOR_ARROW
 	add_theme_stylebox_override("panel", _style_normal)
 
 	var hbox = HBoxContainer.new()
