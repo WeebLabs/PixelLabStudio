@@ -22,6 +22,11 @@ const _PREV := 0   # reference to the previous point's array (null for root)
 const _POS := 1    # Vector2 world position
 const _ROT := 2    # float segment angle (radians)
 const _MOM := 3    # float angular momentum (radians/sec)
+# The spring force grows with the square root of the bend, which has unbounded
+# gain at zero bend: each time a joint's deflection swings through rest (at the
+# top and bottom of an idle bob) it was yanked across, a visible flick. Within
+# roughly this many radians of rest the force eases to linear instead.
+const SPRING_SOFT_ZONE := 0.02
 
 # --- Dynamics (configure()) ---
 var stiffness := 20.0
@@ -155,7 +160,7 @@ func _process_point(point: Array, delta: float, index: int) -> void:
 	var ideal: float = prev[_ROT] + _rest_rel[index]
 	var diff := _angle_diff(ideal, rot)
 	var k := maxf(0.0, stiffness - pow(float(index), stiffness_decay_exponent) * stiffness_decay)
-	var force := _signed_sqrt(diff) * k
+	var force := _spring_curve(diff) * k
 	force += gravity.length() * cos(rot - gravity.angle() + TAU / 4.0)
 	# Standard linear damping: smooth, symmetric response (no brake-on-reversal
 	# stutter). The momentum cap then limits how fast a rotation travels down.
@@ -353,5 +358,6 @@ func _angle_diff(a: float, b: float) -> float:
 		d -= TAU * signf(d)
 	return d
 
-func _signed_sqrt(v: float) -> float:
-	return sqrt(absf(v)) * signf(v)
+# Signed square root away from rest, linear through it (see SPRING_SOFT_ZONE).
+func _spring_curve(v: float) -> float:
+	return v / sqrt(absf(v) + SPRING_SOFT_ZONE)
