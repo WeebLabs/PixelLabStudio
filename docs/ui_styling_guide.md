@@ -123,7 +123,7 @@ The ten costume toggles under the layer list, drawn in code (no image assets).
 
 - **Chip**: `Button`, 26x26, `StyleBoxFlat` with 5px corners
 - **Row**: spans the dividers' width (`panel_width - 16`, from x 8), first chip flush left, last flush right, even gaps of at least 3px. Chips are placed by hand, since a box container drops the pixel remainder
-- **In the costume**: fill `SidebarUI.SLIDER_FILL_ENABLED` (the slider pink), hover `Color(1.0, 0.8, 0.87)`
+- **In the costume**: fill `Color(0.96, 0.635, 0.75)`, a shade darker than the slider pink; hover `SidebarUI.SLIDER_FILL_ENABLED`
 - **Out of it** (or hidden by a parent out of it): fill `Color(0.26, 0.26, 0.29)`, hover `Color(0.33, 0.33, 0.36)`
 - **Numerals**: 18px, the app font emboldened (`FontVariation.variation_embolden` 0.9), white on pink with a 3px `Color(0.72, 0.31, 0.48)` outline (a darker 4px outline read as a black shadow), `Color(0.85, 0.85, 0.9)` with no outline on dark
 - **Worn costume**: 2px `Color(1, 1, 1, 0.9)` ring drawn *outside* the chip (expand margin equal to the border width, corner radius + 2), so the fill keeps its full size

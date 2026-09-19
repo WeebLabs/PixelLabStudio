@@ -397,7 +397,7 @@ func _test_costume_chips() -> void:
 	var plain_box := row.chip(0).get_theme_stylebox("normal") as StyleBoxFlat
 	assert_true(worn_box != null and worn_box.border_width_top > 0, "the ring is drawn on the worn chip")
 	assert_true(plain_box != null and plain_box.border_width_top == 0, "and only there")
-	assert_equal(plain_box.bg_color, SidebarUIFactory.SLIDER_FILL_ENABLED, "pink is the slider fill")
+	assert_equal(plain_box.bg_color, row.ON_FILL, "a chip in the costume is pink")
 
 	_main.changeCostume(5)
 	await get_tree().process_frame

@@ -6,8 +6,8 @@ extends RefCounted
 ## take their colours from the shared palette. They replaced pixel-art SVGs that
 ## were rasterised at 64 px and scaled down to about 26, which blurred them.
 ##
-## A chip shows whether the selected layer appears in that costume: pink (the
-## slider fill) when it does, dark when it does not or a parent layer out of the
+## A chip shows whether the selected layer appears in that costume: pink (a step
+## darker than the slider fill) when it does, dark when it does not or a parent layer out of the
 ## costume hides it anyway. Numerals are bold, white with a pink outline on the
 ## pink chips and light on the dark ones. At the regular weight they read as thin. The costume the avatar is wearing carries a ring.
 ## With no layer selected every chip is dimmed and inert.
@@ -26,8 +26,9 @@ const RING_WIDTH := 2
 # read as a black drop shadow, so this one is clearly pink and thinner.
 const OUTLINE_SIZE := 3
 
-const ON_FILL := SidebarUI.SLIDER_FILL_ENABLED
-const ON_FILL_HOVER := Color(1.0, 0.8, 0.87)
+# A shade darker than the slider pink, which reads lighter on a filled chip.
+const ON_FILL := Color(0.96, 0.635, 0.75)
+const ON_FILL_HOVER := SidebarUI.SLIDER_FILL_ENABLED
 const ON_TEXT := Color(1, 1, 1)
 const ON_OUTLINE := Color(0.72, 0.31, 0.48)
 const OFF_FILL := Color(0.26, 0.26, 0.29)
