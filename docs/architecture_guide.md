@@ -100,6 +100,7 @@ PNGTuberPlus/
 │   │   ├── eye_tracking_panel.gd Tracking controls and target presentation
 │   │   ├── layer_details_panel.gd Details controls and NDI reference policy
 │   │   ├── physics_tab.gd        Physics tab — wiggle controls
+│   │   ├── costume_row.gd        Costume chips 1-10 under the layer list (2026-09-19)
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
 │   │   ├── legacy_replace_prompt.gd Legacy full-canvas compatibility prompts
@@ -1139,6 +1140,34 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > key-binding section (build, enable/disable, the capture and the clear), leaving
 > the sidebar to position it. Same split as the blend strip and the physics tab;
 > the sidebar's size ceiling in `test_ui_components` is what forces it.
+
+### Costume row
+
+> Added: 2026-09-19 — `ui_scenes/spriteList/costume_row.gd` draws the ten costume
+> toggles in code as numbered chips, replacing `icons/1-10.svg` (pixel art
+> rasterised at 64 px and scaled to about 26, which blurred it) and the separate
+> `select.png` ring. The sidebar builds it and calls `sync(in_costume, worn)`
+> each frame. `in_costume` holds one bool per costume for the held layer, already
+> folded through `SpriteVisibility.costume_allowed_by_ancestors`, so a costume a
+> parent hides reads as off, as before. An empty array means nothing is selected.
+> A chip is restyled only when its look changes. The row spans the dividers'
+> width, and `_layout()` places the chips by hand: first flush left, last flush
+> right, with a fractional gap and rounded positions. A box container shares out
+> whole pixels and dropped the remainder, leaving the last chip short. Chips are
+> styled as they are created, and every chip style has zero content margins,
+> so no state can raise a chip past `CHIP_SIZE`. Left at default, a
+> `StyleBoxFlat` pads by its border width: the worn chip's 2 px ring made it
+> taller than the others (the first chip, since costume 1 is the default). The
+> ring is drawn outside the chip, as an expand margin, so the fill is not
+> narrowed. A `minimum_size_changed` → `_layout()` hook tried in between looped
+> forever on that ringed chip and was removed. An unstyled button carries the default theme's padding
+> (30x34 here), and a control is never sized below its minimum. The first
+> version sized the row from unstyled chips at 327 px, wider than the 310 px
+> sidebar, and never corrected it, which is the likely cause of the cropped end
+> chips reported in the app (not reproduced headlessly). The palette and sizes are in
+> `docs/ui_styling_guide.md` → Costume Chips. The unused older
+> `ui_scenes/spriteEditMenu/layerButtons/` PNG set was removed with them. Covered
+> by `_test_costume_chips`.
 
 ### Row indentation
 

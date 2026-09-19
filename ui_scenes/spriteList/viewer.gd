@@ -8,6 +8,7 @@ const EyeTrackingPanel = preload("res://ui_scenes/spriteList/eye_tracking_panel.
 const LayerDetailsPanel = preload("res://ui_scenes/spriteList/layer_details_panel.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
 const VisibilityToggleSection = preload("res://ui_scenes/spriteList/visibility_toggle_section.gd")
+const CostumeRow = preload("res://ui_scenes/spriteList/costume_row.gd")
 const SpriteVisibility = preload("res://ui_scenes/selectedSprite/sprite_visibility_policy.gd")
 
 @onready var container = $ScrollContainer/VBoxContainer
@@ -17,9 +18,7 @@ var speaking_tex = preload("res://ui_scenes/spriteEditMenu/speaking.png")
 var blink_tex = preload("res://ui_scenes/spriteEditMenu/blink.png")
 var trash_tex = preload("res://ui_scenes/spriteEditMenu/trash.png")
 var unlink_tex = preload("res://ui_scenes/spriteEditMenu/unlink.png")
-var select_tex = preload("res://ui_scenes/spriteEditMenu/layerButtons/select.png")
 
-var layer_textures: Array = []
 
 var panel_width: float = 310
 var panel_height: float = 630
@@ -39,10 +38,8 @@ var _unlink_spr: Sprite2D
 var _trash_spr: Sprite2D
 var _link_btn: Button
 
-var _costume_section: HBoxContainer
-var _costume_btn_widgets: Array = []  # Buttons holding each costume sprite, for layout queries
-var _costume_btns: Array = []
-var _costume_select: Sprite2D
+var _costume_section: Control
+var _costume_row = CostumeRow.new()
 
 var _eye_tracking = EyeTrackingPanel.new()
 
@@ -96,9 +93,6 @@ func _ready():
 	_bg = SidebarUIFactory.create_panel_background()
 	add_child(_bg)
 	move_child(_bg, 0)
-
-	for i in range(1, 11):
-		layer_textures.append(load("res://icons/" + str(i) + ".svg"))
 
 	_filter_field = LineEdit.new()
 	_filter_field.placeholder_text = "Filter layers..."
@@ -210,37 +204,7 @@ func _build_icon_button(tex: Texture2D, icon_scale: Vector2, on_pressed: Callabl
 	return spr
 
 func _create_costume_buttons():
-	# 10 costume icons in a centered row. HBox handles horizontal layout;
-	# each icon is a Button with a Sprite2D inside for tinting/visibility.
-	_costume_section = HBoxContainer.new()
-	_costume_section.add_theme_constant_override("separation", 1)
-	_costume_section.alignment = BoxContainer.ALIGNMENT_CENTER
-	add_child(_costume_section)
-
-	var icon_scale = Vector2(0.4, 0.4)
-
-	for i in range(10):
-		var btn = Button.new()
-		btn.flat = true
-		btn.custom_minimum_size = Vector2(28, 28)
-		btn.pressed.connect(_on_costume_btn_pressed.bind(i))
-		_costume_section.add_child(btn)
-		_costume_btn_widgets.append(btn)
-
-		var spr = Sprite2D.new()
-		spr.texture = layer_textures[i]
-		spr.scale = icon_scale
-		spr.position = Vector2(14, 14)  # center of 28x28 button
-		btn.add_child(spr)
-		_costume_btns.append(spr)
-
-	# Selection indicator — free-floating sprite repositioned in _process from
-	# whichever button is currently active.
-	_costume_select = Sprite2D.new()
-	_costume_select.texture = select_tex
-	_costume_select.scale = icon_scale
-	_costume_select.visible = false
-	add_child(_costume_select)
+	_costume_section = _costume_row.build(self, _on_costume_btn_pressed)
 
 # The Opacity + Blend strip, with the shared slider styles. The sidebar positions
 # it in _apply_size (bottom of the layer-list region, above the divider).
@@ -360,8 +324,10 @@ func _apply_size():
 	y += Global.UI_DIVIDER_PAD
 
 	# === Below the draggable divider ===
-	_costume_section.position = Vector2(0, y)
-	_costume_section.size = Vector2(panel_width,
+	# Same span as the dividers above and below it, so the chips line up with
+	# their ends.
+	_costume_section.position = Vector2(8, y)
+	_costume_section.size = Vector2(panel_width - 16,
 		_costume_section.get_combined_minimum_size().y)
 	y += _costume_section.size.y
 
@@ -421,10 +387,8 @@ func _process(_delta):
 	else:
 		_link_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 
-	# Costume buttons
-	for btn in _costume_btns:
-		btn.modulate = dim if no_sprite else normal
-	_costume_select.visible = !no_sprite
+	if no_sprite:
+		_costume_row.sync([], -1)
 
 	# Eye-tracking control enable/disable is handled by refreshEyeUI() above
 	# based on scope (per_layer / global / dead); don't blanket-disable here.
@@ -435,26 +399,15 @@ func _process(_delta):
 		_speaking_spr.frame = Global.heldSprite.showOnTalk
 		_blinking_spr.frame = Global.heldSprite.showOnBlink
 
-		# Costume button frames. A costume the layer belongs to still reads as off
-		# when an ancestor is out of that costume, because the parent's hidden
-		# node hides this one too. Showing it lit would promise a layer the
-		# viewer never sees.
+		# A costume the layer belongs to still reads as off when an ancestor is out
+		# of that costume, because the parent's hidden node hides this one too.
+		# Showing it lit would promise a layer the viewer never sees.
 		var ancestor_layers := _ancestor_costume_chain(Global.heldSprite)
+		var in_costume := []
 		for i in range(10):
-			var on: bool = Global.heldSprite.costumeLayers[i] == 1 \
-				and SpriteVisibility.costume_allowed_by_ancestors(ancestor_layers, i + 1)
-			if on:
-				_costume_btns[i].self_modulate = Color(1, 1, 1, 1)
-			else:
-				_costume_btns[i].self_modulate = Color(0.5, 0.5, 0.5, 0.7)
-
-		# Costume select position — _costume_select is parented to the viewer
-		# (free-floating), so we translate the active button's center into
-		# viewer-local coordinates.
-		var costume_idx = Global.main.costume - 1
-		if costume_idx >= 0 and costume_idx < 10 and costume_idx < _costume_btn_widgets.size():
-			var btn = _costume_btn_widgets[costume_idx]
-			_costume_select.position = to_local(btn.global_position + btn.size * 0.5)
+			in_costume.append(Global.heldSprite.costumeLayers[i] == 1 \
+				and SpriteVisibility.costume_allowed_by_ancestors(ancestor_layers, i + 1))
+		_costume_row.sync(in_costume, Global.main.costume - 1)
 
 func scroll_to_selected():
 	_layer_tree.scroll_to_selected()

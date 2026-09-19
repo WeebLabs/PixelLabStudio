@@ -4,6 +4,7 @@ const MAIN_SCENE := preload("res://main_scenes/main.tscn")
 const AvatarSaveControllerScript = preload("res://main_scenes/controllers/save_controller.gd")
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const SpriteRestPose = preload("res://ui_scenes/selectedSprite/sprite_rest_pose.gd")
 const SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
 
@@ -50,6 +51,7 @@ func _run() -> void:
 	await _test_player_page_hides_edit_chrome()
 	await _test_key_captures_end_with_their_ui()
 	await _test_pause_frame()
+	await _test_costume_chips()
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_motion_is_time_based()
@@ -332,9 +334,91 @@ func _settle_frame_fade(frame) -> void:
 	while waited < frame.FADE_SECONDS * 4.0:
 		await get_tree().process_frame
 		waited += get_process_delta_time()
-		var target := 1.0 if frame.is_shown() else 0.0
-		if is_equal_approx(frame.opacity(), target):
+		# Exactly settled, not nearly: the eased opacity is within float tolerance
+		# of zero a frame or two before the fade ends and the frame hides.
+		if frame.is_settled():
 			return
+
+
+# The costume row: a chip per costume, pink when the selected layer shows in it,
+# dark when it does not or a parent hides it, ringed for the costume being worn.
+func _test_costume_chips() -> void:
+	var row = Global.spriteList._costume_row
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var child = Global.sprite_by_id(NESTED_ID)
+	if parent == null or child == null:
+		return
+	var saved_parent: Array = parent.costumeLayers.duplicate()
+	var saved_child: Array = child.costumeLayers.duplicate()
+	var saved_costume: int = _main.costume
+	_main.swapMode()
+	Global.clear_selection()
+	await get_tree().process_frame
+	for i in 10:
+		assert_equal(row.chip(i).text, str(i + 1), "chip %d is numbered" % (i + 1))
+		# "10" is the widest label; a bigger font must not stretch its chip.
+		assert_equal(row.chip(i).get_combined_minimum_size(), row.CHIP_SIZE, "chip %d keeps the common size" % (i + 1))
+
+	# The row spans the same width as the dividers around it, first chip flush
+	# with their left end and last chip flush with their right end.
+	var divider: Rect2 = Global.spriteList._divider3.get_global_rect()
+	for i in 10:
+		assert_equal(row.chip(i).size, row.CHIP_SIZE, "chip %d is laid out at the common size" % (i + 1))
+	assert_approx(row.chip(0).get_global_rect().position.x, divider.position.x, 0.5, "the first chip starts where the dividers start")
+	assert_approx(row.chip(9).get_global_rect().end.x, divider.end.x, 0.5, "the last chip ends where the dividers end")
+	var gaps := []
+	for i in 9:
+		gaps.append(row.chip(i + 1).get_global_rect().position.x - row.chip(i).get_global_rect().end.x)
+	assert_true(gaps.max() - gaps.min() <= 1.0, "the gaps between chips are even (%s)" % [gaps])
+	assert_true(gaps.min() >= row.CHIP_GAP, "and never tighter than the minimum gap")
+
+	assert_equal(row.state_of(0), row.State.DISABLED, "with nothing selected the chips are dimmed")
+	assert_true(row.chip(0).disabled, "and inert")
+	assert_equal(row.worn_index(), -1, "and none is ringed")
+
+	parent.costumeLayers = [1, 1, 1, 0, 1, 1, 1, 1, 1, 1]
+	child.costumeLayers = [1, 0, 1, 1, 1, 1, 1, 1, 1, 1]
+	_main.changeCostume(3)
+	Global.select_sprite(child)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_equal(row.state_of(0), row.State.ON, "a costume the layer shows in is pink")
+	assert_equal(row.state_of(1), row.State.OFF, "one it is out of is dark")
+	assert_equal(row.state_of(3), row.State.OFF, "and so is one its parent is out of, since the parent hides it")
+	assert_false(row.chip(1).disabled, "chips are live with a layer selected")
+	assert_equal(row.worn_index(), 2, "the costume being worn is ringed")
+	await get_tree().process_frame
+	# Every state, the ringed one included, keeps the common size: the ring used
+	# to pad the worn chip taller than the rest.
+	for i in 10:
+		assert_equal(row.chip(i).size, row.CHIP_SIZE, "chip %d is the common size with a layer selected" % (i + 1))
+	assert_true(row.chip(2).get_combined_minimum_size() <= row.CHIP_SIZE, "the ring does not raise the worn chip's minimum")
+	var worn_box := row.chip(2).get_theme_stylebox("normal") as StyleBoxFlat
+	var plain_box := row.chip(0).get_theme_stylebox("normal") as StyleBoxFlat
+	assert_true(worn_box != null and worn_box.border_width_top > 0, "the ring is drawn on the worn chip")
+	assert_true(plain_box != null and plain_box.border_width_top == 0, "and only there")
+	assert_equal(plain_box.bg_color, SidebarUIFactory.SLIDER_FILL_ENABLED, "pink is the slider fill")
+
+	_main.changeCostume(5)
+	await get_tree().process_frame
+	assert_equal(row.worn_index(), 4, "the ring follows a costume change")
+
+	row.chip(1).pressed.emit()
+	await get_tree().process_frame
+	assert_equal(child.costumeLayers[1], 1, "clicking a chip puts the layer in that costume")
+	assert_equal(row.state_of(1), row.State.ON, "and the chip turns pink")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	child = Global.sprite_by_id(NESTED_ID)
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	child.costumeLayers = saved_child
+	parent.costumeLayers = saved_parent
+	_main.changeCostume(saved_costume)
+	Global.clear_selection()
+	_main.swapMode()
+	await get_tree().process_frame
 
 
 func _materialize_regression_fixture() -> String:

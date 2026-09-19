@@ -56,6 +56,11 @@ func is_shown() -> bool:
 	return _shown
 
 
+# True once the fade has reached the side the pause asks for.
+func is_settled() -> bool:
+	return _fade == (1.0 if _shown else 0.0)
+
+
 func opacity() -> float:
 	return modulate.a if visible else 0.0
 
