@@ -110,6 +110,16 @@ func _test_editor_chrome_contract(t) -> void:
 	t.assert_false(SidebarComponent.is_over_app_chrome(Vector2(600, 300), viewport_size, true, 265, 310), "open canvas remains interactive")
 	t.assert_false(SidebarComponent.is_over_app_chrome(Vector2(100, 300), viewport_size, false, 265, 310), "sidebar bounds are inactive in view mode")
 
+	# The canvas rectangle is the same bounds: the paused-motion frame is drawn on
+	# it, so its edges are exactly where clicks stop reaching the canvas.
+	var canvas := SidebarComponent.edit_canvas_rect(viewport_size, 265, 310)
+	t.assert_equal(canvas, Rect2(265 + 19, 28, 1280 - 310 - 7 - (265 + 19), 720 - 28), "the canvas runs between the sidebars' visual edges, below the menu bar")
+	t.assert_false(SidebarComponent.is_over_app_chrome(canvas.position, viewport_size, true, 265, 310), "the canvas's top-left corner is canvas")
+	t.assert_false(SidebarComponent.is_over_app_chrome(Vector2(canvas.end.x, 300), viewport_size, true, 265, 310), "and so is its right edge")
+	t.assert_true(SidebarComponent.is_over_app_chrome(canvas.position - Vector2(0.5, 0), viewport_size, true, 265, 310), "half a pixel left of it is the sidebar")
+	t.assert_true(SidebarComponent.is_over_app_chrome(Vector2(canvas.end.x + 0.5, 300), viewport_size, true, 265, 310), "half a pixel right of it is the other sidebar")
+	t.assert_equal(SidebarComponent.edit_canvas_rect(viewport_size, -1, -1), Rect2(0, 28, 1280, 692), "with no sidebars the canvas is the window under the menu bar")
+
 	# Viewer mode: only the part of the menu bar that has slid into view blocks
 	# the canvas, so a concealed bar never steals clicks from the avatar.
 	var defaults := [

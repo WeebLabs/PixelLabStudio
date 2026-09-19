@@ -6,6 +6,7 @@ extends Node2D
 # is on the bar.
 
 const MENU_BAR_HEIGHT = AppMenuBar.BAR_HEIGHT
+const PauseFrame = preload("res://main_scenes/pause_frame.gd")
 
 # A paused avatar that is simply sitting still looks the same as a broken one, so
 # the toggle changes colour and wording while it is on.
@@ -16,6 +17,8 @@ var menu_bar: AppMenuBar = null
 var _duplicate_btn: Button = null
 var _duplicate_disabled := false
 var _pause_btn: Button = null
+# The frame around the canvas while motion is paused (pause_frame.gd).
+var pause_frame: Node2D = null
 
 
 func _ready():
@@ -42,6 +45,13 @@ func _ready():
 	_pause_btn.toggle_mode = true
 	_pause_btn.tooltip_text = "Hold bounce, wobble, animation, eye tracking and wiggle at their rest pose"
 	_apply_pause_state()
+
+	# The button's colour alone is easy to miss, so the canvas says it too. Added
+	# first so the menu bar and sidebars draw over its ends.
+	pause_frame = PauseFrame.new()
+	pause_frame.name = "PauseFrame"
+	add_child(pause_frame)
+	move_child(pause_frame, 0)
 
 
 func _process(_delta):

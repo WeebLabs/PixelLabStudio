@@ -65,6 +65,7 @@ PNGTuberPlus/
 │   │   ├── save_controller.gd     Save dialogs, workers, session recovery
 │   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
 │   ├── EditControls.gd            Top menu bar (edit mode)
+│   ├── pause_frame.gd             Frame around the canvas while motion is paused (2026-09-19)
 │   ├── ControlPanel.gd            Right-side streaming panel (view mode)
 │   ├── Tutorial.gd                First-run tutorial overlay
 │   └── originLineDrawing.gd       Origin crosshair lines
@@ -469,6 +470,22 @@ left zone; the viewer bar uses all three.
 > so unpausing does not read the pause as one huge frame of movement and feed it
 > into rotational drag and stretch. The selection chrome moved out of `_process`
 > into `_update_selection_gizmos()` so both the live and paused paths draw it.
+
+> Updated: 2026-09-19 — **A frame shows the pause on the canvas.** The button's
+> colour alone was easy to miss. `main_scenes/pause_frame.gd` is a `Node2D` that
+> `EditControls` adds as its first child, so the menu bar and sidebars draw over
+> it. While `Global.motion_paused()` holds, it draws a 3 px stroke in the pause
+> button's active tone (an inner glow band was tried and dropped), fading in and
+> out over `FADE_SECONDS` (0.25 s, eased with `smoothstep`, frame-rate
+> independent; a fade-out keeps its last rect), around
+> `SidebarUI.edit_canvas_rect()`: below the menu bar and between the sidebars'
+> visual edges. That rect is now the single definition `is_over_app_chrome()` also
+> tests against, so the frame's edges are exactly where clicks stop reaching the
+> canvas. It polls each frame and only redraws when the pause or the bounds
+> change, so it follows a dragged sidebar or a window resize. Living under
+> `EditControls` puts it on the edit page only and keeps it out of NDI output
+> and recordings. Covered by `_test_pause_frame` and
+> `_test_editor_chrome_contract`.
 
 > Updated: 2026-08-17 — The two mic controls are **threshold markers, not
 > knobs**. Each is a meter with a slider riding on it, both on the same scale

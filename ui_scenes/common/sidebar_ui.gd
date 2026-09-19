@@ -98,13 +98,31 @@ static func is_over_app_chrome(
 ) -> bool:
 	if not edit_mode:
 		return viewer_bar_height > 0.0 and screen_position.y < viewer_bar_height
-	if screen_position.y < menu_height:
-		return true
-	if left_panel_width >= 0.0 and screen_position.x < left_panel_width + left_padding:
-		return true
-	if right_panel_width >= 0.0 and screen_position.x > viewport_size.x - right_panel_width - right_padding:
-		return true
-	return false
+	var canvas := edit_canvas_rect(
+		viewport_size, left_panel_width, right_panel_width, menu_height, left_padding, right_padding
+	)
+	return (
+		screen_position.y < canvas.position.y
+		or screen_position.x < canvas.position.x
+		or screen_position.x > canvas.end.x
+	)
+
+
+# The canvas on the edit page: below the menu bar, between the sidebars' visual
+# edges. The padding constants are those edges, since each sidebar's background
+# extends past its panel_width by that much. A width below zero means that
+# sidebar is absent. Shared by the click test above and the paused-motion frame.
+static func edit_canvas_rect(
+	viewport_size: Vector2,
+	left_panel_width: float,
+	right_panel_width: float,
+	menu_height := MENU_BAR_HEIGHT,
+	left_padding := LEFT_CHROME_PADDING,
+	right_padding := RIGHT_CHROME_PADDING,
+) -> Rect2:
+	var left := left_panel_width + left_padding if left_panel_width >= 0.0 else 0.0
+	var right := viewport_size.x - (right_panel_width + right_padding if right_panel_width >= 0.0 else 0.0)
+	return Rect2(left, menu_height, maxf(0.0, right - left), maxf(0.0, viewport_size.y - menu_height))
 
 
 # The one slider-grabber rasterizer in the codebase. Sidebar sliders take the

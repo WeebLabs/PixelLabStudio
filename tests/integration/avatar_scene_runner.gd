@@ -49,6 +49,7 @@ func _run() -> void:
 	await _test_sidebar_selection_state()
 	await _test_player_page_hides_edit_chrome()
 	await _test_key_captures_end_with_their_ui()
+	await _test_pause_frame()
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_motion_is_time_based()
@@ -269,6 +270,71 @@ func _test_key_captures_end_with_their_ui() -> void:
 
 	sprite.animClips = saved_clips
 	sprite.toggle = saved_toggle
+
+
+# While motion is paused, a frame runs around the canvas, between the sidebars
+# and under the menu bar, so the pause does not rely on noticing the button.
+func _test_pause_frame() -> void:
+	var frame = _main.editControls.pause_frame
+	assert_not_null(frame, "the edit page has a pause frame")
+	if frame == null:
+		return
+	Global.motionPaused = false
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_false(frame.is_shown(), "no frame while motion runs")
+
+	Global.motionPaused = true
+	await get_tree().process_frame
+	assert_true(frame.is_shown() and frame.is_visible_in_tree(), "pausing motion frames the canvas")
+	assert_true(frame.opacity() < 1.0, "the frame fades in rather than appearing at once")
+	await _settle_frame_fade(frame)
+	assert_approx(frame.opacity(), 1.0, 0.0001, "and reaches full strength")
+	var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+	var expected := Rect2(
+		Global.spriteEdit.panel_width + 19, 28,
+		viewport_size.x - Global.spriteList.panel_width - 7 - (Global.spriteEdit.panel_width + 19), viewport_size.y - 28,
+	)
+	assert_equal(frame.drawn_rect(), expected, "the frame runs between the sidebars' edges, under the menu bar")
+
+	# It follows a sidebar being dragged wider.
+	var left_width: float = Global.spriteEdit.panel_width
+	Global.spriteEdit.panel_width = left_width + 40
+	await get_tree().process_frame
+	assert_approx(frame.drawn_rect().position.x, left_width + 40 + 19, 0.001, "the frame follows a resized sidebar")
+	Global.spriteEdit.panel_width = left_width
+	await get_tree().process_frame
+
+	# The pause only acts on the edit page, and so does the frame.
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_false(frame.is_visible_in_tree(), "the player page shows no frame")
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_true(frame.is_shown() and frame.is_visible_in_tree(), "back in the editor, still paused, the frame returns")
+
+	await _settle_frame_fade(frame)
+	var drawn_before: Rect2 = frame.drawn_rect()
+	Global.motionPaused = false
+	await get_tree().process_frame
+	assert_false(frame.is_shown(), "resuming motion takes the frame away")
+	assert_true(frame.is_visible_in_tree() and frame.opacity() > 0.0, "fading out rather than vanishing")
+	assert_equal(frame.drawn_rect(), drawn_before, "keeping its shape while it fades")
+	await _settle_frame_fade(frame)
+	assert_false(frame.is_visible_in_tree(), "and is gone once the fade ends")
+	_main.swapMode()
+	await get_tree().process_frame
+
+
+# Wait out the frame's fade, whichever way it is going.
+func _settle_frame_fade(frame) -> void:
+	var waited := 0.0
+	while waited < frame.FADE_SECONDS * 4.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+		var target := 1.0 if frame.is_shown() else 0.0
+		if is_equal_approx(frame.opacity(), target):
+			return
 
 
 func _materialize_regression_fixture() -> String:
