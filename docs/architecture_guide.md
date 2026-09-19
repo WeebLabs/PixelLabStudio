@@ -35,6 +35,14 @@ PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with
 > microphone out of the speakers, and `get_bus_index(&"MIC")` returns -1, so
 > `_refresh_spectrum()` finds no analyzer and the level meters read zero. Any
 > resource reached only through project settings needs the same treatment.
+>
+> Updated: 2026-09-19 — **The `MIC` bus is muted.** It was unmuted at −80 dB and
+> sent to Master, so the microphone played out of the system output, quietly but
+> audibly on some devices and on one channel, since the signal is mono. That
+> layout came from upstream. `bus/1/mute = true` silences the send while the
+> bus's Record and SpectrumAnalyzer effects keep running, the arrangement Godot's
+> own microphone demo uses. Verified in the running app: the avatar still reacts
+> to speech and the leak is gone.
 
 The app has two primary modes:
 
