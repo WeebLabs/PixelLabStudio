@@ -69,6 +69,7 @@ func _run() -> void:
 	await _test_unlink_wiggle_child()
 	await _test_link_keeps_rest_place()
 	await _test_unlink_undo_round_trip()
+	await _test_unlink_undo_keeps_list_view()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -1141,6 +1142,50 @@ func _test_unlink_undo_round_trip() -> void:
 	for _frame in range(3):
 		await get_tree().process_frame
 	assert_true(Global.sprite_by_id(NESTED_ID).parentId == COSTUME_TWO_ID, "the test rig is put back")
+	Global.clear_selection()
+
+
+# Unlinking, and undoing it, re-order the list. Neither may scroll it: the user
+# had the list where they wanted it when they unlinked. Undo used to follow the
+# selection against the stale layout and land on the unlinked row's old place at
+# the bottom of the list.
+func _test_unlink_undo_keeps_list_view() -> void:
+	var list = Global.spriteList
+	var view: ScrollContainer = list.get_node("ScrollContainer")
+	await list.updateData()
+	for _frame in range(3):
+		await get_tree().process_frame
+	var child = Global.sprite_by_id(NESTED_ID)
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	if child == null or parent == null:
+		return
+	Global.select_sprite(child)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	view.scroll_vertical = int(_row_for(parent).position.y) - 20
+	await get_tree().process_frame
+	var parent_offset: float = _row_for(parent).position.y - view.scroll_vertical
+
+	list._on_unlink_pressed()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(child.parentId == null, "the sidebar button unlinks the layer")
+	assert_approx(
+		_row_for(parent).position.y - view.scroll_vertical, parent_offset, 1.0,
+		"unlinking leaves the list where the user was reading it",
+	)
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	child = Global.sprite_by_id(NESTED_ID)
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	assert_true(child.parentSprite == parent, "undo re-links the layer")
+	assert_true(Global.heldSprite == child, "the re-linked layer is still selected")
+	assert_approx(
+		_row_for(parent).position.y - view.scroll_vertical, parent_offset, 1.0,
+		"undoing an unlink leaves the list where it was",
+	)
 	Global.clear_selection()
 
 

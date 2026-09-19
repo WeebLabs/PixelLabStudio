@@ -9,6 +9,9 @@ var _saved_collapse_states: Dictionary = {}
 var _update_generation := 0
 # A link waiting for the list to be rebuilt around it; see prepare_link_framing.
 var _pending_link: Dictionary = {}
+# Hierarchy re-orders whose scroll is not settled on the new layout yet. A count,
+# not a flag, so one refresh settling does not clear another still in flight.
+var _layout_settling := 0
 
 
 func setup(owner: Node2D, container: VBoxContainer, scroll_container: ScrollContainer, global: Node, row_script: GDScript) -> void:
@@ -20,6 +23,12 @@ func setup(owner: Node2D, container: VBoxContainer, scroll_container: ScrollCont
 
 
 func scroll_to_selected() -> void:
+	# Rows re-ordered this frame still report last frame's positions, so following
+	# the selection now chases where its row USED to be. Undoing an unlink
+	# scrolled the list to the bottom that way, where the unlinked row had been.
+	# The refresh settles the scroll a frame later instead.
+	if _layout_settling > 0:
+		return
 	scroll_to_sprite(_global.heldSprite, true)
 
 
@@ -93,6 +102,8 @@ func refresh_hierarchy() -> void:
 	var rows := _container.get_children()
 	if rows.is_empty():
 		return
+	var view_anchor := _capture_view_anchor(rows)
+	_layout_settling += 1
 	var sprite_to_row := {}
 	for row in rows:
 		row.childrenTags = []
@@ -110,7 +121,13 @@ func refresh_hierarchy() -> void:
 	var ordered := _flatten(rows)
 	_apply_order_and_indentation(ordered)
 	apply_collapse_visibility()
-	await _consume_pending_link()
+	# Row positions are only re-laid out on the next frame.
+	await _owner.get_tree().process_frame
+	_layout_settling -= 1
+	if not _pending_link.is_empty():
+		_apply_pending_link()
+	else:
+		_restore_view_anchor(view_anchor)
 
 
 # Live layers in list order: by z, breaking ties on registry order so the result
@@ -373,16 +390,69 @@ func prepare_link_framing(child, parent, parent_picked_on_canvas: bool) -> void:
 func _consume_pending_link() -> void:
 	if _pending_link.is_empty():
 		return
-	var link := _pending_link
-	_pending_link = {}
 	# Row positions are only re-laid out on the next frame.
 	await _owner.get_tree().process_frame
-	if not (is_instance_valid(link.child) and is_instance_valid(link.parent)):
+	_apply_pending_link()
+
+
+func _apply_pending_link() -> void:
+	var link := _pending_link
+	_pending_link = {}
+	if link.is_empty() or not (is_instance_valid(link.child) and is_instance_valid(link.parent)):
 		return
 	if link.frame_both:
 		_frame_link(link.child, link.parent)
 	elif link.anchor != null:
 		_hold_row_at(link.parent, link.anchor)
+
+
+# Everything else that re-orders the tree (unlink, undo, redo) keeps the list
+# where the user was reading it. The anchor is the topmost visible row that is
+# not itself moving: a row whose parent changed moves, and so does every row
+# under it, so neither can hold the view. Anchoring on one of those would follow
+# the moved layer, and holding the raw scroll offset would let the rows in view
+# shift whenever a moved row leaves or arrives above them.
+#
+# Captured before the rows are re-ordered. `row.parent` still holds the parent
+# from the last layout, and the sprite already carries the new one.
+func _capture_view_anchor(rows: Array) -> Array:
+	var moved := {}
+	for row in rows:
+		if is_instance_valid(row.sprite) and row.parent != row.sprite.parentSprite:
+			moved[row] = true
+	var top := float(_scroll_container.scroll_vertical)
+	var bottom := top + _scroll_container.size.y
+	var anchor := []
+	for row in rows:
+		if not row.visible or not is_instance_valid(row.sprite):
+			continue
+		if row.position.y + row.size.y <= top or row.position.y >= bottom:
+			continue
+		if _row_moves(row, moved):
+			continue
+		anchor.append({"sprite": row.sprite, "offset": row.position.y - top})
+	return anchor
+
+
+func _row_moves(row, moved: Dictionary) -> bool:
+	var visited := {}
+	var current = row
+	while current != null and not visited.has(current):
+		if moved.has(current):
+			return true
+		visited[current] = true
+		current = current.parentTag
+	return false
+
+
+func _restore_view_anchor(anchor: Array) -> void:
+	for entry in anchor:
+		if not is_instance_valid(entry.sprite):
+			continue
+		var row = row_for(entry.sprite)
+		if row != null and row.visible:
+			_hold_row_at(entry.sprite, entry.offset)
+			return
 
 
 func _hold_row_at(sprite, offset_in_view: float) -> void:

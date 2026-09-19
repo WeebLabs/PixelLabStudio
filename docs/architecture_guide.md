@@ -1075,6 +1075,24 @@ When a sprite is selected (canvas click, keyboard scroll, or any path through `s
 >   above it as fits. A child hidden inside a collapsed parent has no row to show,
 >   so the parent is centred on its own; linking does not expand the group.
 >
+> Updated: 2026-09-19 — **Every other hierarchy refresh holds the view.**
+> Unlink, undo and redo re-order the rows too, and `refresh_hierarchy()` keeps
+> the list where the user was reading it unless a link is pending. Before the
+> re-order, `_capture_view_anchor()` records the visible rows that are NOT moving,
+> with their offsets. A row moves if its parent changed (`row.parent`, from the
+> last layout, differs from `sprite.parentSprite`, already updated), and so does
+> every row under it. After the layout, `_restore_view_anchor()` puts the topmost
+> of them back at its offset. Anchoring on a moving row would follow the moved
+> layer, and holding the raw scroll offset lets visible rows shift when a moved
+> row leaves or arrives above them.
+>
+> `scroll_to_selected()` stands down while `_layout_settling` counts a refresh in
+> flight. Undo's `on_state_restored()` calls `setImage()` straight after the
+> re-order, and the selection-follow's `ensure_control_visible()` read last
+> frame's row positions. Undoing an unlink therefore scrolled to where the
+> unlinked row HAD been, at the bottom of the list, and the rows then settled
+> back without the scroll. Covered by `_test_unlink_undo_keeps_list_view`.
+>
 > This replaces `viewer._pending_scroll_target`, which scrolled every link's parent
 > to the top of the panel whatever the route. The `setImage()` follow above still
 > runs after a link, but on the parent, which is on screen in the list routes, and
