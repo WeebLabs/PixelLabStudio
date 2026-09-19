@@ -758,7 +758,7 @@ func select(areas):
 			return
 		
 		MutationCommands.structural(func():
-			linkSprite(prevSpr, heldSprite)
+			linkSprite(prevSpr, heldSprite, true)
 			return true)
 		if is_instance_valid(chain):
 			chain.enable(reparentMode)
@@ -807,7 +807,10 @@ func _clear_eye_track_pick():
 	if spriteList != null:
 		spriteList.refreshEyePickWhip()
 
-func linkSprite(sprite,newParent):
+# `parent_picked_on_canvas` decides how the layer list follows the link: a parent
+# clicked on the canvas has the list bring the child and parent into view, while
+# a parent clicked in the list leaves the list where the user scrolled it.
+func linkSprite(sprite, newParent, parent_picked_on_canvas := false):
 	if sprite == newParent:
 		reparentMode = false
 
@@ -854,7 +857,7 @@ func linkSprite(sprite,newParent):
 
 	reparentMode = false
 
-	Global.spriteList._pending_scroll_target = newParent
+	Global.spriteList.prepareLinkFraming(sprite, newParent, parent_picked_on_canvas)
 	Global.spriteList.refreshHierarchy()
 	
 	var count = sprite.path.get_slice_count("/") - 1
@@ -1017,4 +1020,3 @@ func saveImagesFromData():
 	
 func notify_user(text: String) -> void:
 	notification_requested.emit(text)
-

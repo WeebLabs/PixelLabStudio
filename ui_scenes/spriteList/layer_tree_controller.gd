@@ -7,6 +7,8 @@ var _global: Node
 var _row_script: GDScript
 var _saved_collapse_states: Dictionary = {}
 var _update_generation := 0
+# A link waiting for the list to be rebuilt around it; see prepare_link_framing.
+var _pending_link: Dictionary = {}
 
 
 func setup(owner: Node2D, container: VBoxContainer, scroll_container: ScrollContainer, global: Node, row_script: GDScript) -> void:
@@ -34,7 +36,7 @@ func scroll_to_sprite(target_sprite, ensure_visible := false) -> void:
 		return
 
 
-func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
+func update_data(sort_by_z := true) -> void:
 	_saved_collapse_states.clear()
 	for row in _container.get_children():
 		if is_instance_valid(row.sprite) and row.collapsed:
@@ -75,7 +77,7 @@ func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
 			row.collapsed = true
 			row._collapse_btn.text = "▶"
 			row._set_descendants_visible(false)
-	await _consume_pending_scroll(pending_scroll_target)
+	await _consume_pending_link()
 
 
 # Re-read the tree after a link or unlink, keeping the rows themselves. Each
@@ -87,7 +89,7 @@ func update_data(sort_by_z := true, pending_scroll_target = null) -> void:
 # It used to clear every collapsed flag here and never touch visibility, which
 # left the two out of step: a collapsed parent came back claiming to be expanded
 # while its children stayed hidden.
-func refresh_hierarchy(pending_scroll_target = null) -> void:
+func refresh_hierarchy() -> void:
 	var rows := _container.get_children()
 	if rows.is_empty():
 		return
@@ -108,7 +110,7 @@ func refresh_hierarchy(pending_scroll_target = null) -> void:
 	var ordered := _flatten(rows)
 	_apply_order_and_indentation(ordered)
 	apply_collapse_visibility()
-	await _consume_pending_scroll(pending_scroll_target)
+	await _consume_pending_link()
 
 
 # Live layers in list order: by z, breaking ties on registry order so the result
@@ -345,8 +347,68 @@ func reflow() -> void:
 		row.updateIndent(width)
 
 
-func _consume_pending_scroll(target) -> void:
-	if target == null:
+# How the list follows a link depends on where the parent was picked.
+#
+# Picked in the list, the user had already scrolled to that parent, so the list
+# keeps the parent row where it was on screen. Holding the raw scroll offset is
+# not enough: the child's row leaves its old place, and when that place was above
+# the view every visible row shifts up by one.
+#
+# Picked on the canvas, the list was last framed on the child, from the click
+# that selected it, and the child has just moved out from under that frame. The
+# list brings the child and its new parent into view together.
+#
+# Call before the rows are re-ordered, since the parent's on-screen place is read
+# from the layout the user was looking at.
+func prepare_link_framing(child, parent, parent_picked_on_canvas: bool) -> void:
+	var parent_row = row_for(parent)
+	_pending_link = {
+		"child": child,
+		"parent": parent,
+		"frame_both": parent_picked_on_canvas,
+		"anchor": parent_row.position.y - _scroll_container.scroll_vertical if parent_row != null else null,
+	}
+
+
+func _consume_pending_link() -> void:
+	if _pending_link.is_empty():
 		return
+	var link := _pending_link
+	_pending_link = {}
+	# Row positions are only re-laid out on the next frame.
 	await _owner.get_tree().process_frame
-	scroll_to_sprite(target)
+	if not (is_instance_valid(link.child) and is_instance_valid(link.parent)):
+		return
+	if link.frame_both:
+		_frame_link(link.child, link.parent)
+	elif link.anchor != null:
+		_hold_row_at(link.parent, link.anchor)
+
+
+func _hold_row_at(sprite, offset_in_view: float) -> void:
+	var row = row_for(sprite)
+	if row == null:
+		return
+	_scroll_container.scroll_vertical = int(round(row.position.y - offset_in_view))
+
+
+# Centre the parent and the child together. When they do not fit, the child
+# wins: it is the layer that moved, and the parent is kept as close above it as
+# the view allows. A child hidden in a collapsed parent has no row to show, so
+# the parent is centred on its own.
+func _frame_link(child, parent) -> void:
+	var parent_row = row_for(parent)
+	if parent_row == null:
+		return
+	var view := _scroll_container.size.y
+	var top: float = parent_row.position.y
+	var bottom: float = top + parent_row.size.y
+	var child_row = row_for(child)
+	if child_row != null and child_row.visible:
+		bottom = child_row.position.y + child_row.size.y
+	var scroll: float
+	if bottom - top <= view:
+		scroll = (top + bottom - view) * 0.5
+	else:
+		scroll = bottom - view
+	_scroll_container.scroll_vertical = int(round(maxf(0.0, scroll)))

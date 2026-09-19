@@ -74,7 +74,6 @@ var _blend_section_helper: BlendOpacitySection
 var _blend_section: VBoxContainer
 
 var _layer_tree = LayerTreeController.new()
-var _pending_scroll_target = null
 var _dragging = false
 var _drag_start = Vector2.ZERO
 var _drag_start_width: float = 0
@@ -620,9 +619,7 @@ func _input(event):
 
 func updateData(sort_by_z: bool = true):
 	_filter_field.text = ""
-	var pending_target = _pending_scroll_target
-	_pending_scroll_target = null
-	await _layer_tree.update_data(sort_by_z, pending_target)
+	await _layer_tree.update_data(sort_by_z)
 
 func layersBetween(a, b) -> Array:
 	return _layer_tree.layers_between(a, b)
@@ -670,9 +667,12 @@ func syncRows(sort_by_z: bool = true):
 
 
 func refreshHierarchy():
-	var pending_target = _pending_scroll_target
-	_pending_scroll_target = null
-	await _layer_tree.refresh_hierarchy(pending_target)
+	await _layer_tree.refresh_hierarchy()
+
+# Where the list should land once a link's rebuild is done. See
+# layer_tree_controller.prepare_link_framing.
+func prepareLinkFraming(child, parent, parent_picked_on_canvas: bool):
+	_layer_tree.prepare_link_framing(child, parent, parent_picked_on_canvas)
 
 func _on_filter_changed(text: String):
 	_layer_tree.filter(text)

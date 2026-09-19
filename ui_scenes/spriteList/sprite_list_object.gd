@@ -387,7 +387,7 @@ func _select():
 
 	if Global.heldSprite != null and Global.reparentMode:
 		MutationCommands.structural(func():
-			Global.linkSprite(Global.heldSprite, sprite)
+			Global.linkSprite(Global.heldSprite, sprite, false)
 			return true)
 		Global.chain.enable(false)
 

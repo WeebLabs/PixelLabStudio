@@ -1050,6 +1050,34 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 
 When a sprite is selected (canvas click, keyboard scroll, or any path through `spriteEdit.setImage()`), the sprite list automatically scrolls to bring the corresponding list item into view via `viewer.gd:scroll_to_selected()`, which calls `ScrollContainer.ensure_control_visible()`. This is a no-op when the item is already visible.
 
+> Updated: 2026-09-19 — **After a link, the list follows where the parent was
+> picked.** `Global.linkSprite(sprite, newParent, parent_picked_on_canvas)` takes
+> the route from its caller: the canvas click path in `global.gd` passes `true`,
+> the row click in `sprite_list_object._select()` passes `false`, and the default
+> is `false`. Before the rows move, `linkSprite` calls
+> `viewer.prepareLinkFraming()` → `layer_tree_controller.prepare_link_framing()`,
+> which records the parent row's offset from the top of the view. Whichever
+> rebuild runs next (`refresh_hierarchy` or `update_data`) consumes it a frame
+> later, once rows are laid out:
+>
+> - **Parent picked in the list** (canvas→list, list→list): `_hold_row_at` puts
+>   the parent row back at the offset it had. The user had scrolled to it, so the
+>   view stays put. The raw `scroll_vertical` is NOT what is held: when the
+>   child's old row was above the view, every visible row shifts up one row as it
+>   leaves, and holding the offset would slide the parent.
+> - **Parent picked on the canvas** (canvas→canvas, list→canvas): the child has
+>   just moved out from under the list's frame, so `_frame_link` centres the span
+>   from the parent's row to the child's. When the span is taller than the view,
+>   the child wins (it is the layer that moved) and the parent sits as close
+>   above it as fits. A child hidden inside a collapsed parent has no row to show,
+>   so the parent is centred on its own; linking does not expand the group.
+>
+> This replaces `viewer._pending_scroll_target`, which scrolled every link's parent
+> to the top of the panel whatever the route. The `setImage()` follow above still
+> runs after a link, but on the parent, which is on screen in the list routes, and
+> is overridden a frame later in the canvas routes. Covered by
+> `avatar_scene_runner._test_link_framing`.
+
 ### Physics query vs cached overlap
 
 The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `Area2D.get_overlapping_areas()` because the latter returns cached results from the previous physics step, creating a one-frame timing mismatch with the cursor position updated in `_process()`.

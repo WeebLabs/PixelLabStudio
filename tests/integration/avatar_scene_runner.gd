@@ -63,6 +63,7 @@ func _run() -> void:
 	await _test_costume_keeps_selection()
 	await _test_layer_name_display()
 	await _test_link_into_collapsed_group()
+	await _test_link_framing()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -773,6 +774,141 @@ func _test_link_into_collapsed_group() -> void:
 	assert_equal(Global.sprite_by_id(COSTUME_ONE_ID).parentId, original_parent, "the test rig is put back")
 	await list.updateData()
 	await get_tree().process_frame
+
+
+# How the layer list follows a link depends on where the parent was picked. In
+# the list, the user had already scrolled to it, so the parent row stays exactly
+# where it was on screen. On the canvas, the child has just moved out from under
+# the list's frame, so the list brings child and parent into view together.
+func _test_link_framing() -> void:
+	var list = Global.spriteList
+	var view: ScrollContainer = list.get_node("ScrollContainer")
+	await list.updateData()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# The canvas caller is the one that says so; nothing else can tell the two
+	# routes apart once they reach linkSprite.
+	var global_source := FileAccess.get_file_as_string("res://autoload/global.gd")
+	assert_true(
+		global_source.contains("linkSprite(prevSpr, heldSprite, true)"),
+		"a parent clicked on the canvas is linked as a canvas pick",
+	)
+
+	# Parent picked in the list, through the row's own click. The child's row sits
+	# above the parent's, so its leaving shifts the parent up a row: holding the
+	# raw scroll offset would not hold the parent in place.
+	var child = Global.sprite_by_id(4000000004)
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	if child == null or parent == null:
+		return
+	assert_true(_row_for(child).position.y < _row_for(parent).position.y, "the child's row starts above the parent's")
+	view.scroll_vertical = int(_row_for(parent).position.y) - 40
+	await get_tree().process_frame
+	var held_offset: float = _row_for(parent).position.y - view.scroll_vertical
+	var scroll_before: int = view.scroll_vertical
+	Global.select_sprite(child)
+	Global.begin_reparenting()
+	_row_for(parent)._select()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(child.parentSprite == parent, "clicking the parent's row links the held layer to it")
+	assert_approx(
+		_row_for(parent).position.y - view.scroll_vertical, held_offset, 1.0,
+		"a parent picked in the list stays where it was on screen",
+	)
+	assert_true(view.scroll_vertical != scroll_before, "the list compensated for the row that left from above")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# Parent picked on the canvas, where child and parent fit in the view
+	# together: both are shown, centred.
+	child = Global.sprite_by_id(4000000011)
+	parent = Global.sprite_by_id(4000000005)
+	if child == null or parent == null:
+		return
+	view.ensure_control_visible(_row_for(child))
+	await get_tree().process_frame
+	MutationCommands.structural(func():
+		Global.linkSprite(child, parent, true)
+		return true)
+	for _frame in range(3):
+		await get_tree().process_frame
+	var top: float = _row_for(parent).position.y
+	var bottom: float = _row_for(child).position.y + _row_for(child).size.y
+	assert_true(bottom - top <= view.size.y, "this pair fits in the view together")
+	assert_true(_row_fully_in_view(view, _row_for(parent)), "a canvas link shows the parent")
+	assert_true(_row_fully_in_view(view, _row_for(child)), "a canvas link shows the child where it went")
+	assert_approx(
+		view.scroll_vertical + view.size.y * 0.5, (top + bottom) * 0.5, 1.0,
+		"the pair is centred in the list",
+	)
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# Parent picked on the canvas, where the pair is taller than the view: the
+	# child is the layer that moved, so it wins, and the parent sits as close
+	# above it as the view allows. A new child joins its siblings in list order,
+	# so taking the bottom row puts it after the parent's existing child, which
+	# makes the pair three rows tall.
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var rows: Array = list.container.get_children()
+	child = rows[rows.size() - 1].sprite
+	assert_true(
+		_row_for(child).position.y > _row_for(Global.sprite_by_id(NESTED_ID)).position.y,
+		"the layer to link sits below the parent's existing child",
+	)
+	view.ensure_control_visible(_row_for(child))
+	await get_tree().process_frame
+	MutationCommands.structural(func():
+		Global.linkSprite(child, parent, true)
+		return true)
+	for _frame in range(3):
+		await get_tree().process_frame
+	top = _row_for(parent).position.y
+	bottom = _row_for(child).position.y + _row_for(child).size.y
+	assert_true(bottom - top > view.size.y, "this pair is taller than the view")
+	assert_true(_row_fully_in_view(view, _row_for(child)), "when the pair does not fit, the child stays in view")
+	assert_approx(view.scroll_vertical + view.size.y, bottom, 1.0, "and the parent is as close above it as fits")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+
+	# Parent picked on the canvas while it is collapsed: the child is hidden with
+	# the rest of the group, so the parent is framed on its own.
+	rows = list.container.get_children()
+	child = rows[rows.size() - 1].sprite
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var parent_row = _row_for(parent)
+	parent_row._on_collapse_toggled()
+	view.ensure_control_visible(_row_for(child))
+	await get_tree().process_frame
+	MutationCommands.structural(func():
+		Global.linkSprite(child, parent, true)
+		return true)
+	for _frame in range(3):
+		await get_tree().process_frame
+	parent_row = _row_for(parent)
+	assert_true(parent_row.collapsed, "the collapsed parent stays collapsed")
+	assert_false(_row_for(child).visible, "and the child is hidden with its group")
+	assert_approx(
+		view.scroll_vertical + view.size.y * 0.5, parent_row.position.y + parent_row.size.y * 0.5, 1.0,
+		"a collapsed parent is centred on its own",
+	)
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	_row_for(parent)._on_collapse_toggled()
+	Global.clear_selection()
+	await list.updateData()
+	await get_tree().process_frame
+
+
+func _row_fully_in_view(view: ScrollContainer, row) -> bool:
+	return row.position.y >= view.scroll_vertical - 0.5 \
+		and row.position.y + row.size.y <= view.scroll_vertical + view.size.y + 0.5
 
 
 func _row_for(sprite):
