@@ -192,7 +192,8 @@ Additional parsers (not autoloaded, instantiated on demand):
 > Updated: 2026-08-06 — `Global` remains the compatibility-facing application
 > state autoload, but runtime ownership is delegated under `autoload/runtime/`.
 > `MicrophoneMonitor` owns exactly one tracked capture player, resolves the MIC
-> spectrum analyzer by bus/type instead of numeric indexes, applies the level
+> bus's effects by type instead of numeric indexes (the capture since
+> 2026-09-19, previously a spectrum analyser), applies the level
 > envelope and speaking transitions, validates device selection, and owns a
 > generation-guarded delayed restart. It never frees unrelated autoload
 > children and shuts down explicitly. Player shutdown clears the native stream
@@ -483,6 +484,52 @@ left zone; the viewer bar uses all three.
 > mirrors the stored `volume` / `sense` once, since schema 1 stored
 > `range - thumb` (the slider read as a sensitivity knob). Defaults moved to the
 > mirrored values, so upgrades keep the thresholds they had.
+
+> Updated: 2026-09-19 — **Voice detection measures the samples, not a spectrum
+> bin.** The note above is superseded for units and measurement; the
+> threshold-marker model stands.
+>
+> - **Bus.** `MIC` (muted) carries `AudioEffectHighPassFilter` (90 Hz, 12 dB/oct),
+>   `AudioEffectLowPassFilter` (5 kHz) and `AudioEffectCapture` (0.2 s buffer).
+>   The spectrum analyser and the unused Record effect are gone.
+> - **Level.** `MicrophoneMonitor.sample()` drains every captured frame each
+>   frame and takes `buffer_rms()`, using the louder channel of each frame because
+>   a mono microphone can arrive on one channel only. A frame with no new audio
+>   keeps the last RMS rather than reading as silence. `follow_envelope()` is a
+>   one-pole follower, attack 15 ms and release 70 ms (200 ms at first; shortened
+>   so the bar falls faster), written with
+>   `exp(-delta / tau)` so it does not depend on the frame rate. `to_db()` converts
+>   to dBFS, floored at `FLOOR_DB` (−60).
+> - **Gate.** Opens at `threshold_db` and closes `HYSTERESIS_DB` (4 dB) below it.
+> - **Duration.** `duration` jumps to `DURATION_FULL_MS` (1000) whenever the gate
+>   is open, and drains 1 ms per ms once it closes. `speaking` holds while the
+>   gate is open or `duration > duration_threshold`, so the mouth closes when the
+>   bar falls past the thumb, `DURATION_FULL_MS - thumb` ms after the voice stops.
+>   A thumb further left holds longer, as the Duration bar always behaved. A
+>   first version showed the hold remaining instead, which only ever reached the
+>   thumb.
+> - **Meters.** Level runs from `MIC_LEVEL_MIN_DB` to `MIC_LEVEL_MAX_DB` (−60 to
+>   0 dBFS) and shows `Global.micLevelDb`. Duration runs from 0 to
+>   `MIC_DURATION_FULL_MS` and shows `Global.micDuration`.
+>   `menu_bar.add_level_meter` gained `meter_min` for the dB scale. `Global`'s
+>   `volume` / `volumeSensitivity` / `volumeLimit` / `senseLimit` / `spectrum`
+>   became `micLevelDb` / `micDuration` / `micThresholdDb` /
+>   `micDurationThreshold`.
+> - **Settings.** Schema 3 stores `micThresholdDb` and `micDurationThreshold`.
+>   Older `volume` / `sense` are converted once and removed. The level uses
+>   `20·log10(volume)`, which is approximate, since the old value was one FFT
+>   bin. The duration uses the old hold, `ln(1 / sense) / 2` s (exact for the old
+>   `e^-2t` decay), as `1000 − hold_ms`. A key that was never stored takes
+>   today's default.
+>
+> Why: the old reading was the loudest single bin of the latest 256 samples, taken
+> once a frame. It saw about a third of the audio, landed on a random point in
+> each pitch period, ignored energy spread over harmonics, and was shown on a
+> linear bar where −30 dBFS filled 16%. On simulated voice-like signals it varied
+> 36–58% frame to frame while speaking, against about 10% now, and read about
+> 5 dB low on a vowel. Covered by `test_runtime_services` (RMS, envelope, gate,
+> hysteresis, Duration fill and drain, mute), `test_persistence` (conversion) and
+> `test_release_contract` (bus layout).
 
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`

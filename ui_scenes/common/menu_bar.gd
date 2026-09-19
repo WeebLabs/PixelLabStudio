@@ -272,6 +272,8 @@ func add_group(zone: Container, separation := ITEM_SEPARATION) -> HBoxContainer:
 # Caption + live meter + threshold marker, returned as {"meter", "slider"}.
 # `fill` colors the meter; the slider is drawn as a bare grabber so it reads as
 # a marker sitting on the meter rather than a second track.
+# The bar and its thumb share one scale, from `meter_min` to `meter_max`, so the
+# thumb sits exactly where the bar reaches the same value.
 func add_level_meter(
 	zone: Container,
 	caption: String,
@@ -279,6 +281,7 @@ func add_level_meter(
 	meter_max: float,
 	slider_max: float,
 	slider_step: float,
+	meter_min: float = 0.0,
 ) -> Dictionary:
 	var group := add_group(zone, 6)
 	add_label(group, caption, COLOR_MUTED, LABEL_FONT_SIZE)
@@ -291,8 +294,9 @@ func add_level_meter(
 
 	var meter := ProgressBar.new()
 	meter.show_percentage = false
+	meter.min_value = meter_min
 	meter.max_value = meter_max
-	meter.value = 0.0
+	meter.value = meter_min
 	meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	meter.anchor_right = 1.0
 	meter.anchor_top = 0.5
@@ -307,6 +311,7 @@ func add_level_meter(
 	stack.add_child(meter)
 
 	var slider := HSlider.new()
+	slider.min_value = meter_min
 	slider.max_value = slider_max
 	slider.step = slider_step
 	slider.scrollable = false

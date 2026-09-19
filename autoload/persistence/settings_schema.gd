@@ -3,17 +3,27 @@ extends RefCounted
 
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
 
-const CURRENT_VERSION := 2
+const CURRENT_VERSION := 3
 const COSTUME_SLOT_COUNT := 10
 
-# Full-scale value of each microphone meter. The stored "volume" and "sense"
-# settings are thumb positions on those meters, and since schema 2 a thumb is
-# the threshold the meter's own bar is compared against: the trigger fires while
-# the bar has reached the thumb. Schema 1 stored the mirror of that (the thumb
-# read as a sensitivity knob, limit = range - thumb), so v1 values are flipped
-# once on load. The viewer bar builds both meters from these ranges.
-const MIC_LEVEL_RANGE := 0.2
-const MIC_DURATION_RANGE := 1.0
+# The viewer's two microphone meters, and the settings their thumbs store.
+# Since schema 3, "micThresholdDb" is the level in dBFS that opens the voice gate
+# (the Level meter runs from MIC_LEVEL_MIN_DB to MIC_LEVEL_MAX_DB), and
+# "micDurationThreshold" is the Duration thumb, from 0 to MIC_DURATION_FULL_MS.
+# The Duration bar fills when the gate opens and drains 1 ms per ms after, so the
+# mouth stays open MIC_DURATION_FULL_MS - thumb ms once the voice drops.
+#
+# Schemas 1 and 2 stored "volume", a linear threshold on the loudest spectrum
+# bin (full scale 0.2), and "sense", the point a 0-1 value decaying at e^-2t had
+# to fall below, which is a hold of ln(1 / sense) / 2 seconds. Both are converted
+# once on load. The level conversion is approximate: the old reading was one FFT
+# bin, the new one is the RMS of the voice band, which reads a few dB higher on
+# speech, so a converted threshold opens slightly more readily.
+const MIC_LEVEL_MIN_DB := -60.0
+const MIC_LEVEL_MAX_DB := 0.0
+const MIC_DURATION_FULL_MS := 1000.0
+const LEGACY_MIC_LEVEL_RANGE := 0.2
+const LEGACY_MIC_DURATION_RANGE := 1.0
 
 
 static func defaults() -> Dictionary:
@@ -21,8 +31,8 @@ static func defaults() -> Dictionary:
 		"_schemaVersion": CURRENT_VERSION,
 		"newUser": true,
 		"lastAvatar": "",
-		"volume": 0.015,
-		"sense": 0.75,
+		"micThresholdDb": -40.0,
+		"micDurationThreshold": 850.0,
 		"windowSize": var_to_str(Vector2i(1280, 720)),
 		"useStreamDeck": false,
 		"audioDevice": "",
@@ -67,8 +77,7 @@ static func normalize(value: Variant) -> Dictionary:
 	result["_schemaVersion"] = CURRENT_VERSION
 	result["newUser"] = ValueCodec.bool_value(source.get("newUser"), base["newUser"])
 	result["lastAvatar"] = ValueCodec.string_value(source.get("lastAvatar"), base["lastAvatar"], 32768)
-	result["volume"] = _mic_thumb(source.get("volume"), base["volume"], MIC_LEVEL_RANGE, source_version)
-	result["sense"] = _mic_thumb(source.get("sense"), base["sense"], MIC_DURATION_RANGE, source_version)
+	_normalize_microphone(source, result, base, source_version)
 
 	var window_size := ValueCodec.vector2i_value(source.get("windowSize"), Vector2i(1280, 720))
 	window_size.x = clampi(window_size.x, 640, 16384)
@@ -115,10 +124,52 @@ static func normalize(value: Variant) -> Dictionary:
 	return {"ok": true, "value": result, "error": ""}
 
 
-# A microphone meter's thumb position, clamped to that meter's scale. Schema 1
-# and earlier stored the mirror (the slider read as a sensitivity knob), so those
-# values are flipped once. Clamping happens first: an out-of-range v1 value meant
-# a threshold pinned at one end, and it has to land on that same end afterwards.
+static func _normalize_microphone(source: Dictionary, result: Dictionary, base: Dictionary, source_version: int) -> void:
+	if source_version >= 3 or source.has("micThresholdDb") or source.has("micDurationThreshold"):
+		result["micThresholdDb"] = ValueCodec.float_value(
+			source.get("micThresholdDb"), base["micThresholdDb"], MIC_LEVEL_MIN_DB, MIC_LEVEL_MAX_DB
+		)
+		result["micDurationThreshold"] = ValueCodec.float_value(
+			source.get("micDurationThreshold"), base["micDurationThreshold"], 0.0, MIC_DURATION_FULL_MS
+		)
+	else:
+		# A value the user set is converted. One that was never stored takes
+		# today's default rather than a conversion of the old one.
+		result["micThresholdDb"] = base["micThresholdDb"]
+		result["micDurationThreshold"] = base["micDurationThreshold"]
+		if source.has("volume"):
+			var level := _mic_thumb(source.get("volume"), 0.015, LEGACY_MIC_LEVEL_RANGE, source_version)
+			result["micThresholdDb"] = legacy_level_to_db(level)
+		if source.has("sense"):
+			var sense := _mic_thumb(source.get("sense"), 0.75, LEGACY_MIC_DURATION_RANGE, source_version)
+			result["micDurationThreshold"] = MIC_DURATION_FULL_MS - legacy_sense_to_hold_ms(sense)
+	# One source of truth: the converted keys replace the old ones.
+	result.erase("volume")
+	result.erase("sense")
+
+
+static func legacy_level_to_db(level: float) -> float:
+	if level <= 0.0:
+		return MIC_LEVEL_MIN_DB
+	return clampf(20.0 * log(level) / log(10.0), MIC_LEVEL_MIN_DB, MIC_LEVEL_MAX_DB)
+
+
+# The old decay fell as e^-2t from 1 and the mouth closed once it dropped below
+# `sense`, which takes ln(1 / sense) / 2 seconds. A sense of 1 or more never let
+# the mouth open past the trigger frame, a hold of 0 now; 0 held it forever,
+# clamped to the longest hold the Duration bar can express.
+static func legacy_sense_to_hold_ms(sense: float) -> float:
+	if sense >= 1.0:
+		return 0.0
+	if sense <= 0.0:
+		return MIC_DURATION_FULL_MS
+	return clampf(1000.0 * log(1.0 / sense) / 2.0, 0.0, MIC_DURATION_FULL_MS)
+
+
+# A legacy microphone meter's thumb position, clamped to that meter's scale.
+# Schema 1 and earlier stored the mirror (the slider read as a sensitivity knob),
+# so those values are flipped once. Clamping happens first: an out-of-range v1
+# value meant a threshold pinned at one end, and it has to land on that same end.
 static func _mic_thumb(value: Variant, fallback: float, range_max: float, source_version: int) -> float:
 	var mirrored := source_version < 2
 	# The fallback is expressed in the current meaning, so a missing or unusable

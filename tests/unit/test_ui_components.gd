@@ -252,21 +252,29 @@ func _test_level_meter_alignment_contract(t) -> void:
 	)
 
 
-# Both mic thumbs are thresholds read against their own meter, so the limit is
-# the thumb position itself. The earlier wiring stored the mirror, which made the
-# thumb behave as a sensitivity knob with no relationship to the bar behind it.
+# Both mic thumbs are thresholds on their own meter's scale: the Level thumb is the
+# dBFS level that opens the voice gate, the Duration thumb the hold in ms.
 func _test_mic_threshold_wiring(t) -> void:
 	var source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/ControlPanel.gd"))
 	t.assert_true(source.contains("apply.call(value)"), "a thumb applies its own position as the threshold")
 	t.assert_false(source.contains("limit_range - value"), "no mirrored sensitivity mapping remains")
-	t.assert_true(source.contains("SettingsSchema.MIC_LEVEL_RANGE"), "the level meter takes its scale from the persisted schema")
-	t.assert_true(source.contains("SettingsSchema.MIC_DURATION_RANGE"), "the duration meter takes its scale from the persisted schema")
+	t.assert_true(source.contains("SettingsSchema.MIC_LEVEL_MIN_DB"), "the level meter takes its dB floor from the persisted schema")
+	t.assert_true(source.contains("SettingsSchema.MIC_LEVEL_MAX_DB"), "and its ceiling")
+	t.assert_true(source.contains("SettingsSchema.MIC_DURATION_FULL_MS"), "the duration meter takes its range from the persisted schema")
+	t.assert_true(source.contains("Global.micLevelDb"), "the level bar shows the smoothed voice level")
+	t.assert_true(source.contains("Global.micDuration,"), "the duration bar shows the fill-and-drain value")
 
-	# A trigger holds while the meter has reached the thumb, on both meters.
-	t.assert_equal(MicMonitor.next_sensitivity(0.0, 0.09, 0.05, 0.016), 1.0, "a level bar past the thumb fires")
-	t.assert_equal(MicMonitor.next_sensitivity(0.0, 0.03, 0.05, 0.016), 0.0, "a level bar short of the thumb does not")
-	var decaying := MicMonitor.next_sensitivity(1.0, 0.0, 0.05, 0.016)
-	t.assert_true(decaying < 1.0 and decaying > 0.75, "the duration bar shrinks from a trigger rather than dropping out")
+	# The Level thumb is the gate threshold, read against the Level bar.
+	var monitor := MicMonitor.new()
+	monitor.threshold_db = -30.0
+	monitor.update_from_rms(pow(10.0, -25.0 / 20.0), 1.0 / 60.0)
+	t.assert_true(monitor.speaking, "a level bar past the thumb opens the gate")
+	var quiet := MicMonitor.new()
+	quiet.threshold_db = -30.0
+	quiet.update_from_rms(pow(10.0, -40.0 / 20.0), 1.0 / 60.0)
+	t.assert_false(quiet.speaking, "a level bar short of the thumb does not")
+	monitor.free()
+	quiet.free()
 
 
 # A prompt that acts on the held layer has two ways to lose it: the canvas, which

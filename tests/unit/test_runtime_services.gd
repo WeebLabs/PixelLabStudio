@@ -70,27 +70,84 @@ func _blinks_over(scheduler, steps: int, step: float) -> int:
 
 
 func _test_microphone_envelope(t) -> void:
-	t.assert_approx(MicrophoneMonitor.next_sensitivity(1.0, 0.0, 0.5, 0.25), 0.5, 0.00001, "microphone sensitivity decays at the legacy rate")
-	t.assert_approx(MicrophoneMonitor.next_sensitivity(0.25, 0.75, 0.5, 0.01), 1.0, 0.00001, "levels over the volume threshold trigger full sensitivity")
-	t.assert_approx(MicrophoneMonitor.next_sensitivity(1.0, 0.0, 0.5, 10.0), 0.0, 0.00001, "long frames clamp envelope interpolation instead of overshooting")
+	# Level: the RMS of every frame, from whichever channel is louder.
+	var steady := PackedVector2Array()
+	var left_only := PackedVector2Array()
+	for i in 480:
+		var v := 0.5 if i % 2 == 0 else -0.5
+		steady.append(Vector2(v, v))
+		left_only.append(Vector2(v, 0.0))
+	t.assert_approx(MicrophoneMonitor.buffer_rms(steady), 0.5, 0.00001, "RMS of a full-scale square at 0.5 is 0.5")
+	t.assert_approx(MicrophoneMonitor.buffer_rms(left_only), 0.5, 0.00001, "a mono microphone on one channel is not read 3 dB low")
+	t.assert_equal(MicrophoneMonitor.buffer_rms(PackedVector2Array()), 0.0, "no samples read as silence")
+	t.assert_approx(MicrophoneMonitor.to_db(1.0), 0.0, 0.0001, "full scale is 0 dBFS")
+	t.assert_approx(MicrophoneMonitor.to_db(0.1), -20.0, 0.0001, "a tenth of full scale is -20 dBFS")
+	t.assert_equal(MicrophoneMonitor.to_db(0.0), MicrophoneMonitor.FLOOR_DB, "silence reads as the floor")
+
+	# Envelope: fast up, slower down, and independent of the frame rate.
+	var rise := MicrophoneMonitor.follow_envelope(0.0, 1.0, 1.0 / 60.0)
+	var fall := 1.0 - MicrophoneMonitor.follow_envelope(1.0, 0.0, 1.0 / 60.0)
+	t.assert_true(rise > 0.6, "the envelope follows a rising level within about a frame")
+	t.assert_true(fall < rise * 0.5, "and lets a falling level go more slowly, which is what removes the flicker")
+	var one_step := MicrophoneMonitor.follow_envelope(0.2, 0.8, 1.0 / 60.0)
+	var two_steps := MicrophoneMonitor.follow_envelope(MicrophoneMonitor.follow_envelope(0.2, 0.8, 1.0 / 120.0), 0.8, 1.0 / 120.0)
+	t.assert_approx(one_step, two_steps, 0.000001, "the envelope does not depend on the frame rate")
+	t.assert_equal(MicrophoneMonitor.follow_envelope(0.3, 0.9, 0.0), 0.3, "a zero-length frame changes nothing")
 
 
 func _test_microphone_state_transitions(t) -> void:
 	var monitor := MicrophoneMonitor.new()
-	monitor.volume_limit = 0.5
-	monitor.sense_limit = 0.2
+	monitor.threshold_db = -30.0
+	# A thumb 200 ms short of full: the mouth stays open 200 ms after the voice.
+	monitor.duration_threshold = MicrophoneMonitor.DURATION_FULL_MS - 200.0
 	var transitions := {"started": 0, "stopped": 0}
 	monitor.speaking_started.connect(func(): transitions["started"] += 1)
 	monitor.speaking_stopped.connect(func(): transitions["stopped"] += 1)
-	monitor.update_from_level(0.75, 0.016)
-	t.assert_true(monitor.speaking, "microphone monitor enters speaking state above threshold")
+	var frame := 1.0 / 60.0
+	var loud := pow(10.0, -20.0 / 20.0)
+
+	monitor.update_from_rms(loud, frame)
+	t.assert_true(monitor.speaking, "a voice well over the threshold opens the gate on its first frame")
 	t.assert_equal(transitions["started"], 1, "speaking start emits exactly once")
-	monitor.update_from_level(0.75, 0.016)
+	for i in 30:
+		monitor.update_from_rms(loud, frame)
 	t.assert_equal(transitions["started"], 1, "steady speaking state does not emit duplicate starts")
+	t.assert_approx(monitor.level_db, -20.0, 0.1, "the level settles on the voice's RMS in dBFS")
+	t.assert_approx(monitor.duration, MicrophoneMonitor.DURATION_FULL_MS, 0.001, "while the gate is open the Duration bar is full")
+
+	# Hysteresis: once open, a level just under the threshold keeps it open.
+	var just_under := pow(10.0, -32.0 / 20.0)
+	for i in 120:
+		monitor.update_from_rms(just_under, frame)
+	t.assert_true(monitor.speaking, "a level 2 dB under the threshold does not close an open gate")
+	t.assert_approx(monitor.duration, MicrophoneMonitor.DURATION_FULL_MS, 0.001, "and does not start the Duration bar draining")
+
+	# Silence: the envelope releases, the gate closes, and the hold drains.
+	var frames_to_stop := 0
+	while monitor.speaking and frames_to_stop < 600:
+		monitor.update_from_rms(0.0, frame)
+		frames_to_stop += 1
+	t.assert_false(monitor.speaking, "silence closes the gate once the hold runs out")
+	t.assert_equal(transitions["stopped"], 1, "one stop transition")
+	var seconds := frames_to_stop * frame
+	t.assert_true(seconds > 0.2 and seconds < 0.5, "the mouth closes after the release and the 200 ms hold, not at once (%.3f s)" % seconds)
+	t.assert_true(monitor.duration <= monitor.duration_threshold, "the mouth closed as the Duration bar fell past its thumb")
+	t.assert_true(monitor.duration > 0.0, "and before the bar emptied")
+
+	# A gate that closed does not reopen below the threshold.
+	for i in 120:
+		monitor.update_from_rms(just_under, frame)
+	t.assert_false(monitor.speaking, "a closed gate needs the full threshold to open again")
+
+	monitor.update_from_rms(loud, frame)
+	t.assert_true(monitor.speaking, "and opens again on a voice")
 	monitor.muted = true
-	monitor.update_from_level(0.75, 0.016)
+	monitor.update_from_rms(loud, frame)
 	t.assert_false(monitor.speaking, "mute overrides an active microphone level")
-	t.assert_equal(transitions["stopped"], 1, "mute emits one speaking stop transition")
+	t.assert_equal(transitions["stopped"], 2, "mute emits one speaking stop transition")
+	monitor.muted = false
+	monitor.update_from_rms(0.0, frame, true)
+	t.assert_true(monitor.speaking, "the simulate key speaks regardless of level")
 	monitor.free()
 
 

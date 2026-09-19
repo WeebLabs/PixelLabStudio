@@ -45,11 +45,15 @@ func _test_product_metadata(t, source_root: String) -> void:
 	t.assert_true(features.has("4.6"), "release metadata remains on the Godot 4.6 feature line")
 	# Project settings reference the bus layout by UID, which no export filter
 	# follows: without it the MIC bus is gone, the microphone falls through to
-	# Master, and the level meters read a spectrum analyzer that is not there.
+	# Master, and the level meters read a capture that is not there.
 	t.assert_true(String(project.get_value("audio", "buses/default_bus_layout", "")) != "", "the project names an audio bus layout")
 	var bus_layout := FileAccess.get_file_as_string(source_root.path_join("default_bus_layout.tres"))
 	t.assert_true(bus_layout.contains("bus/1/name = &\"MIC\""), "the shipped bus layout declares the MIC bus the microphone routes to")
-	t.assert_true(bus_layout.contains("AudioEffectSpectrumAnalyzer"), "the MIC bus carries the spectrum analyzer the level meters read")
+	t.assert_true(bus_layout.contains("AudioEffectCapture"), "the MIC bus carries the capture the voice level is measured from")
+	t.assert_true(bus_layout.contains("AudioEffectHighPassFilter"), "the MIC bus drops rumble below the voice band")
+	t.assert_true(bus_layout.contains("AudioEffectLowPassFilter"), "and hiss above it")
+	t.assert_true(bus_layout.contains("bus/1/mute = true"), "the MIC bus is muted, so the microphone never plays out of the system output")
+	t.assert_false(bus_layout.contains("AudioEffectSpectrumAnalyzer"), "no spectrum analyser is left to measure against")
 
 
 func _test_export_presets(t, source_root: String) -> void:

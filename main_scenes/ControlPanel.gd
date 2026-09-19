@@ -66,30 +66,34 @@ func _build_right_zone() -> void:
 
 
 # The two microphone controls are the same widget with different wiring, so they
-# are declared once and built in a loop. "Level" is the raw signal against the
-# threshold that starts a trigger; "Duration" is the decay that ends it, so its
-# marker sets how long the mouth stays open after a trigger.
+# are declared once and built in a loop. "Level" is the smoothed voice level in
+# dBFS against the threshold that opens the voice gate. "Duration" fills whenever
+# the gate is open and drains once the voice drops; the mouth closes when it falls
+# past the thumb, so a thumb further left holds the mouth open longer.
 func _build_mic_meters() -> void:
+	var defaults := SettingsSchema.defaults()
 	var specs := [
 		{
 			"caption": "Duration",
 			"fill": DURATION_COLOR,
-			"range": SettingsSchema.MIC_DURATION_RANGE,
-			"step": 0.005,
-			"setting": "sense",
-			"default": 0.75,
-			"source": func() -> float: return Global.volumeSensitivity,
-			"apply": func(limit: float) -> void: Global.senseLimit = limit,
+			"min": 0.0,
+			"max": SettingsSchema.MIC_DURATION_FULL_MS,
+			"step": 10.0,
+			"setting": "micDurationThreshold",
+			"default": defaults["micDurationThreshold"],
+			"source": func() -> float: return Global.micDuration,
+			"apply": func(limit: float) -> void: Global.micDurationThreshold = limit,
 		},
 		{
 			"caption": "Level",
 			"fill": LEVEL_COLOR,
-			"range": SettingsSchema.MIC_LEVEL_RANGE,
-			"step": 0.001,
-			"setting": "volume",
-			"default": 0.015,
-			"source": func() -> float: return Global.volume,
-			"apply": func(limit: float) -> void: Global.volumeLimit = limit,
+			"min": SettingsSchema.MIC_LEVEL_MIN_DB,
+			"max": SettingsSchema.MIC_LEVEL_MAX_DB,
+			"step": 0.5,
+			"setting": "micThresholdDb",
+			"default": defaults["micThresholdDb"],
+			"source": func() -> float: return Global.micLevelDb,
+			"apply": func(limit: float) -> void: Global.micThresholdDb = limit,
 		},
 	]
 
@@ -103,19 +107,19 @@ func _build_mic_meters() -> void:
 			meters,
 			spec["caption"],
 			spec["fill"],
-			spec["range"],
-			spec["range"],
+			spec["max"],
+			spec["max"],
 			spec["step"],
+			spec["min"],
 		)
 		var slider: HSlider = control["slider"]
 		var setting: String = spec["setting"]
 		var apply: Callable = spec["apply"]
 
 		# The thumb is a threshold marker sharing the meter's scale, so the limit
-		# IS the thumb position: the trigger holds while the bar behind it has
-		# reached the thumb. Level compares the live signal, Duration the decay
-		# that follows a trigger, so a thumb further left holds the mouth open
-		# longer.
+		# IS the thumb position: the voice gate opens once the Level bar reaches
+		# its thumb, and the mouth closes once the draining Duration bar falls
+		# past its own.
 		slider.value_changed.connect(func(value: float) -> void:
 			apply.call(value)
 			Saving.settings[setting] = value

@@ -131,7 +131,7 @@ func _test_sprite_policies(t) -> void:
 
 func _test_settings_source_contract(t) -> void:
 	var defaults := Settings.defaults()
-	for key in ["volume", "sense", "maxFPS", "costumeKeys", "ndiEnabled", "ndiCropRect", "recordingFormat", "recordingFPS"]:
+	for key in ["micThresholdDb", "micDurationThreshold", "maxFPS", "costumeKeys", "ndiEnabled", "ndiCropRect", "recordingFormat", "recordingFPS"]:
 		t.assert_true(defaults.has(key), "settings schema declares %s" % key)
 	t.assert_equal(defaults["costumeKeys"].size(), 10, "ten costume binding slots remain available")
 

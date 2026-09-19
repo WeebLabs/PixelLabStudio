@@ -108,12 +108,14 @@ var blinkTick = 0
 
 var speaking = false
 var micMuted = false
-var spectrum
-var volume = 0
-var volumeSensitivity = 0.0
-
-var volumeLimit = 0.0
-var senseLimit = 0.0
+# The smoothed voice level in dBFS and the Duration bar (full while the voice
+# gate is open, draining after), for the viewer's two meters.
+var micLevelDb := -60.0
+var micDuration := 0.0
+# The two meter thumbs: the level that opens the voice gate, and the point on the
+# draining Duration bar where the mouth closes.
+var micThresholdDb := -40.0
+var micDurationThreshold := 850.0
 
 #Speak Signals
 signal startSpeaking
@@ -163,7 +165,6 @@ func _ready():
 	# opening the host's capture device or consuming persisted configuration.
 	if not Saving.is_isolated_session():
 		_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
-	spectrum = _microphone_monitor.spectrum
 
 
 func attach_main(main_node: Node) -> void:
@@ -593,20 +594,19 @@ func _run_key_command(command: String) -> void:
 
 func _update_microphone(delta: float) -> void:
 	if not is_instance_valid(_microphone_monitor):
-		volume = 0.0
-		volumeSensitivity = 0.0
+		micLevelDb = -60.0
+		micDuration = 0.0
 		speaking = false
 		return
-	_microphone_monitor.volume_limit = volumeLimit
-	_microphone_monitor.sense_limit = senseLimit
+	_microphone_monitor.threshold_db = micThresholdDb
+	_microphone_monitor.duration_threshold = micDurationThreshold
 	_microphone_monitor.muted = micMuted
 	_microphone_monitor.sample(delta, Input.is_action_pressed("simMic"))
-	volume = _microphone_monitor.volume
-	volumeSensitivity = _microphone_monitor.sensitivity
+	micLevelDb = _microphone_monitor.level_db
+	micDuration = _microphone_monitor.duration
 	speaking = _microphone_monitor.speaking
-	spectrum = _microphone_monitor.spectrum
-	
-	
+
+
 # One discrete history entry per key press, matching the pre-command behavior
 # (is_action_just_pressed fires once per press, so this is not a held gesture).
 func _nudge_z(step: int) -> void:

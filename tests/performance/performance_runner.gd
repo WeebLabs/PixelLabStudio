@@ -148,14 +148,14 @@ func _benchmark_runtime_services() -> Dictionary:
 	var scheduler := BlinkScheduler.new()
 	scheduler.speed = 1.0
 	scheduler.chance = 200
-	var sensitivity := 0.0
+	var envelope := 0.0
 	const ITERATIONS := 100000
 	var started := Time.get_ticks_usec()
 	for index in ITERATIONS:
 		scheduler.advance_with_roll(0.0, float(index % 97) / 97.0)
-		sensitivity = MicrophoneMonitor.next_sensitivity(sensitivity, 0.1, 0.5, 1.0 / 60.0)
+		envelope = MicrophoneMonitor.follow_envelope(envelope, 0.1, 1.0 / 60.0)
 	var elapsed := Time.get_ticks_usec() - started
-	return {"iterations": ITERATIONS, "total_ms": float(elapsed) / 1000.0, "final_sensitivity": sensitivity}
+	return {"iterations": ITERATIONS, "total_ms": float(elapsed) / 1000.0, "final_envelope": envelope}
 
 func _benchmark_image_geometry() -> Dictionary:
 	var image := Image.load_from_file("res://test/testBody.png")

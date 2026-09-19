@@ -4,41 +4,84 @@ extends Node
 signal speaking_started
 signal speaking_stopped
 
-const FREQUENCY_MIN_HZ := 20.0
-const FREQUENCY_MAX_HZ := 20000.0
+## Voice detection, from the microphone's actual samples.
+##
+## Each frame the MIC bus's AudioEffectCapture hands over every sample that
+## arrived since the last frame, and their RMS is the level. The bus's own filters
+## keep that to the voice band first. An envelope follower then smooths the level
+## with a fast attack and a slower release, and a gate with hysteresis and a hold
+## turns it into "speaking": the Duration bar jumps to full whenever the gate is
+## open, drains at 1 ms per ms once it closes, and the mouth stays open until the
+## bar falls past its thumb.
+##
+## This replaced a spectrum-analyser reading: the loudest single FFT bin of the
+## latest 256 samples, taken once a frame. That looked at about a third of the
+## audio, landed on a random point in each pitch period, and ignored the energy
+## spread across a voice's harmonics. It read about 5 dB low on a vowel and
+## changed by 36-58% of its level from one frame to the next while speaking,
+## against about 10% here (simulated on voice-like test signals).
 
-var volume: float = 0.0
-var sensitivity: float = 0.0
-var volume_limit: float = 0.0
-var sense_limit: float = 0.0
+# What silence reads as, and the bottom of the Level meter.
+const FLOOR_DB := -60.0
+# Rising levels are followed almost at once (about a frame), falling ones more
+# slowly, which is what removes the flicker without delaying the mouth.
+const ATTACK_SECONDS := 0.015
+const RELEASE_SECONDS := 0.07
+# The gate opens at the threshold and closes this far below it, so a level
+# hovering at the threshold cannot chatter the mouth open and shut.
+const HYSTERESIS_DB := 4.0
+# Full scale of the Duration bar. It drains in real milliseconds, so a thumb at
+# `duration_threshold` holds the mouth open DURATION_FULL_MS - duration_threshold
+# ms after the voice stops: further left holds longer.
+const DURATION_FULL_MS := 1000.0
+
+# Set by Global from the viewer's two meters.
+var threshold_db: float = -40.0
+var duration_threshold: float = 850.0
 var muted: bool = false
+
+# Read by Global for the meters and the avatar.
+var level_db: float = FLOOR_DB
+var duration: float = 0.0
 var speaking: bool = false
-var spectrum: AudioEffectSpectrumAnalyzerInstance = null
 
 var _player: AudioStreamPlayer = null
 var _restart_generation := 0
+var _capture: AudioEffectCapture = null
+var _envelope := 0.0
+var _last_rms := 0.0
+var _gate_open := false
 
 
 func initialize(saved_device: String = "") -> void:
 	if not saved_device.is_empty() and saved_device in AudioServer.get_input_device_list():
 		AudioServer.input_device = saved_device
-	_refresh_spectrum()
+	_refresh_capture()
 	start_microphone()
 
 
 func sample(delta: float, simulate_speaking: bool = false) -> void:
-	if spectrum == null:
-		_refresh_spectrum()
-	var measured := 0.0
-	if spectrum != null:
-		measured = spectrum.get_magnitude_for_frequency_range(FREQUENCY_MIN_HZ, FREQUENCY_MAX_HZ).length()
-	update_from_level(measured, delta, simulate_speaking)
+	if _capture == null:
+		_refresh_capture()
+	# A frame can run before the audio thread has delivered anything new. That is
+	# not silence, so the last measurement stands until fresh samples arrive.
+	if _capture != null:
+		var frames := _capture.get_frames_available()
+		if frames > 0:
+			_last_rms = buffer_rms(_capture.get_buffer(frames))
+	update_from_rms(_last_rms, delta, simulate_speaking)
 
 
-func update_from_level(measured: float, delta: float, simulate_speaking: bool = false) -> void:
-	volume = maxf(measured, 0.0)
-	sensitivity = next_sensitivity(sensitivity, volume, volume_limit, delta)
-	var next_speaking := not muted and (simulate_speaking or sensitivity > sense_limit)
+func update_from_rms(rms: float, delta: float, simulate_speaking: bool = false) -> void:
+	_envelope = follow_envelope(_envelope, rms, delta)
+	level_db = to_db(_envelope)
+	if level_db >= threshold_db or (_gate_open and level_db >= threshold_db - HYSTERESIS_DB):
+		_gate_open = true
+		duration = DURATION_FULL_MS
+	else:
+		_gate_open = false
+		duration = maxf(0.0, duration - delta * 1000.0)
+	var next_speaking := not muted and (simulate_speaking or _gate_open or duration > duration_threshold)
 	if next_speaking == speaking:
 		return
 	speaking = next_speaking
@@ -46,6 +89,33 @@ func update_from_level(measured: float, delta: float, simulate_speaking: bool = 
 		speaking_started.emit()
 	else:
 		speaking_stopped.emit()
+
+
+# RMS of a block of stereo frames, taking the louder channel of each frame. A
+# mono microphone can arrive on one channel only, and averaging it with a silent
+# one would read 3 dB low.
+static func buffer_rms(buffer: PackedVector2Array) -> float:
+	if buffer.is_empty():
+		return 0.0
+	var total := 0.0
+	for frame in buffer:
+		total += maxf(frame.x * frame.x, frame.y * frame.y)
+	return sqrt(total / buffer.size())
+
+
+# One step of a one-pole envelope follower. The time constants are in seconds,
+# so the result does not depend on the frame rate.
+static func follow_envelope(previous: float, rms: float, delta: float) -> float:
+	if delta <= 0.0:
+		return previous
+	var seconds := ATTACK_SECONDS if rms > previous else RELEASE_SECONDS
+	return rms + (previous - rms) * exp(-delta / seconds)
+
+
+static func to_db(amplitude: float) -> float:
+	if amplitude <= 0.0:
+		return FLOOR_DB
+	return maxf(FLOOR_DB, 20.0 * log(amplitude) / log(10.0))
 
 
 func start_microphone() -> void:
@@ -58,6 +128,9 @@ func start_microphone() -> void:
 	add_child(player)
 	player.play()
 	_player = player
+	# Whatever was captured before this start belongs to the previous device.
+	if _capture != null:
+		_capture.clear_buffer()
 
 
 func stop_microphone(immediate: bool = false) -> void:
@@ -101,22 +174,20 @@ func select_device(device_name: String, restart_delay_seconds: float = 1.0) -> b
 func shutdown() -> void:
 	stop_microphone(true)
 	speaking = false
-	volume = 0.0
-	sensitivity = 0.0
+	level_db = FLOOR_DB
+	duration = 0.0
+	_envelope = 0.0
+	_last_rms = 0.0
+	_gate_open = false
 
 
-static func next_sensitivity(previous: float, measured: float, threshold: float, delta: float) -> float:
-	var decayed := lerpf(previous, 0.0, clampf(delta * 2.0, 0.0, 1.0))
-	return 1.0 if measured > threshold else decayed
-
-
-func _refresh_spectrum() -> void:
-	spectrum = null
+func _refresh_capture() -> void:
+	_capture = null
 	var bus_index := AudioServer.get_bus_index(&"MIC")
 	if bus_index < 0:
 		return
 	for effect_index in range(AudioServer.get_bus_effect_count(bus_index)):
-		var instance := AudioServer.get_bus_effect_instance(bus_index, effect_index)
-		if instance is AudioEffectSpectrumAnalyzerInstance:
-			spectrum = instance
+		var effect := AudioServer.get_bus_effect(bus_index, effect_index)
+		if effect is AudioEffectCapture:
+			_capture = effect
 			return

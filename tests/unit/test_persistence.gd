@@ -33,19 +33,37 @@ func _test_settings_migration(t) -> void:
 	t.assert_true(normalized["ok"], "legacy settings normalize")
 	var settings: Dictionary = normalized["value"]
 	t.assert_equal(settings["_schemaVersion"], Settings.CURRENT_VERSION, "settings gain the current schema version")
-	# Schema 1 stored the mirror of the thumb position, so v1 values flip once.
-	# 4.5 clamps to the level meter's 0.2 full scale (an old "maximum sensitivity"
-	# thumb), and mirrors to a threshold sitting at 0.
-	t.assert_approx(settings["volume"], 0.0, 0.00001, "an out-of-range v1 level thumb clamps, then mirrors to a zero threshold")
-	t.assert_approx(settings["sense"], 0.6, 0.00001, "numeric setting strings migrate, and v1 duration thumbs mirror")
+	# The v0 thumbs are mirrored once, then converted to schema 3's dB and ms.
+	# 4.5 clamps to the old level meter's 0.2 full scale and mirrors to a zero
+	# threshold, which is the dB floor; "0.4" mirrors to a sense of 0.6, a hold of
+	# ln(1 / 0.6) / 2 seconds.
+	t.assert_approx(settings["micThresholdDb"], Settings.MIC_LEVEL_MIN_DB, 0.00001, "an out-of-range v1 level thumb lands on the dB floor")
+	t.assert_approx(
+		settings["micDurationThreshold"], Settings.MIC_DURATION_FULL_MS - 1000.0 * log(1.0 / 0.6) / 2.0, 0.001,
+		"a v1 duration thumb converts to the Duration thumb giving the hold it produced",
+	)
+	t.assert_false(settings.has("volume") or settings.has("sense"), "the old keys are replaced, not kept beside the new ones")
+	var v2: Dictionary = Settings.normalize({"_schemaVersion": 2, "volume": 0.05, "sense": 0.8})["value"]
+	t.assert_approx(v2["micThresholdDb"], 20.0 * log(0.05) / log(10.0), 0.0001, "a schema-2 level threshold converts to dBFS")
+	t.assert_approx(
+		v2["micDurationThreshold"], Settings.MIC_DURATION_FULL_MS - 1000.0 * log(1.0 / 0.8) / 2.0, 0.001,
+		"a schema-2 duration thumb converts to the Duration thumb giving the same hold",
+	)
 	var current: Dictionary = Settings.normalize({
-		"_schemaVersion": Settings.CURRENT_VERSION, "volume": 0.05, "sense": 0.8,
+		"_schemaVersion": Settings.CURRENT_VERSION, "micThresholdDb": -33.5, "micDurationThreshold": 420.0,
 	})["value"]
-	t.assert_approx(current["volume"], 0.05, 0.00001, "current-schema level thumbs are stored as-is")
-	t.assert_approx(current["sense"], 0.8, 0.00001, "current-schema duration thumbs are stored as-is")
+	t.assert_approx(current["micThresholdDb"], -33.5, 0.00001, "current-schema thresholds are stored as-is")
+	t.assert_approx(current["micDurationThreshold"], 420.0, 0.00001, "current-schema Duration thumbs are stored as-is")
+	var clamped: Dictionary = Settings.normalize({
+		"_schemaVersion": Settings.CURRENT_VERSION, "micThresholdDb": 12.0, "micDurationThreshold": -5.0,
+	})["value"]
+	t.assert_approx(clamped["micThresholdDb"], Settings.MIC_LEVEL_MAX_DB, 0.00001, "a threshold above 0 dBFS clamps")
+	t.assert_approx(clamped["micDurationThreshold"], 0.0, 0.00001, "a Duration thumb below the bar clamps to its start")
 	var defaulted: Dictionary = Settings.normalize({"windowSize": "Vector2i(1280, 720)"})["value"]
-	t.assert_approx(defaulted["volume"], Settings.defaults()["volume"], 0.00001, "a legacy file with no level thumb still lands on today's default")
-	t.assert_approx(defaulted["sense"], Settings.defaults()["sense"], 0.00001, "a legacy file with no duration thumb still lands on today's default")
+	t.assert_approx(defaulted["micThresholdDb"], Settings.defaults()["micThresholdDb"], 0.00001, "a legacy file that never set a level lands on today's default")
+	t.assert_approx(defaulted["micDurationThreshold"], Settings.defaults()["micDurationThreshold"], 0.00001, "and one that never set a duration too")
+	t.assert_approx(Settings.legacy_sense_to_hold_ms(1.0), 0.0, 0.00001, "an old sense of 1 held nothing past the trigger")
+	t.assert_approx(Settings.legacy_sense_to_hold_ms(0.0), Settings.MIC_DURATION_FULL_MS, 0.00001, "an old sense of 0 held forever, clamped to the longest hold")
 	t.assert_equal(ValueCodec.vector2i_value(settings["windowSize"]), Vector2i(1440, 900), "legacy Vector2 window sizes become Vector2i strings")
 	t.assert_equal(settings["costumeKeys"].size(), 10, "short legacy costume arrays are expanded")
 	t.assert_equal(settings["costumeKeys"][0], "A", "existing costume bindings are preserved")
