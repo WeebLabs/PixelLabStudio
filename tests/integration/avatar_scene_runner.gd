@@ -62,6 +62,7 @@ func _run() -> void:
 	await _test_replace_review_toggles_matches()
 	await _test_replace_undo_restores_artwork()
 	await _test_duplicate_placement()
+	await _test_duplicate_is_framed()
 	await _test_multi_selection()
 	await _test_mixed_value_indicator()
 	await _test_transform_entry()
@@ -1332,6 +1333,88 @@ func _hold_rest(layers: Array) -> void:
 func _row_fully_in_view(view: ScrollContainer, row) -> bool:
 	return row.position.y >= view.scroll_vertical - 0.5 \
 		and row.position.y + row.size.y <= view.scroll_vertical + view.size.y + 0.5
+
+
+# A duplicate is a new layer the user has to find, so the list centres it.
+func _test_duplicate_is_framed() -> void:
+	var list = Global.spriteList
+	var view: ScrollContainer = list.get_node("ScrollContainer")
+	await list.updateData()
+	for _frame in range(3):
+		await get_tree().process_frame
+	var depth_before: int = UndoManager.history_depth()
+
+	# One layer, duplicated with the list scrolled away from it.
+	var source = Global.sprite_by_id(4000000009)
+	if source == null:
+		return
+	view.scroll_vertical = 0
+	await get_tree().process_frame
+	Global.select_sprite(source)
+	_main.duplicate_selected_layer()
+	for _frame in range(3):
+		await get_tree().process_frame
+	var copy = Global.heldSprite
+	assert_true(copy != source, "the duplicate is selected")
+	var row = _row_for(copy)
+	_assert_centred(view, list, row.position.y + row.size.y * 0.5, "the list centres the duplicate")
+
+	# Two layers: the copies are centred together when they fit.
+	var first = Global.sprite_by_id(4000000005)
+	var second = Global.sprite_by_id(4000000006)
+	view.scroll_vertical = 0
+	await get_tree().process_frame
+	Global.select_sprites([first, second])
+	_main.duplicate_selected_layer()
+	for _frame in range(3):
+		await get_tree().process_frame
+	var copies: Array = Global.selected_sprites()
+	assert_equal(copies.size(), 2, "both copies are selected")
+	var top := INF
+	var bottom := -INF
+	for sprite in copies:
+		var copy_row = _row_for(sprite)
+		top = minf(top, copy_row.position.y)
+		bottom = maxf(bottom, copy_row.position.y + copy_row.size.y)
+	if bottom - top <= view.size.y:
+		_assert_centred(view, list, (top + bottom) * 0.5, "the list centres the copies together")
+	else:
+		var active_row = _row_for(copies[0])
+		_assert_centred(view, list, active_row.position.y + active_row.size.y * 0.5, "copies that do not fit centre the active one")
+
+	# Inside a collapsed group, the group's own row stands in for the copy.
+	var group = Global.sprite_by_id(COSTUME_TWO_ID)
+	var member = Global.sprite_by_id(NESTED_ID)
+	_row_for(group)._on_collapse_toggled()
+	view.scroll_vertical = 0
+	await get_tree().process_frame
+	Global.select_sprite(member)
+	_main.duplicate_selected_layer()
+	for _frame in range(3):
+		await get_tree().process_frame
+	var group_row = _row_for(group)
+	assert_false(_row_for(Global.heldSprite).visible, "a copy made inside a collapsed group stays hidden with it")
+	_assert_centred(view, list, group_row.position.y + group_row.size.y * 0.5, "and the list centres the group instead")
+	assert_true(_row_fully_in_view(view, group_row), "with the group's row in view")
+
+	while UndoManager.history_depth() > depth_before:
+		UndoManager.undo()
+		for _frame in range(3):
+			await get_tree().process_frame
+	if _row_for(Global.sprite_by_id(COSTUME_TWO_ID)).collapsed:
+		_row_for(Global.sprite_by_id(COSTUME_TWO_ID))._on_collapse_toggled()
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "the duplicates are gone again")
+	Global.clear_selection()
+	await list.updateData()
+	await get_tree().process_frame
+
+
+# Centred as far as the list allows: a row near either end cannot reach the
+# middle, and the scroll stops at the list's own limit instead.
+func _assert_centred(view: ScrollContainer, list, centre: float, message: String) -> void:
+	var furthest := maxf(0.0, list.container.size.y - view.size.y)
+	var expected := clampf(centre - view.size.y * 0.5, 0.0, furthest)
+	assert_approx(float(view.scroll_vertical), expected, 1.0, message)
 
 
 func _row_for(sprite):

@@ -1205,6 +1205,18 @@ When a sprite is selected (canvas click, keyboard scroll, or any path through `s
 >   above it as fits. A child hidden inside a collapsed parent has no row to show,
 >   so the parent is centred on its own; linking does not expand the group.
 >
+> Updated: 2026-09-19 — **A duplicate is centred in the list.**
+> `avatar_controller.duplicate_selected()` calls `viewer.frameLayers(copies)` →
+> `layer_tree_controller.frame_sprites()` after its in-place `syncRows()`. A
+> frame later, once rows are laid out, it centres the copies' span, or only the
+> first (active) copy when the span is taller than the view. A copy hidden in a
+> collapsed group is represented by its nearest visible ancestor
+> (`_visible_row_for`), the same rule a canvas link uses. The scroll clamps at
+> the list's ends, so a copy near the top or bottom is as centred as the list
+> allows. `frame_sprites` counts in `_layout_settling`, so the selection-follow
+> in the same frame does not act on stale positions. Covered by
+> `_test_duplicate_is_framed`.
+>
 > Updated: 2026-09-19 — **Every other hierarchy refresh holds the view.**
 > Unlink, undo and redo re-order the rows too, and `refresh_hierarchy()` keeps
 > the list where the user was reading it unless a link is pending. Before the

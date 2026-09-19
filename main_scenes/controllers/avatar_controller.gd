@@ -130,12 +130,16 @@ func duplicate_selected() -> void:
 			copies.append(_duplicate_layer(source))
 		_global.select_sprites(copies)
 		_global.spriteList.syncRows()
+		_global.spriteList.frameLayers(copies)
 		_global.notify_user("Duplicated %d sprites." % copies.size())
 		return
 	MutationCommands.capture_bulk()
-	_duplicate_layer(sources[0])
+	var copy = _duplicate_layer(sources[0])
 	_global.select_sprite(_global.heldSprite)
 	_global.spriteList.syncRows()
+	# A new layer is one the user has to find, so the list brings it to the
+	# middle rather than leaving it wherever it happened to land.
+	_global.spriteList.frameLayers([copy])
 	_global.notify_user("Duplicated sprite.")
 
 

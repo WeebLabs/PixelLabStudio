@@ -631,6 +631,11 @@ func refreshNames():
 func rowFor(sprite) -> Node:
 	return _layer_tree.row_for(sprite)
 
+# Centre these layers in the list after the next layout. See
+# layer_tree_controller.frame_sprites.
+func frameLayers(sprites: Array):
+	await _layer_tree.frame_sprites(sprites)
+
 # Rename this layer on its own row. Returns false when the list has no row to
 # edit, which is the caller's cue that nothing happened.
 func beginRename(sprite) -> bool:

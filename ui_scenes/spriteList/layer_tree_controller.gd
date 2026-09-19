@@ -455,6 +455,45 @@ func _restore_view_anchor(anchor: Array) -> void:
 			return
 
 
+# Centre these layers in the list once the rows are laid out, for a layer the
+# user has just created (a duplicate) and needs to find. When they do not all fit,
+# the first one is centred on its own. A layer hidden in a collapsed group is
+# represented by the group's visible row, the same rule a canvas link follows.
+func frame_sprites(sprites: Array) -> void:
+	_layout_settling += 1
+	# Row positions are only re-laid out on the next frame.
+	await _owner.get_tree().process_frame
+	_layout_settling -= 1
+	var rows := []
+	for sprite in sprites:
+		if not is_instance_valid(sprite):
+			continue
+		var row = _visible_row_for(sprite)
+		if row != null and not rows.has(row):
+			rows.append(row)
+	if rows.is_empty():
+		return
+	var top: float = rows[0].position.y
+	var bottom: float = rows[0].position.y + rows[0].size.y
+	for row in rows:
+		top = minf(top, row.position.y)
+		bottom = maxf(bottom, row.position.y + row.size.y)
+	var view := _scroll_container.size.y
+	if bottom - top > view:
+		top = rows[0].position.y
+		bottom = top + rows[0].size.y
+	_scroll_container.scroll_vertical = int(round(maxf(0.0, (top + bottom - view) * 0.5)))
+
+
+func _visible_row_for(sprite):
+	var row = row_for(sprite)
+	var visited := {}
+	while row != null and not row.visible and not visited.has(row):
+		visited[row] = true
+		row = row.parentTag
+	return row
+
+
 func _hold_row_at(sprite, offset_in_view: float) -> void:
 	var row = row_for(sprite)
 	if row == null:
