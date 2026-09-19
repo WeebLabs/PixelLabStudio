@@ -7,6 +7,11 @@ const COSTUME_COUNT := 10
 var awaiting_input := -1
 var _global: Node
 var _buttons: Array[Button] = []
+# The slot whose rebind is in progress, and a serial bumped when one starts or is
+# cancelled. The rebind waits on main's capture signals across frames, so a stale
+# one waking later must neither bind nor clear a newer rebind's awaiting_input.
+var _pending_slot := -1
+var _rebind_serial := 0
 
 
 func build(body: VBoxContainer, global: Node) -> void:
@@ -39,13 +44,35 @@ func _write_label(slot: int) -> void:
 
 
 func _on_rebind(slot: int) -> void:
+	cancel_capture()
+	_rebind_serial += 1
+	var serial := _rebind_serial
+	_pending_slot = slot
 	_buttons[slot - 1].text = "press a key..."
 	await _global.main.emptiedCapture
+	if serial != _rebind_serial:
+		return
 	awaiting_input = slot - 1
 	await _global.main.pressedKey
+	if serial != _rebind_serial:
+		return
 	_write_label(slot)
 	await _global.main.emptiedCapture
+	if serial != _rebind_serial:
+		return
 	awaiting_input = -1
+	_pending_slot = -1
+
+
+# End a pending rebind without binding anything. Settings calls this when it is
+# hidden, by closing it or by leaving the player page: left armed, the next key
+# pressed anywhere became a costume hotkey.
+func cancel_capture() -> void:
+	_rebind_serial += 1
+	awaiting_input = -1
+	if _pending_slot > 0:
+		_write_label(_pending_slot)
+	_pending_slot = -1
 
 
 func _on_cleared(slot: int) -> void:

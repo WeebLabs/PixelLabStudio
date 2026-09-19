@@ -41,6 +41,14 @@ var _output_tab = OutputSettingsTab.new()
 func _ready() -> void:
 	_slider_theme = SidebarUIFactory.create_slider_theme()
 	_build_panel()
+	visibility_changed.connect(_on_visibility_changed)
+
+
+# A costume rebind belongs to this panel and ends when it is hidden, whether the
+# panel itself is closed or something above it is.
+func _on_visibility_changed() -> void:
+	if not is_visible_in_tree():
+		_hotkeys_tab.cancel_capture()
 
 
 func panel_size() -> Vector2:

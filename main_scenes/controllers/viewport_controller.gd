@@ -83,7 +83,10 @@ func update_window_transparency() -> void:
 func swap_mode() -> void:
 	if not is_instance_valid(_main):
 		return
-	_global.heldSprite = null
+	# The selection survives a page switch, so the editor comes back with the same
+	# layer; its chrome is gated on the page (spriteObject._update_selection_gizmos).
+	# What belongs to editing ends here.
+	_global.end_edit_interactions()
 	_main.editMode = not _main.editMode
 	_global.notify_user("Toggled editing mode.")
 	update_window_transparency()

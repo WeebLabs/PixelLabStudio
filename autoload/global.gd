@@ -53,6 +53,12 @@ var _screenshot_press_time: int = 0
 var heldSprite:
 	get:
 		return _selection_state.current
+	# Read-only. Without a setter, GDScript quietly writes a hidden backing field
+	# the getter never reads, so assigning null to this looked like it cleared the
+	# selection and did nothing: the page switch relied on exactly that. Change the
+	# selection through select_sprite() / clear_selection().
+	set(_value):
+		push_error("Global.heldSprite is read-only; use select_sprite() or clear_selection().")
 
 var reparentMode = false
 
@@ -114,6 +120,9 @@ signal startSpeaking
 signal stopSpeaking
 signal notification_requested(text: String)
 signal selection_changed(current: Object, previous: Object)
+# A pending layer visibility binding was ended without a key (see
+# cancel_layer_key_captures), so its section can stop saying it is waiting.
+signal layer_key_capture_cancelled
 
 var _microphone_monitor = null
 var _blink_scheduler = BlinkSchedulerService.new()
@@ -337,6 +346,23 @@ func is_z_index_editor_active() -> bool:
 	return _z_editor != null and _z_editor.is_active()
 
 
+# End everything that belongs to the edit page: reparenting (and its chain line),
+# origin dragging, ribbon path editing, the eye-track pick, and the key bindings
+# armed from the editor's sidebars.
+# The page switch calls this. They used to end only as a side effect of the
+# switch clearing the selection, and survived onto the player page once it no
+# longer did.
+func end_edit_interactions() -> void:
+	reparentMode = false
+	originMode = false
+	wigglePathMode = false
+	if is_instance_valid(chain):
+		chain.enable(false)
+	if eyeTrackPickMode:
+		_clear_eye_track_pick()
+	cancel_layer_key_captures()
+
+
 func begin_reparenting() -> bool:
 	if heldSprite == null:
 		return false
@@ -407,7 +433,26 @@ func finish_visibility_key_capture() -> void:
 
 
 func _on_selection_changed(current: Object, previous: Object) -> void:
+	# The sidebars now show another layer, so a binding armed for the old one has
+	# lost the button that armed it. A multi-select edit that keeps the active
+	# layer changes nothing the sidebars show.
+	if current != previous:
+		cancel_layer_key_captures()
 	selection_changed.emit(current, previous)
+
+
+# End the key captures that bind a key to the selected layer: an animation clip's
+# "Bind key" and the layer's visibility toggle. Both are armed from the editor's
+# sidebars for the layer they show, and a capture belongs to the UI that armed it:
+# left armed, the next key pressed anywhere, the player page included, was
+# swallowed as a binding instead of triggering its clip or toggling its layer, and
+# while the visibility binding waited every layer's toggle key was ignored.
+func cancel_layer_key_captures() -> void:
+	awaitingAnimKeyBind = false
+	animKeyBindClip = null
+	if awaitingToggleBind:
+		awaitingToggleBind = false
+		layer_key_capture_cancelled.emit()
 
 
 func _exit_tree() -> void:

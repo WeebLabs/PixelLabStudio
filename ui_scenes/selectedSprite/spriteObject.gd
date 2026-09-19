@@ -544,9 +544,11 @@ func _process(delta):
 		animation(delta)
 
 # Selection chrome: the grab outline and origin handle, shown only while this is
-# the held sprite, the outline kept a constant on-screen thickness as we zoom.
+# the held sprite on the edit page, the outline kept a constant on-screen
+# thickness as we zoom. The selection outlives a switch to the player page, so the
+# page has to be part of the test, not left to whoever clears the selection.
 func _update_selection_gizmos():
-	if Global.heldSprite == self:
+	if Global.heldSprite == self and Global.main != null and Global.main.editMode:
 		grabArea.visible = true
 		originSprite.visible = true
 

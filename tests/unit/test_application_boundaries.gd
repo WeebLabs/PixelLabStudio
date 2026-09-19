@@ -78,9 +78,17 @@ func _test_global_boundary_contract(t) -> void:
 	var duplicate_traversal: Array[String] = []
 	var group_enumeration: Array[String] = []
 	var legacy_notifications: Array[String] = []
-	for root in ["autoload", "main_scenes", "ndi", "ui_scenes"]:
+	var selection_writes: Array[String] = []
+	# heldSprite is a read-only view of SelectionState. An assignment wrote a hidden
+	# field and changed nothing, which is how the page switch stopped clearing the
+	# selection. Matched on the property, not one spelling of the receiver, since
+	# the literal "Global.heldSprite = null" check above missed "_global.".
+	var held_write := RegEx.create_from_string("\\bheldSprite\\s*=(?!=)")
+	for root in ["autoload", "effects", "main_scenes", "ndi", "ui_scenes"]:
 		for path in _collect_scripts(source_root.path_join(root)):
 			var source := FileAccess.get_file_as_string(path)
+			if held_write.search(source) != null:
+				selection_writes.append(path)
 			if source.contains("get_parent().get_parent().get_parent()"):
 				duplicate_traversal.append(path)
 			if source.contains("get_nodes_in_group(\"saved\")"):
@@ -94,6 +102,7 @@ func _test_global_boundary_contract(t) -> void:
 	t.assert_true(duplicate_traversal.is_empty(), "production code has no duplicated three-parent sprite traversal: " + str(duplicate_traversal))
 	t.assert_true(group_enumeration.is_empty(), "production code enumerates layers through the sprite registry: " + str(group_enumeration))
 	t.assert_true(legacy_notifications.is_empty(), "production code emits notifications through notify_user(): " + str(legacy_notifications))
+	t.assert_true(selection_writes.is_empty(), "production code changes the selection through select_sprite()/clear_selection(): " + str(selection_writes))
 
 
 func _collect_scripts(root: String) -> Array[String]:

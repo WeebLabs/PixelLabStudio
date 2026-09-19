@@ -685,6 +685,48 @@ Selection in edit mode flows through these components:
 > as `Global.selection_changed` for consumers that need event-driven behavior;
 > the existing UI remains intentionally polling-based.
 
+> Updated: 2026-09-19 — **`heldSprite` is read-only, and the page switch no
+> longer relies on clearing it.** The property has a getter onto
+> `SelectionState.current` and, since this update, a setter that only
+> `push_error`s. Without that setter GDScript writes a hidden backing field the
+> getter never reads, so `viewport_controller.swap_mode()`'s
+> `_global.heldSprite = null` silently did nothing from the day the property became
+> a view (2026-08-17). Two things had depended on it. The selection outline and
+> origin handle stayed on the player page, and the edit page's canvas modes,
+> which only ended in `Global._process`'s "nothing selected" branch, survived the
+> switch. Reparent mode's chain line was drawn on the player page.
+>
+> The fix separates the two. The selection now deliberately survives a page
+> switch, so the editor comes back with the same layer. Its chrome is gated on
+> the page: `spriteObject._update_selection_gizmos()` requires
+> `Global.main.editMode`. `Global.end_edit_interactions()` ends reparenting (and
+> hides the chain), origin dragging, ribbon path editing and the eye-track pick,
+> and `swap_mode()` calls it. `test_application_boundaries` now fails on any
+> assignment to `heldSprite` in production code, matched by regex, where it
+> previously checked only the literal `Global.heldSprite = null` and missed
+> `_global.`. Covered by `_test_player_page_hides_edit_chrome`.
+
+> Updated: 2026-09-19 — **A key capture ends with the UI that armed it.** There
+> are three. The animation clip "Bind key" (`awaitingAnimKeyBind`) and the layer
+> visibility binding (`awaitingToggleBind`) are armed from the editor's sidebars
+> for the selected layer. `Global.cancel_layer_key_captures()` ends both, and runs
+> from `end_edit_interactions()` (the page switch) and from `_on_selection_changed`
+> when the active layer changes (not on multi-select edits that keep it). The
+> costume hotkey rebind belongs to Settings, and
+> `hotkey_settings_tab.cancel_capture()` runs when the panel stops being visible in
+> the tree, by closing it or by leaving the player page.
+>
+> Before this, all three outlived their UI, and the next key pressed anywhere was
+> swallowed as a binding: a clip key or a layer's toggle key on the player page,
+> or a costume hotkey. While the visibility binding waited, every layer's toggle
+> key was also ignored (`spriteObject.visToggle`). The visibility section and the
+> costume tab wait on main's key signals across frames. Each keeps a serial,
+> bumped on start and on cancel, and checks it after every `await`, so a cancelled
+> capture neither binds when the signals finally arrive nor clears a newer
+> capture's state. The visibility capture binds to the layer it was armed for, not
+> whatever is selected when the key arrives. Covered by
+> `_test_key_captures_end_with_their_ui`.
+
 ### Cycling down a stack of overlapping layers
 
 > Added: 2026-09-16 — Clicking a stack selects its topmost layer; clicking again

@@ -47,6 +47,8 @@ func _run() -> void:
 	await get_tree().process_frame
 	_test_loaded_avatar("fixture load")
 	await _test_sidebar_selection_state()
+	await _test_player_page_hides_edit_chrome()
+	await _test_key_captures_end_with_their_ui()
 	await _test_edit_commands()
 	await _test_idle_motion()
 	await _test_motion_is_time_based()
@@ -134,6 +136,136 @@ func _test_sidebar_selection_state() -> void:
 	assert_false(Global.spriteEdit._controls_enabled, "left inspector disables its component controls without a selection")
 	_main.swapMode()
 	await get_tree().process_frame
+
+
+# Nothing that belongs to editing may show on the player page. The selection
+# itself survives the switch, so going back to the editor finds the layer still
+# selected, but its chrome (outline and origin handle) belongs to the edit page.
+# The edit page's canvas interactions end when it is left: here, reparent mode,
+# whose chain line is drawn on the canvas.
+func _test_player_page_hides_edit_chrome() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	if sprite == null:
+		return
+	assert_false(_main.editMode, "the runner starts this test on the player page")
+	_main.swapMode()
+	Global.select_sprite(sprite)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_true(sprite.grabArea.visible, "a selected layer shows its outline on the edit page")
+	assert_true(sprite.originSprite.visible, "and its origin handle")
+	assert_true(Global.begin_reparenting(), "reparent mode can start on the edit page")
+	assert_true(Global.chain.visible, "reparent mode draws its chain on the canvas")
+
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_false(sprite.grabArea.visible, "the player page shows no selection outline")
+	assert_false(sprite.originSprite.visible, "the player page shows no origin handle")
+	assert_false(Global.reparentMode, "leaving the edit page ends reparent mode")
+	assert_false(Global.chain.visible, "and takes its chain off the canvas")
+	assert_false(Global.originMode, "origin mode cannot outlive the edit page")
+	assert_false(Global.wigglePathMode, "ribbon path editing cannot outlive the edit page")
+	assert_true(Global.heldSprite == sprite, "the selection itself survives the switch")
+
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_true(sprite.grabArea.visible, "going back to the editor shows the selection again")
+	Global.clear_selection()
+	_main.swapMode()
+	await get_tree().process_frame
+
+
+# A key capture belongs to the UI that armed it and ends when that UI goes away.
+# Otherwise the first key pressed afterwards, on the player page, is swallowed as
+# a binding instead of doing its job.
+func _test_key_captures_end_with_their_ui() -> void:
+	var sprite = Global.sprite_by_id(BASE_ID)
+	var other = Global.sprite_by_id(COSTUME_TWO_ID)
+	if sprite == null or other == null:
+		return
+	var saved_clips: Array = sprite.animClips.duplicate(true)
+	var saved_toggle: String = sprite.toggle
+	var list = Global.spriteList
+	_main.swapMode()
+	Global.select_sprite(sprite)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+
+	# Animation "Bind key", then the page switch.
+	sprite.animClips = [{"name": "Test", "channel": "rotation", "shape": "twitch", "trigger": "key", "key": ""}]
+	Global.begin_animation_key_capture(sprite.animClips[0])
+	assert_true(Global.is_awaiting_animation_key_capture(), "the animation bind is armed on the edit page")
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_false(Global.is_awaiting_animation_key_capture(), "leaving the edit page ends the animation bind")
+	_main._on_background_input_capture_bg_key_pressed(null, {KEY_K: true})
+	assert_equal(sprite.animClips[0]["key"], "", "a key on the player page is not taken as the clip's binding")
+
+	# Layer visibility binding, then the page switch.
+	_main.swapMode()
+	await get_tree().process_frame
+	list._vis_toggle._on_set_key()
+	assert_true(Global.awaitingToggleBind, "the visibility binding is armed on the edit page")
+	_main.swapMode()
+	await get_tree().process_frame
+	assert_false(Global.awaitingToggleBind, "leaving the edit page ends the visibility binding")
+	_main.visibility_binding_armed.emit()
+	_main.spriteVisToggles.emit(["K"])
+	await get_tree().process_frame
+	assert_equal(sprite.toggle, saved_toggle, "a key on the player page is not bound as the layer's toggle")
+	assert_false(list._vis_toggle._label.text.contains("AWAITING"), "the binding label stops saying it is waiting")
+
+	# Both layer bindings also end when another layer is selected: the button that
+	# armed them now shows a different layer.
+	_main.swapMode()
+	await get_tree().process_frame
+	Global.begin_animation_key_capture(sprite.animClips[0])
+	list._vis_toggle._on_set_key()
+	Global.select_sprite(other)
+	Global.spriteEdit.setImage()
+	await get_tree().process_frame
+	assert_false(Global.is_awaiting_animation_key_capture(), "selecting another layer ends the animation bind")
+	assert_false(Global.awaitingToggleBind, "selecting another layer ends the visibility binding")
+	_main.visibility_binding_armed.emit()
+	_main.spriteVisToggles.emit(["J"])
+	await get_tree().process_frame
+	assert_false(other.toggle == "J", "the key is not bound to the newly selected layer either")
+	Global.clear_selection()
+	_main.swapMode()
+	await get_tree().process_frame
+
+	# Costume hotkey: Settings belongs to the player page, and closing it ends a
+	# pending rebind.
+	var settings = _main.settingsMenu
+	var tab = settings._hotkeys_tab
+	# An armed animation bind takes the key first, which would hide this check.
+	assert_false(Global.is_awaiting_animation_key_capture(), "no animation bind is left armed for the costume check")
+	var saved_keys: Array = _main.costumeKeys.duplicate()
+	settings.visible = true
+	tab._on_rebind(3)
+	_main.emptiedCapture.emit()
+	assert_equal(tab.awaiting_input, 2, "the costume rebind is armed")
+	settings.visible = false
+	await get_tree().process_frame
+	assert_equal(tab.awaiting_input, -1, "closing Settings ends the costume rebind")
+	_main._on_background_input_capture_bg_key_pressed(null, {KEY_K: true})
+	assert_equal(_main.costumeKeys, saved_keys, "the next key is not bound as a costume hotkey")
+	assert_false(tab._buttons[2].text.contains("press a key"), "the rebind button stops saying it is waiting")
+	# A later rebind is not disarmed by the stale one waking up.
+	settings.visible = true
+	tab._on_rebind(5)
+	_main.emptiedCapture.emit()
+	assert_equal(tab.awaiting_input, 4, "a new rebind arms")
+	_main.pressedKey.emit()
+	_main.emptiedCapture.emit()
+	await get_tree().process_frame
+	settings.visible = false
+	await get_tree().process_frame
+	_main.costumeKeys = saved_keys
+	Saving.settings["costumeKeys"] = saved_keys
+
+	sprite.animClips = saved_clips
+	sprite.toggle = saved_toggle
 
 
 func _materialize_regression_fixture() -> String:

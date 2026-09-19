@@ -18,9 +18,14 @@ var section: VBoxContainer = null
 var _set_key_btn: Button = null
 var _label: Label = null
 var _clear_btn: Button = null
+# Bumped whenever a binding starts or is cancelled. A capture waits on main's
+# key signals across frames, so a cancelled one must not act when they finally
+# arrive; each await checks it is still the current capture.
+var _capture_serial := 0
 
 
 func build(owner: Node) -> VBoxContainer:
+	Global.layer_key_capture_cancelled.connect(_on_capture_cancelled)
 	section = VBoxContainer.new()
 	section.add_theme_constant_override("separation", Global.UI_ROW_GAP)
 	owner.add_child(section)
@@ -82,21 +87,37 @@ func refresh() -> void:
 		_label.text = "toggle: \"" + Global.heldSprite.toggle + "\""
 
 
-# Capture the next key the app sees and bind it to the held layer.
+# Capture the next key the app sees and bind it to the held layer. Leaving the
+# edit page or selecting another layer cancels it (Global.cancel_layer_key_captures).
 func _on_set_key() -> void:
-	if Global.heldSprite == null:
+	var target = Global.heldSprite
+	if target == null:
 		return
+	_capture_serial += 1
+	var serial := _capture_serial
 	_label.text = "toggle: AWAITING INPUT"
 	_label.add_theme_color_override("font_color", AWAITING_COLOR)
 	Global.begin_visibility_key_capture()
 	await Global.main.visibility_binding_armed
-	var keys = await Global.main.spriteVisToggles
-	Global.finish_visibility_key_capture()
-	if Global.heldSprite == null:
+	if serial != _capture_serial:
 		return
-	MutationCommands.set_layer_property(Global.heldSprite, "toggle", keys[0])
+	var keys = await Global.main.spriteVisToggles
+	if serial != _capture_serial:
+		return
+	Global.finish_visibility_key_capture()
+	if not is_instance_valid(target):
+		return
+	MutationCommands.set_layer_property(target, "toggle", keys[0])
 	refresh()
 	_label.add_theme_color_override("font_color", TEXT_COLOR)
+
+
+func _on_capture_cancelled() -> void:
+	_capture_serial += 1
+	if _label == null:
+		return
+	refresh()
+	_label.add_theme_color_override("font_color", TEXT_COLOR if Global.heldSprite != null else TEXT_DISABLED)
 
 
 func _on_clear() -> void:
