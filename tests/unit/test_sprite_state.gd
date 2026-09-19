@@ -204,13 +204,18 @@ func _test_shared_call_sites(t) -> void:
 	var wiggle_source := FileAccess.get_file_as_string(source_root.path_join("effects/wiggle/wiggle_runtime.gd"))
 	t.assert_true(avatar_source.contains("SpriteState.capture_save"), "manual save uses the shared sprite-state map")
 	t.assert_true(avatar_source.contains("SpriteState.apply_before_ready"), "avatar load uses the shared sprite-state map")
-	t.assert_true(avatar_source.contains("sprite.reparent(parent_sprite.sprite, false)"), "avatar hierarchy reconstruction preserves registry membership")
+	t.assert_true(avatar_source.contains("sprite.moveUnder(parent_sprite.sprite, false)"), "avatar hierarchy reconstruction preserves registry membership")
 	t.assert_true(avatar_source.contains("SpriteState.copy_for_duplicate"), "sprite duplication uses the shared sprite-state map")
 	t.assert_equal(main_source.count("func _next_sprite_id"), 1, "sprite IDs are allocated through one collision-checked path")
 	t.assert_equal(avatar_source.count("RandomNumberGenerator.new()"), 1, "sprite creation reuses one randomized ID generator")
 	t.assert_true(undo_source.contains("SpriteState.capture_snapshot"), "undo capture uses the shared sprite-state map")
 	t.assert_true(undo_source.contains("SpriteState.apply_existing"), "undo restore uses the shared sprite-state map")
 	t.assert_false(undo_source.contains("sprite.get_parent().remove_child(sprite)"), "undo reparenting does not unregister live sprites")
+	# A plain reparent() runs _exit_tree, which unregisters the layer and drops it
+	# from the selection; unlinking the held layer went null halfway through.
+	t.assert_true(sprite_source.contains("func moveUnder"), "layers change parent through one path")
+	for layer_source in [avatar_source, global_source, undo_source, wiggle_source]:
+		t.assert_false(layer_source.contains(".reparent("), "layer reparenting goes through moveUnder, not reparent()")
 	t.assert_false(global_source.contains("heldSprite.get_parent().remove_child(heldSprite)"), "unlinking does not unregister live sprites")
 	t.assert_false(undo_source.contains("sprite.wiggleStiffness = d"), "undo no longer carries a parallel wiggle property map")
 	t.assert_true(sprite_source.contains("CollisionBuilder.alpha_polygons"), "sprite collision construction uses the shared geometry boundary")

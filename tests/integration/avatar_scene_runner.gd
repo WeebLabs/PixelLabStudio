@@ -4,6 +4,7 @@ const MAIN_SCENE := preload("res://main_scenes/main.tscn")
 const AvatarSaveControllerScript = preload("res://main_scenes/controllers/save_controller.gd")
 const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
 const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
+const SpriteRestPose = preload("res://ui_scenes/selectedSprite/sprite_rest_pose.gd")
 const SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
 
 const REGRESSION_FIXTURE := "res://tests/fixtures/avatar_scene_regression.json"
@@ -64,6 +65,10 @@ func _run() -> void:
 	await _test_layer_name_display()
 	await _test_link_into_collapsed_group()
 	await _test_link_framing()
+	await _test_unlink_keeps_rest_place()
+	await _test_unlink_wiggle_child()
+	await _test_link_keeps_rest_place()
+	await _test_unlink_undo_round_trip()
 	await _test_layer_list_indentation()
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
@@ -904,6 +909,245 @@ func _test_link_framing() -> void:
 	Global.clear_selection()
 	await list.updateData()
 	await get_tree().process_frame
+
+
+# Unlinking must leave a layer, and everything under it, where the rig puts it at
+# rest. The avatar never stops moving, so the unlink is taken mid-motion here on
+# purpose: idle/bounce motion on OriginMotion, drag lag and rotation on the
+# parent's DragOrigin, and squash on its Sprite2D. None of it may leak into the
+# layer's new authored position.
+func _test_unlink_keeps_rest_place() -> void:
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var child = Global.sprite_by_id(NESTED_ID)
+	if parent == null or child == null:
+		return
+	assert_true(child.parentSprite == parent, "the nested fixture layer starts linked")
+	var chain: Array = [child]
+	while chain[-1].parentSprite != null:
+		chain.append(chain[-1].parentSprite)
+	assert_true(chain.size() >= 3, "the layer sits two links deep, so an ancestor above its parent counts too")
+	var motion: Node2D = _main.get_node("OriginMotion")
+	var motion_rest := motion.position
+
+	# Where the layer is on screen with the rig at rest, before the unlink.
+	_hold_rest(chain)
+	var rest_before: Vector2 = child.global_position
+
+	# Unlink mid-motion.
+	motion.position = motion_rest + Vector2(0, -37)
+	parent.wob.position = Vector2(6, -4)
+	parent.dragOrigin.position = Vector2(11, 7)
+	parent.dragOrigin.rotation = 0.35
+	parent.sprite.rotation = -0.2
+	parent.sprite.scale = Vector2(1.1, 0.9)
+	Global.select_sprite(child)
+	MutationCommands.structural(func():
+		Global.unlinkSprite()
+		return true)
+	assert_true(child.parentId == null, "the layer is unlinked")
+	assert_true(child.parentSprite == null, "and forgets its parent")
+	assert_true(child.get_parent() == _main.origin, "an unlinked layer hangs off the avatar origin")
+	assert_true(Global.heldSprite == child, "the unlinked layer stays selected")
+	assert_equal(child.authoredPosition(), child.position, "the saved position is the one the layer now has")
+
+	# Back at rest, it is exactly where it was.
+	motion.position = motion_rest
+	_hold_rest(chain)
+	assert_approx(child.global_position.x, rest_before.x, 0.01, "unlinking leaves the layer in place at rest (x)")
+	assert_approx(child.global_position.y, rest_before.y, 0.01, "unlinking leaves the layer in place at rest (y)")
+	assert_approx(child.rotation, 0.0, 0.0001, "unlinking carries no live rotation into the layer")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(Global.sprite_by_id(NESTED_ID).parentId == COSTUME_TWO_ID, "undo re-links the layer")
+
+	# A layer with children carries them: unlink the parent, mid-motion again, and
+	# its child is still where it was at rest.
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	child = Global.sprite_by_id(NESTED_ID)
+	var grandparent = parent.parentSprite
+	chain = [child, parent, grandparent]
+	_hold_rest(chain)
+	var child_rest: Vector2 = child.global_position
+	var parent_rest: Vector2 = parent.global_position
+	motion.position = motion_rest + Vector2(0, -37)
+	grandparent.dragOrigin.position = Vector2(-9, 12)
+	grandparent.dragOrigin.rotation = -0.4
+	grandparent.sprite.scale = Vector2(0.9, 1.15)
+	Global.select_sprite(parent)
+	MutationCommands.structural(func():
+		Global.unlinkSprite()
+		return true)
+	motion.position = motion_rest
+	_hold_rest(chain)
+	assert_true(child.parentSprite == parent, "an unlinked layer keeps its own children")
+	assert_true(parent.global_position.distance_to(parent_rest) < 0.01, "a layer with children stays in place at rest")
+	assert_true(child.global_position.distance_to(child_rest) < 0.01, "its children stay in place at rest")
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(Global.sprite_by_id(COSTUME_TWO_ID).parentId == BASE_ID, "undo re-links the parent layer")
+	Global.clear_selection()
+
+
+# A child of a wiggle layer has its position and rotation driven by the chain, and
+# its authored place lives in _wiggleRestPos. Unlinking it mid-bend must land it
+# at that authored place and release the binding, or the stale rest position is
+# what the next save records.
+func _test_unlink_wiggle_child() -> void:
+	var base = Global.sprite_by_id(BASE_ID)
+	var child = Global.sprite_by_id(COSTUME_ONE_ID)
+	if base == null or child == null:
+		return
+	var saved := {}
+	for field in ["animClips", "wigglePath", "wigglePathWidths", "wiggleWagEnabled", "wiggleWeight", "wiggleShapeReturn"]:
+		saved[field] = base.get(field)
+	base.animClips = []
+	for _frame in range(10):
+		await get_tree().process_frame
+	var authored: Vector2 = child.position
+	base.wigglePath = PackedVector2Array([
+		base._local_to_tex(Vector2(-20, 0)), base._local_to_tex(Vector2.ZERO), base._local_to_tex(Vector2(20, 0)),
+	])
+	base.wigglePathWidths = PackedFloat32Array([8.0, 8.0, 8.0])
+	base.wiggleWagEnabled = false
+	base.wiggleWeight = 0.0
+	base.wiggleShapeReturn = 1.0
+	base.wiggleEnabled = true
+	base.setWiggle(true)
+	for _frame in range(10):
+		await get_tree().process_frame
+	assert_true(child._wiggleFollowing, "the child rides the wiggle chain")
+	var expected: Vector2 = base.authoredPosition() + authored
+
+	# Bend it, as live motion would.
+	child.position = authored + Vector2(14, -9)
+	child.rotation = 0.5
+	Global.select_sprite(child)
+	MutationCommands.structural(func():
+		Global.unlinkSprite()
+		return true)
+	assert_false(child._wiggleFollowing, "unlinking releases the wiggle binding")
+	assert_true(child.get_parent() == _main.origin, "the child leaves the wiggle parent's DragOrigin")
+	assert_true(child.position.distance_to(expected) < 0.01, "a wiggle child lands at its authored place, not mid-bend (got %s, want %s)" % [child.position, expected])
+	assert_approx(child.rotation, 0.0, 0.0001, "and without the chain's rotation")
+	assert_equal(child.authoredPosition(), child.position, "the position saves record is the one it now has")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	base = Global.sprite_by_id(BASE_ID)
+	base.wiggleEnabled = false
+	base.setWiggle(false)
+	for field in saved:
+		base.set(field, saved[field])
+	Global.clear_selection()
+	await get_tree().process_frame
+
+
+# Linking, like unlinking, must not move a layer at rest, whatever the rig is
+# doing at the moment of the link. The layer changes branch here: it leaves one
+# parent and joins a sibling of that parent, both of them moving.
+func _test_link_keeps_rest_place() -> void:
+	var child = Global.sprite_by_id(NESTED_ID)
+	var old_parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	var new_parent = Global.sprite_by_id(4000000005)
+	if child == null or old_parent == null or new_parent == null:
+		return
+	var base = Global.sprite_by_id(BASE_ID)
+	var everyone: Array = [child, old_parent, new_parent, base]
+	var motion: Node2D = _main.get_node("OriginMotion")
+	var motion_rest := motion.position
+	_hold_rest(everyone)
+	var rest_before: Vector2 = child.global_position
+
+	motion.position = motion_rest + Vector2(4, -29)
+	for layer in [old_parent, new_parent, base]:
+		layer.wob.position = Vector2(5, -3)
+		layer.dragOrigin.position = Vector2(-8, 6)
+		layer.dragOrigin.rotation = 0.3
+		layer.sprite.scale = Vector2(1.12, 0.88)
+	MutationCommands.structural(func():
+		Global.linkSprite(child, new_parent, true)
+		return true)
+	motion.position = motion_rest
+	_hold_rest(everyone)
+	assert_true(child.parentSprite == new_parent, "the layer is linked to its new parent")
+	assert_true(child.get_parent() == new_parent.sprite, "and hangs off that parent's Sprite2D")
+	assert_true(child.global_position.distance_to(rest_before) < 0.01, "linking mid-motion leaves the layer in place at rest (moved %s)" % [child.global_position - rest_before])
+	assert_approx(child.rotation, 0.0, 0.0001, "linking carries no live rotation into the layer")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(Global.sprite_by_id(NESTED_ID).parentId == COSTUME_TWO_ID, "undo puts the layer back under its old parent")
+	Global.clear_selection()
+
+
+# An unlink is one history entry, and undo and redo each put the layer back
+# exactly: link data and position, at rest.
+func _test_unlink_undo_round_trip() -> void:
+	var child = Global.sprite_by_id(NESTED_ID)
+	var parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	if child == null or parent == null:
+		return
+	var chain: Array = [child, parent, parent.parentSprite]
+	var motion: Node2D = _main.get_node("OriginMotion")
+	var motion_rest := motion.position
+	_hold_rest(chain)
+	var linked_authored: Vector2 = child.authoredPosition()
+	var linked_rest: Vector2 = child.global_position
+	var depth_before: int = UndoManager.history_depth()
+
+	parent.dragOrigin.rotation = 0.4
+	parent.dragOrigin.position = Vector2(9, -5)
+	motion.position = motion_rest + Vector2(0, -21)
+	Global.select_sprite(child)
+	MutationCommands.structural(func():
+		Global.unlinkSprite()
+		return true)
+	motion.position = motion_rest
+	assert_equal(UndoManager.history_depth(), depth_before + 1, "an unlink is one history entry")
+	_hold_rest(chain)
+	var unlinked_authored: Vector2 = child.authoredPosition()
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	child = Global.sprite_by_id(NESTED_ID)
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	chain = [child, parent, parent.parentSprite]
+	_hold_rest(chain)
+	assert_true(child.parentId == COSTUME_TWO_ID, "undoing an unlink re-links the layer")
+	assert_true(child.parentSprite == parent, "to the same parent object")
+	assert_true(child.get_parent() == parent.sprite, "and hangs it off that parent again")
+	assert_equal(child.authoredPosition(), linked_authored, "undo restores the linked position")
+	assert_true(child.global_position.distance_to(linked_rest) < 0.01, "undo puts the layer back where it was")
+
+	UndoManager.redo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	child = Global.sprite_by_id(NESTED_ID)
+	parent = Global.sprite_by_id(COSTUME_TWO_ID)
+	chain = [child, parent, parent.parentSprite]
+	_hold_rest(chain)
+	assert_true(child.parentId == null, "redo unlinks it again")
+	assert_true(child.get_parent() == _main.origin, "back onto the avatar origin")
+	assert_equal(child.authoredPosition(), unlinked_authored, "redo restores the unlinked position")
+	assert_true(child.global_position.distance_to(linked_rest) < 0.01, "and the layer still has not moved at rest")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(Global.sprite_by_id(NESTED_ID).parentId == COSTUME_TWO_ID, "the test rig is put back")
+	Global.clear_selection()
+
+
+# Put these layers in their rest pose right now, as the motion pause does.
+func _hold_rest(layers: Array) -> void:
+	for layer in layers:
+		SpriteRestPose.apply(layer)
 
 
 func _row_fully_in_view(view: ScrollContainer, row) -> bool:

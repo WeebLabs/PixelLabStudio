@@ -919,7 +919,10 @@ Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas
 > `avatar_controller.delete_layer(sprite, include_children)` is the one delete
 > path. By default the direct children survive: `unlinkChildren` lifts them to the
 > root keeping their world position, and they are then re-attached to the deleted
-> layer's own parent, so the rig keeps its shape and only the one layer goes. With
+> layer's own parent, so the rig keeps its shape and only the one layer goes.
+> (2026-09-19: both steps work from the rest pose, `_detach_to_origin` and
+> `attach_at_rest`, rather than sampling the moving rig; see "Layers change
+> parent through `moveUnder()`".) With
 > `include_children` the layer and every descendant are freed.
 
 ### Panning costs one camera move
@@ -1165,12 +1168,57 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 > appendage, while pure tests cover width interpolation, root orientation, arc
 > projection, silhouette reach, auto-fit coverage, visibility, and hierarchy.
 
+> Updated: 2026-09-19 — **Layers change parent through `spriteObject.moveUnder()`,
+> never a bare `reparent()`.** The 2026-08-06 note below is superseded on this
+> point. `reparent()` runs `_exit_tree` then `_enter_tree`, so every hierarchy
+> change unregistered the layer and dropped it from the selection, then
+> re-registered it at the END of the registry, the layer list's tie-break at equal
+> z. `moveUnder()` sets `_changing_parent` around the reparent and both hooks
+> return early while it is set, so the registry position and the selection are
+> untouched. Real additions and removals still register and unregister as before.
+> `test_sprite_state` fails the build if `avatar_controller`, `global`,
+> `undo_manager` or `wiggle_runtime` calls `.reparent(`.
+>
+> This is what broke unlinking. `unlinkSprite()` reparented `heldSprite`, the
+> exit hook cleared `heldSprite`, and the next line (`heldSprite.set_owner`) was a
+> null call. The function aborted with the layer under the avatar origin but its
+> `parentId`, `parentSprite` and parent-relative `position` unchanged. The layer
+> therefore landed at its old offset measured from the origin instead of from its
+> parent, carrying its children, while the rig's data still said it was linked.
+>
+> **Unlinking places a layer from the rest pose, not a live sample.**
+> `Global.rest_transform_in_origin(layer)` composes `authoredRotation()` /
+> `authoredPosition()` up the ancestor chain. At rest an ancestor's WobbleOrigin,
+> DragOrigin and Sprite2D are identity (`sprite_rest_pose.gd`), so the authored
+> transforms are the whole chain. The old code read `global_position` with only
+> the wobbles zeroed, leaving drag lag and rotation, squash, and mic/eye rotation
+> in the sample, and subtracted `origin.position`, which ignores `OriginMotion`.
+> `_detach_to_origin()` is the one unlink step, used by `unlinkSprite()` and
+> `unlinkChildren()`. It also calls `leaveWiggleParent()`, which releases a wiggle
+> child's binding and restores `_wiggleRestPos` / `_wiggleRestRot`: before, an
+> unlinked wiggle child kept `_wiggleFollowing` set and its stale rest position
+> was what saves recorded. `attach_at_rest(layer, new_parent)` is the inverse, and
+> is how a deleted layer's surviving children re-attach to its parent.
+>
+> `linkSprite()` attaches through `attach_at_rest` as well. It used a keep-global
+> reparent of the live pose with only the wobbles zeroed, which baked the new
+> parent's drag lag and rotation into the child's authored position whenever a
+> link was made mid-motion (13 px on the test rig). Link and unlink are therefore
+> exact inverses at rest.
+>
+> **Undo of an unlink.** Every unlink was already one history entry
+> (`MutationCommands.structural`), but the aborted unlink changed no layer data:
+> `parentId` and `position` stayed as they were. `undo_manager` restores by
+> comparing data, so it found nothing to reverse, and the layer stayed where it
+> had jumped. With unlink completing, undo and redo each restore link data,
+> authored position and place at rest (`_test_unlink_undo_round_trip`).
+
 > Updated: 2026-08-06 — Legacy saves without `animClips` migrate their x/y wobble fields into the runtime animation system during shared sprite-state application. Hierarchy changes use `Node.reparent()` consistently. Because reparenting emits `_exit_tree()` / `_enter_tree()` without running `_ready()` again, sprite registry enrollment is owned by `_enter_tree()` and removal by `_exit_tree()`; registration in `_ready()` would permanently lose parented layers from indexed ID lookup.
 
 > Updated: 2026-03-07 — Parenting & hierarchy hardening (14 bugs fixed)
 > - `getAllDescendants()` added for recursive descendant collection (used by `setClip()`)
 > - `unlinkChildren(parentSpr)` on `Global` unlinks direct children before parent delete, preserving grandchild chains
-> - `linkSprite()` / `unlinkSprite()` zero all ancestor wobbles before position calculations to prevent wobble baking
+> - `linkSprite()` / `unlinkSprite()` zero all ancestor wobbles before position calculations to prevent wobble baking (superseded 2026-09-19: both now place from the rest pose)
 > - `_skip_ready_reparent` flag on spriteObject skips `_ready()` timer-based reparent when duplicate handler reparents immediately
 > - Sprite list uses DFS tree flattening for correct sibling ordering, chain-walk indent computation, collapse state preservation across rebuilds, and ancestor-chain visibility in filter
 > - `updateData()` generation counter guards against stale coroutine results on rapid calls

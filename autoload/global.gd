@@ -824,32 +824,10 @@ func linkSprite(sprite, newParent, parent_picked_on_canvas := false):
 		reparentMode = false
 		return
 
-	# Zero all ancestor wobbles for stable reparent position
-	var saved_wobbles = []
-	var current = sprite
-	while current != null:
-		saved_wobbles.append([current, current.wob.position])
-		current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-	current = newParent
-	while current != null:
-		var already_saved = false
-		for entry in saved_wobbles:
-			if entry[0] == current:
-				already_saved = true
-				break
-		if not already_saved:
-			saved_wobbles.append([current, current.wob.position])
-			current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-
-	sprite.reparent(newParent.sprite,true)
-
-	for entry in saved_wobbles:
-		entry[0].wob.position = entry[1]
-
-	sprite.parentId = newParent.id
-	sprite.parentSprite = newParent
+	# Placed from the rest pose, like unlinking: a keep-global reparent of the live
+	# pose baked the new parent's drag lag and rotation, and the idle motion, into
+	# the child's authored position whenever the link was made mid-motion.
+	attach_at_rest(sprite, newParent)
 
 	# Brief pink flash on the new parent — same confirmation cue the eye-track
 	# layer pick uses, applied here so successful links feel consistent.
@@ -962,47 +940,71 @@ func refresh():
 	notify_user("Refreshed all sprites.")
 
 func unlinkChildren(parentSpr):
-	var children = parentSpr.getAllLinkedSprites()
-	if children.size() == 0:
-		return
-	var saved_wob = parentSpr.wob.position
-	parentSpr.wob.position = Vector2.ZERO
-	for child in children:
-		var glob = child.global_position
-		child.reparent(main.origin, false)
-		child.parentId = null
-		child.parentSprite = null
-		child.position = glob - main.origin.position
-	parentSpr.wob.position = saved_wob
+	for child in parentSpr.getAllLinkedSprites():
+		_detach_to_origin(child)
 
 func unlinkSprite():
-	if heldSprite == null:
+	var layer = heldSprite
+	if layer == null or layer.parentId == null:
 		return
-	if heldSprite.parentId == null:
-		return
-
-	# Zero all ancestor wobbles for stable position calculation
-	var saved_wobbles = []
-	var current = heldSprite
-	while current != null:
-		saved_wobbles.append([current, current.wob.position])
-		current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-
-	var glob = heldSprite.global_position
-	glob = Vector2(int(glob.x),int(glob.y))
-
-	heldSprite.reparent(main.origin, false)
-	heldSprite.set_owner(main.origin)
-	heldSprite.parentId = null
-	heldSprite.parentSprite = null
-	heldSprite.position = glob - main.origin.position
-
-	for entry in saved_wobbles:
-		entry[0].wob.position = entry[1]
-
+	_detach_to_origin(layer)
 	Global.spriteList.refreshHierarchy()
 	notify_user("Unlinked sprite.")
+
+
+# Where a layer sits at rest, in the avatar origin's frame: its authored transform
+# composed up through every ancestor's. At rest an ancestor's WobbleOrigin,
+# DragOrigin and Sprite2D are identity (see sprite_rest_pose.gd), so the authored
+# transforms are the whole chain.
+#
+# Unlinking used to read global_position instead, which samples the rig
+# mid-motion: every ancestor's drag lag and rotation, squash, and the idle and
+# bounce motion on OriginMotion (which `glob - origin.position` never removed),
+# so the layer landed wherever the motion happened to be.
+func rest_transform_in_origin(layer) -> Transform2D:
+	var xform := Transform2D(layer.authoredRotation(), layer.authoredPosition())
+	var ancestor = _parent_layer(layer)
+	var visited := {}
+	while ancestor != null and not visited.has(ancestor):
+		visited[ancestor] = true
+		xform = Transform2D(ancestor.authoredRotation(), ancestor.authoredPosition()) * xform
+		ancestor = _parent_layer(ancestor)
+	return xform
+
+
+func _parent_layer(layer):
+	if layer.parentSprite != null and is_instance_valid(layer.parentSprite):
+		return layer.parentSprite
+	if layer.parentId != null:
+		return sprite_by_id(layer.parentId)
+	return null
+
+
+# Hang a layer off the avatar origin, at the place it has at rest, carrying its
+# children with it.
+func _detach_to_origin(layer) -> void:
+	var rest := rest_transform_in_origin(layer)
+	layer.leaveWiggleParent()
+	layer.moveUnder(main.origin, false)
+	layer.set_owner(main.origin)
+	layer.parentId = null
+	layer.parentSprite = null
+	layer.position = rest.origin
+	layer.rotation = rest.get_rotation()
+	layer._force_drag_snap = true
+
+
+# Hang a layer off `new_parent` without moving it at rest: its authored transform
+# becomes its rest place re-expressed in the parent's rest frame.
+func attach_at_rest(layer, new_parent) -> void:
+	var local := rest_transform_in_origin(new_parent).affine_inverse() * rest_transform_in_origin(layer)
+	layer.leaveWiggleParent()
+	layer.moveUnder(new_parent.sprite, false)
+	layer.parentId = new_parent.id
+	layer.parentSprite = new_parent
+	layer.position = local.origin
+	layer.rotation = local.get_rotation()
+	layer._force_drag_snap = true
 
 func saveImagesFromData():
 	var sprites = sprite_nodes()

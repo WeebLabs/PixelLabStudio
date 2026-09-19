@@ -154,7 +154,7 @@ func _duplicate_layer(source):
 	_main.origin.add_child(sprite)
 	if source.parentId != null and source.parentSprite != null:
 		var new_parent = source.parentSprite
-		sprite.reparent(new_parent.sprite, false)
+		sprite.moveUnder(new_parent.sprite, false)
 		sprite.parentId = source.parentId
 		sprite.parentSprite = new_parent
 		sprite.position = source.authoredPosition()
@@ -210,9 +210,8 @@ func delete_layers(sprites: Array, include_children: bool) -> void:
 			var new_parent = entry[1]
 			if not is_instance_valid(child) or new_parent == null or not is_instance_valid(new_parent):
 				continue
-			child.reparent(new_parent.sprite, true)
-			child.parentId = new_parent.id
-			child.parentSprite = new_parent
+			# Placed from the rig's rest pose, not a live sample of its motion.
+			_global.attach_at_rest(child, new_parent)
 		for sprite in doomed:
 			if is_instance_valid(sprite):
 				sprite.queue_free()
@@ -386,7 +385,7 @@ func load_avatar(path: String) -> bool:
 		if sprite.parentId != null:
 			var parent_sprite = _global.sprite_by_id(sprite.parentId)
 			if parent_sprite != null:
-				sprite.reparent(parent_sprite.sprite, false)
+				sprite.moveUnder(parent_sprite.sprite, false)
 				sprite.parentSprite = parent_sprite
 				sprite.set_owner(parent_sprite.sprite)
 				sprite._force_drag_snap = true

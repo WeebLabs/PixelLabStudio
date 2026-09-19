@@ -173,6 +173,7 @@ var _wiggleRuntime = WiggleRuntime.new()
 var _wiggleRestPos = Vector2.ZERO
 var _wiggleRestRot = 0.0
 var _wiggleFollowing = false
+var _changing_parent := false
 var _wiggleBind = {}
 
 #Blink Animation
@@ -347,10 +348,38 @@ func _ready():
 func _enter_tree() -> void:
 	# Reparenting emits _exit_tree/_enter_tree without running _ready again.
 	# Register here so hierarchy changes cannot permanently evict live sprites.
+	if _changing_parent:
+		return
 	Global.register_sprite(self)
 
 func _exit_tree() -> void:
+	if _changing_parent:
+		return
 	Global.unregister_sprite(self)
+
+
+# Move this layer to a new parent. A plain reparent() runs _exit_tree and
+# _enter_tree, and a layer only changing parent must not be treated as leaving:
+# unregistering dropped it from the selection partway through an unlink (the
+# held layer went null mid-function and the unlink aborted with the layer half
+# moved), and re-registering put it at the end of the registry, which is the
+# layer list's tie-break at equal z.
+func moveUnder(new_parent: Node, keep_global: bool) -> void:
+	_changing_parent = true
+	reparent(new_parent, keep_global)
+	_changing_parent = false
+
+
+# Stop riding a wiggle parent's chain and put back the pose it was riding from.
+# A layer leaving that parent otherwise kept a stale binding, and its stale
+# _wiggleRestPos was what saves and undo snapshots recorded.
+func leaveWiggleParent() -> void:
+	if not _wiggleFollowing:
+		return
+	position = _wiggleRestPos
+	rotation = _wiggleRestRot
+	_wiggleFollowing = false
+	_wiggleBind = {}
 	
 func replaceSprite(pathNew):
 	var img = Image.new()
@@ -692,6 +721,9 @@ func moveSprite(dir):
 # moves, saves, and undo act on its authored rest position instead.
 func authoredPosition() -> Vector2:
 	return _wiggleRestPos if _wiggleFollowing else position
+
+func authoredRotation() -> float:
+	return _wiggleRestRot if _wiggleFollowing else rotation
 
 func setAuthoredPosition(value: Vector2) -> void:
 	if not _wiggleFollowing:

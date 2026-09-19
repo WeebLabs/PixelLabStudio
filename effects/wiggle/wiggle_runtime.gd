@@ -267,14 +267,14 @@ func attach_children() -> void:
 			child._wiggleRestRot = child.rotation
 			child._wiggleFollowing = true
 			child._wiggleBind = {}
-			child.reparent(_owner.dragOrigin, true)
+			child.moveUnder(_owner.dragOrigin, true)
 
 
 func release_children() -> void:
 	for child in _owner.getAllLinkedSprites():
 		if child._wiggleFollowing:
 			if child.get_parent() == _owner.dragOrigin:
-				child.reparent(_owner.sprite, false)
+				child.moveUnder(_owner.sprite, false)
 			child.position = child._wiggleRestPos
 			child.rotation = child._wiggleRestRot
 			child._wiggleFollowing = false

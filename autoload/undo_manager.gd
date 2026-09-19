@@ -147,7 +147,7 @@ func _restore(data: Dictionary):
 		if sprite.parentId != new_parent_id:
 			reparented = true
 			if new_parent_id == null:
-				sprite.reparent(Global.main.origin, false)
+				sprite.moveUnder(Global.main.origin, false)
 				sprite.parentId = null
 				sprite.parentSprite = null
 			else:
@@ -155,15 +155,15 @@ func _restore(data: Dictionary):
 				if parent_nodes.size() > 0:
 					var new_parent = parent_nodes[0]
 					if sprite.is_ancestor_of(new_parent):
-						sprite.reparent(Global.main.origin, false)
+						sprite.moveUnder(Global.main.origin, false)
 						sprite.parentId = null
 						sprite.parentSprite = null
 					else:
-						sprite.reparent(new_parent.sprite, false)
+						sprite.moveUnder(new_parent.sprite, false)
 						sprite.parentId = new_parent_id
 						sprite.parentSprite = new_parent
 				else:
-					sprite.reparent(Global.main.origin, false)
+					sprite.moveUnder(Global.main.origin, false)
 					sprite.parentId = null
 					sprite.parentSprite = null
 
@@ -217,7 +217,7 @@ func _link_restored_parents(restored: Array) -> void:
 		var parent = parents[0]
 		if sprite.is_ancestor_of(parent):
 			continue
-		sprite.reparent(parent.sprite, false)
+		sprite.moveUnder(parent.sprite, false)
 		sprite.parentSprite = parent
 		sprite.set_owner(parent.sprite)
 		# Reparent changed the global transform — re-snap the top_level dragger.
