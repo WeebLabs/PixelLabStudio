@@ -76,6 +76,7 @@ PNGTuberPlus/
 │   │   ├── sprite_collision_runtime.gd Shape lifecycle and active-state coordination
 │   │   ├── sprite_hierarchy.gd   Pure child/descendant lookup policy
 │   │   ├── sprite_rest_pose.gd   Authored rest pose for the edit-mode motion pause (2026-09-16)
+│   │   ├── sprite_image_swap.gd  Artwork swap for file/PSD replace and undo restore (2026-09-19)
 │   │   ├── sprite_visibility_policy.gd Pure talk/blink/costume visibility
 │   │   └── sprite_visual_runtime.gd Texture, normal, blend, and depth synchronization
 │   ├── spriteEditMenu/
@@ -276,6 +277,38 @@ Key child nodes:
 > could not go on naming layers by a name the layer list no longer shows. The
 > single-PNG replace prompt in `ImportController` reads `displayName()` for the
 > same reason, and its `_extract_sprite_name` facade is gone with its last caller.
+
+> Updated: 2026-09-19 — **Every row of the replace review toggles.** Matched rows
+> ("Will Be Replaced") carry a `CheckBox`, ticked by default, in place of the old
+> static ✓, so confirming untouched still replaces every match.
+> `replace_review_dialog._on_replace()` emits only the ticked entries of
+> `_matched_checkboxes`, as it already did for new layers. An unticked match is
+> left as it is and is not an orphan, since the layer is in the source. With
+> nothing ticked and no orphans being removed, `ImportController._on_replace_confirmed`
+> returns before `apply_replacement`, whose `capture_bulk()` would otherwise record
+> an empty history step. Covered by `_test_replace_review_toggles_matches`.
+> Sections with checkboxes ("Will Be Replaced", "New") carry **All** / **None**
+> buttons on their header (`_add_section_header(text, toggles)`, `_set_all`). The
+> buttons hold the section's checkbox array itself, which `setup()` clears in
+> place rather than reassigning, so they act on every row the section ends up with.
+>
+> Updated: 2026-09-19 — **Undoing a replace restores the artwork.**
+> `SpriteState.apply_existing()`, the undo path for a layer that still exists,
+> restored offsets, fields and the normal map but never the diffuse image or
+> `path`. An undone replace kept the new art and a `psd://` path, and a later save
+> wrote a layer the loader could not reopen ("Error opening file 'psd://…'").
+> It now restores the image first, through `spriteObject.restoreImage(img, path)`,
+> whenever the snapshot's `imageData` is a different object from the layer's.
+> The undo image cache makes snapshots share Image objects, so identity means the
+> artwork changed and any other undo rebuilds nothing. The swap lives in
+> `ui_scenes/selectedSprite/sprite_image_swap.gd`. `replaceSprite(path)` (a file),
+> `replaceSpriteFromData()` (a PSD layer, with the legacy canvas shift) and
+> `restoreImage()` are thin facades over it, and they share one rebuild of the
+> texture, normal-map check, collision and handles, where the first two had each
+> carried a copy. Only a replace announces a dropped normal map; a restore
+> applies the snapshot's own normal map straight after. The move also keeps
+> `spriteObject.gd` under the `test_sprite_state` facade size ceiling. Covered by `_test_replace_undo_restores_artwork`
+> (undo and redo).
 
 > Updated: 2026-08-18 — **Legacy full-canvas replace compatibility.** Rigs built
 > before PSD import existed carry one full-canvas PNG per layer: the artwork sits

@@ -11,6 +11,9 @@ var _orphaned_sprites: Array = []
 var _canvas_size: Vector2 = Vector2.ZERO
 
 var _new_checkboxes: Array = []  # Array of {checkbox: CheckBox, item: Dictionary}
+# Matched layers are ticked by default, so confirming without touching them
+# replaces every match as before. Unticking one leaves that layer as it is.
+var _matched_checkboxes: Array = []  # Array of {checkbox: CheckBox, entry: Dictionary}
 var _remove_orphans_check: CheckBox = null
 
 var _layerList: VBoxContainer
@@ -115,6 +118,7 @@ func setup(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_siz
 	_orphaned_sprites = orphaned_sprites
 	_canvas_size = canvas_size
 	_new_checkboxes.clear()
+	_matched_checkboxes.clear()
 
 	# Clear existing entries
 	for child in _layerList.get_children():
@@ -135,13 +139,13 @@ func setup(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_siz
 
 	# --- Will Be Replaced section ---
 	if matched.size() > 0:
-		_add_section_header("Will Be Replaced")
+		_add_section_header("Will Be Replaced", _matched_checkboxes)
 		for entry in matched:
 			_add_matched_entry(entry)
 
 	# --- New (not in project) section ---
 	if new_items.size() > 0:
-		_add_section_header("New (not in project)")
+		_add_section_header("New (not in project)", _new_checkboxes)
 		for item in new_items:
 			_add_new_entry(item)
 
@@ -163,28 +167,52 @@ func setup(matched: Array, new_items: Array, orphaned_sprites: Array, canvas_siz
 	else:
 		_remove_orphans_check = null
 
-func _add_section_header(text: String):
+# `toggles` is the section's checkbox list when its rows can be ticked. It is
+# filled after the header is built, and read when a button is pressed, so the
+# buttons act on every row the section ends up with.
+func _add_section_header(text: String, toggles = null):
 	var sep = HSeparator.new()
 	sep.custom_minimum_size.y = 8
 	_layerList.add_child(sep)
+
+	var header = HBoxContainer.new()
+	_layerList.add_child(header)
 
 	var label = Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 13)
 	label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_HEADING)
-	_layerList.add_child(label)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(label)
+
+	if toggles == null:
+		return
+	# A PSD can bring well over a hundred layers, and picking a few out of them
+	# one checkbox at a time is not workable.
+	for choice in [["All", true], ["None", false]]:
+		var button = Button.new()
+		button.text = choice[0]
+		button.flat = true
+		button.focus_mode = Control.FOCUS_NONE
+		button.add_theme_font_size_override("font_size", 12)
+		button.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
+		button.pressed.connect(_set_all.bind(toggles, choice[1]))
+		header.add_child(button)
+
+
+func _set_all(toggles: Array, ticked: bool) -> void:
+	for row in toggles:
+		row["checkbox"].button_pressed = ticked
 
 func _add_matched_entry(entry: Dictionary):
 	var row = HBoxContainer.new()
 	row.custom_minimum_size.y = 48
 
-	# Checkmark icon
-	var check_label = Label.new()
-	check_label.text = "✓"
-	check_label.add_theme_font_size_override("font_size", 16)
-	check_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
-	check_label.custom_minimum_size = Vector2(24, 24)
-	row.add_child(check_label)
+	var check = CheckBox.new()
+	check.button_pressed = true
+	check.custom_minimum_size = Vector2(24, 24)
+	row.add_child(check)
+	_matched_checkboxes.append({"checkbox": check, "entry": entry})
 
 	# Thumbnail
 	var thumb_rect = _make_thumbnail(entry["image"])
@@ -333,7 +361,12 @@ static func _extract_sprite_name(sprite_path: String) -> String:
 	return filename
 
 func _on_replace():
-	# Collect checked new items
+	# Only the ticked rows go through. An unticked match is left alone, and is not
+	# an orphan either: the layer is in the source, the user chose not to update it.
+	var selected_matched = []
+	for row in _matched_checkboxes:
+		if row["checkbox"].button_pressed:
+			selected_matched.append(row["entry"])
 	var selected_new = []
 	for entry in _new_checkboxes:
 		if entry["checkbox"].button_pressed:
@@ -342,7 +375,7 @@ func _on_replace():
 	var remove_orphans = _remove_orphans_check != null and _remove_orphans_check.button_pressed
 
 	visible = false
-	replace_confirmed.emit(_matched, selected_new, _orphaned_sprites, _canvas_size, remove_orphans)
+	replace_confirmed.emit(selected_matched, selected_new, _orphaned_sprites, _canvas_size, remove_orphans)
 
 func _on_cancel():
 	visible = false

@@ -59,6 +59,8 @@ func _run() -> void:
 	await _test_layer_context_menu()
 	await _test_layer_replace_target()
 	await _test_replace_review_names()
+	await _test_replace_review_toggles_matches()
+	await _test_replace_undo_restores_artwork()
 	await _test_duplicate_placement()
 	await _test_multi_selection()
 	await _test_mixed_value_indicator()
@@ -1551,6 +1553,146 @@ func _test_replace_review_names() -> void:
 	assert_false(labels.has("imported as \"%s\"" % source), "an unrenamed row carries no source note")
 	dialog.visible = false
 	await get_tree().process_frame
+
+
+# Every row of the replace review can be toggled, the matched ones included.
+# Matches start ticked, so the default is unchanged; an unticked match is left as
+# it is, through the same confirm path the Replace button takes.
+func _test_replace_review_toggles_matches() -> void:
+	var source = Global.sprite_by_id(COSTUME_ONE_ID)
+	if source == null:
+		return
+	# Throwaway duplicates, removed again by undoing their creation, so the
+	# fixture's own layers are left exactly as they were.
+	var depth_before: int = UndoManager.history_depth()
+	Global.select_sprite(source)
+	_main.duplicate_selected_layer()
+	await get_tree().process_frame
+	var kept = Global.heldSprite
+	Global.select_sprite(source)
+	_main.duplicate_selected_layer()
+	await get_tree().process_frame
+	var skipped = Global.heldSprite
+	assert_true(kept != source and skipped != source and kept != skipped, "two throwaway layers to replace")
+
+	var dialog = _main.replaceReviewDialog
+	var skipped_size: Vector2i = skipped.imageData.get_size()
+	var incoming := Image.create(7, 5, false, Image.FORMAT_RGBA8)
+	incoming.fill(Color.RED)
+	var matched := [
+		{"sprite": kept, "name": "Kept", "image": incoming, "position": Vector2.ZERO},
+		{"sprite": skipped, "name": "Skipped", "image": incoming, "position": Vector2.ZERO},
+	]
+	dialog.setup(matched, [], [], Vector2.ZERO)
+	dialog.visible = true
+	await get_tree().process_frame
+	assert_equal(dialog._matched_checkboxes.size(), 2, "every matched layer has its own checkbox")
+	assert_true(dialog._matched_checkboxes[0].checkbox.button_pressed, "matched layers start ticked")
+	assert_true(dialog._matched_checkboxes[1].checkbox.button_pressed, "all of them")
+
+	# The section's None and All buttons act on every row in it.
+	var none_button := _review_button(dialog, "None")
+	var all_button := _review_button(dialog, "All")
+	assert_not_null(none_button, "the matched section has a None button")
+	assert_not_null(all_button, "and an All button")
+	if none_button != null and all_button != null:
+		none_button.pressed.emit()
+		assert_false(
+			dialog._matched_checkboxes[0].checkbox.button_pressed or dialog._matched_checkboxes[1].checkbox.button_pressed,
+			"None unticks every matched layer",
+		)
+		all_button.pressed.emit()
+		assert_true(
+			dialog._matched_checkboxes[0].checkbox.button_pressed and dialog._matched_checkboxes[1].checkbox.button_pressed,
+			"All ticks every matched layer",
+		)
+
+	dialog._matched_checkboxes[1].checkbox.button_pressed = false
+	dialog._on_replace()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(kept.imageData.get_size(), Vector2i(7, 5), "a ticked match is replaced")
+	assert_equal(skipped.imageData.get_size(), skipped_size, "an unticked match is left as it is")
+	assert_true(is_instance_valid(skipped) and not skipped.is_queued_for_deletion(), "and is not treated as an orphan")
+
+	# Unticking everything leaves nothing to do, and records nothing.
+	var depth: int = UndoManager.history_depth()
+	dialog.setup(matched, [], [], Vector2.ZERO)
+	dialog.visible = true
+	await get_tree().process_frame
+	for row in dialog._matched_checkboxes:
+		row.checkbox.button_pressed = false
+	dialog._on_replace()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_equal(UndoManager.history_depth(), depth, "a review with nothing ticked records no history step")
+	assert_false(dialog.visible, "and still closes")
+
+	while UndoManager.history_depth() > depth_before:
+		UndoManager.undo()
+		for _frame in range(3):
+			await get_tree().process_frame
+	assert_equal(Global.sprite_count(), EXPECTED_SPRITES, "the throwaway layers are gone again")
+	Global.clear_selection()
+
+
+# Undoing a replace brings the old artwork back: the image, the source path it
+# was imported under, and everything sized from it. It used to put back offsets
+# and normal maps but leave the new image and a psd:// path in place, which a
+# later save then wrote out as a layer the loader could not reopen.
+func _test_replace_undo_restores_artwork() -> void:
+	var sprite = Global.sprite_by_id(COSTUME_ONE_ID)
+	if sprite == null:
+		return
+	var original_image: Image = sprite.imageData
+	var original_path: String = sprite.path
+	var original_size: Vector2i = sprite.imageData.get_size()
+	var incoming := Image.create(9, 4, false, Image.FORMAT_RGBA8)
+	incoming.fill(Color.BLUE)
+
+	_main._on_replace_confirmed(
+		[{"sprite": sprite, "name": "Swapped", "image": incoming, "position": Vector2.ZERO}],
+		[], [], Vector2.ZERO, false,
+	)
+	await get_tree().process_frame
+	assert_equal(sprite.path, "psd://Swapped", "the replace took")
+	assert_equal(Vector2i(sprite.size), Vector2i(9, 4), "and resized the layer")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	sprite = Global.sprite_by_id(COSTUME_ONE_ID)
+	assert_true(sprite.imageData == original_image, "undoing a replace restores the original image")
+	assert_equal(sprite.path, original_path, "and the path it was imported under")
+	assert_equal(Vector2i(sprite.size), original_size, "and the layer's size")
+	assert_equal(Vector2i(sprite.imageSize), original_size, "and the collision fallback size")
+	var texture: Texture2D = sprite.sprite.texture
+	assert_true(texture != null and Vector2i(texture.get_size()) == original_size, "and draws the original artwork again")
+
+	UndoManager.redo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	sprite = Global.sprite_by_id(COSTUME_ONE_ID)
+	assert_true(sprite.imageData == incoming, "redo brings the replacement back")
+	assert_equal(sprite.path, "psd://Swapped", "with its path")
+	assert_equal(Vector2i(sprite.size), Vector2i(9, 4), "and its size")
+
+	UndoManager.undo()
+	for _frame in range(3):
+		await get_tree().process_frame
+	assert_true(Global.sprite_by_id(COSTUME_ONE_ID).imageData == original_image, "the test rig is put back")
+
+
+# The first header button with this text, top to bottom.
+func _review_button(dialog, text: String) -> Button:
+	var pending: Array = [dialog._layerList]
+	while not pending.is_empty():
+		var node: Node = pending.pop_front()
+		for child in node.get_children():
+			if child is Button and not (child is CheckBox) and child.text == text:
+				return child
+			pending.append(child)
+	return null
 
 
 func _review_labels(dialog) -> Array:

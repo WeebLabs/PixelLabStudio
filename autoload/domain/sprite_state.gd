@@ -126,6 +126,15 @@ static func _apply_value_fields(sprite: Object, data: Dictionary) -> void:
 static func apply_existing(sprite: Object, data: Dictionary) -> void:
 	var previous_frames := int(sprite.get("frames"))
 	_apply_value_fields(sprite, data)
+	# The image first: the handles and collision below are sized from it, and the
+	# normal map is checked against it. Snapshots share Image objects through the
+	# undo image cache, so identity says whether the artwork changed at all, and an
+	# undo of anything else rebuilds nothing. A replace swaps the object.
+	var image: Variant = data.get("imageData")
+	if image is Image and sprite.get("imageData") != image:
+		sprite.call("restoreImage", image, String(data.get("path", sprite.get("path"))))
+	elif data.has("path"):
+		sprite.set("path", data["path"])
 	sprite.call("setAuthoredPosition", ValueCodec.vector2_value(data.get("pos"), Vector2.ZERO))
 	sprite.get("sprite").offset = sprite.get("offset")
 	sprite.get("grabArea").position = (sprite.get("size") * -0.5) + sprite.get("offset")

@@ -783,6 +783,11 @@ func _on_single_replace_cancelled():
 func _on_replace_confirmed(matched: Array, new_items: Array, orphaned_sprites: Array, _canvas_size: Vector2, remove_orphans: bool):
 	var legacy_canvas := _replace_legacy_canvas
 	_replace_legacy_canvas = Vector2.ZERO
+	# Every row can be unticked now. With nothing left to do, a replacement would
+	# only record an empty history step.
+	if matched.is_empty() and new_items.is_empty() and not (remove_orphans and not orphaned_sprites.is_empty()):
+		_global.notify_user("Nothing selected to replace.")
+		return
 	var result: Dictionary = _avatar.apply_replacement(matched, new_items, orphaned_sprites, remove_orphans, legacy_canvas)
 	var message := "Replaced " + str(result["replaced"]) + " layers"
 	if result["added"] > 0:
