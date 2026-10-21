@@ -419,6 +419,11 @@ func load_avatar(path: String) -> bool:
 		_main.ndi_manager.recalculate_now()
 	if load_dialog != null:
 		load_dialog.queue_free()
+	# A file just opened is what is on disk; a recovered session is not.
+	if path == SaveCoordinator.SESSION_SAVE_PATH:
+		_undo.mark_unsaved()
+	else:
+		_undo.mark_clean()
 	_global.notify_user("Loaded avatar at: " + path)
 	_main.origin.visible = true
 	var fade := _main.create_tween()

@@ -7,6 +7,7 @@ const SaveControllerScene = preload("res://main_scenes/controllers/save_controll
 const AvatarControllerScene = preload("res://main_scenes/controllers/avatar_controller.gd")
 const ImportControllerScene = preload("res://main_scenes/controllers/import_controller.gd")
 const UpdateControllerScene = preload("res://main_scenes/controllers/update_controller.gd")
+const QuitControllerScene = preload("res://main_scenes/controllers/quit_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 const InputCommands = preload("res://autoload/input/input_commands.gd")
 const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
@@ -47,6 +48,7 @@ var save_controller: AvatarSaveController = null
 var avatar_controller: AvatarController = null
 var import_controller: ImportController = null
 var update_controller: UpdateController = null
+var quit_controller: QuitController = null
 
 
 #Scene Reference
@@ -120,6 +122,10 @@ func _ready():
 	update_controller.name = "UpdateController"
 	add_child(update_controller)
 	update_controller.setup(self, Global, Saving, save_controller)
+	quit_controller = QuitControllerScene.new()
+	quit_controller.name = "QuitController"
+	add_child(quit_controller)
+	quit_controller.setup(self, Saving, UndoManager, save_controller, avatar_controller)
 
 	screen_scale = DisplayServer.screen_get_scale()
 
@@ -397,6 +403,8 @@ func isFileSystemOpen():
 	# canvas like every other modal; edits behind them would surprise the user.
 	if update_controller != null and update_controller.is_dialog_open():
 		return true
+	if quit_controller != null and quit_controller.is_dialog_open():
+		return true
 	return false
 
 #Displays control panel whether or not application is focused
@@ -414,11 +422,9 @@ func _notification(what):
 				controlPanel.menu_bar.snap_hidden()
 			pushUpdates.visible = true
 		NOTIFICATION_WM_CLOSE_REQUEST:
-			if save_controller != null:
-				save_controller.shutdown()
-			# Belt-and-suspenders: also persist settings here in case the autoload's
-			# _exit_tree doesn't fire (force-quit, certain Godot/OS paths)
-			Saving.write_settings(Saving.settingsPath)
+			# Asks first when there are unsaved changes; quit_app() does the shutdown.
+			if quit_controller != null:
+				quit_controller.request_quit()
 		30:
 			onWindowSizeChange()
 

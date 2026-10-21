@@ -2,11 +2,7 @@ extends Node
 
 const SpriteState = preload("res://autoload/domain/sprite_state.gd")
 const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
-
-# Emitted when a transaction actually captures a snapshot (not when suppressed
-# during an undo/redo restore). Subscribers — currently main.gd's session
-# auto-save — use this to flag the rig as "dirty since last persisted save."
-signal state_saved
+const EditRevisions = preload("res://autoload/domain/edit_revisions.gd")
 
 # Emitted after a snapshot has been applied back onto the scene. Undo owns
 # sprite state only; every scene/UI consequence of a restore belongs to the
@@ -14,11 +10,18 @@ signal state_saved
 # Scope keys: structure_changed, hierarchy_changed, full_rebuild, light.
 signal state_restored(scope: Dictionary)
 
+# Emitted whenever the live rig becomes a different revision: an edit, an undo,
+# a redo, or an edit discarded as a no-op. The session auto-save listens here
+# to flag the rig as owing a session write; undo and redo count, since they
+# change the rig without capturing a snapshot.
+signal revision_changed
+
 const MAX_HISTORY = 50
 
 var _undo_stack: Array = []
 var _redo_stack: Array = []
 var suppressed: bool = false
+var _revisions := EditRevisions.new()
 
 # Transaction bookkeeping. begin()/commit()/abort() are the only way production
 # code captures history; MutationCommands is the single caller. Nested begins
@@ -298,7 +301,9 @@ func abort() -> void:
 	_txn_depth -= 1
 	if _txn_pushed.pop_back():
 		_undo_stack.pop_back()
+		_revisions.discarded()
 		_active_gesture = ""
+		revision_changed.emit()
 
 # End the current continuous gesture so the next continuous edit starts a new
 # history entry. Called on mouse release and when a held-key burst stops.
@@ -311,6 +316,27 @@ func end_gesture(gesture: String = "") -> void:
 func history_depth() -> int:
 	return _undo_stack.size()
 
+# --- Unsaved changes ---
+#
+# The rig has unsaved changes when its revision differs from the one last
+# written to an avatar file. The quit prompt asks this.
+func has_unsaved_changes() -> bool:
+	return _revisions.has_unsaved_changes()
+
+func revision() -> int:
+	return _revisions.current
+
+# A save records the revision it captured, not whatever is live when the
+# background write finishes.
+func mark_saved(saved_revision: int) -> void:
+	_revisions.mark_saved(saved_revision)
+
+func mark_clean() -> void:
+	_revisions.mark_saved(_revisions.current)
+
+func mark_unsaved() -> void:
+	_revisions.mark_unsaved()
+
 func _push_snapshot() -> bool:
 	if suppressed or Global.main == null or !Global.main.saveLoaded:
 		return false
@@ -318,7 +344,8 @@ func _push_snapshot() -> bool:
 	_redo_stack.clear()
 	if _undo_stack.size() > MAX_HISTORY:
 		_undo_stack.pop_front()
-	state_saved.emit()
+	_revisions.pushed(MAX_HISTORY)
+	revision_changed.emit()
 	return true
 
 func undo():
@@ -331,6 +358,8 @@ func undo():
 	var snapshot = _undo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
+	_revisions.undone()
+	revision_changed.emit()
 	Global.notify_user("Undo.")
 
 func redo():
@@ -343,6 +372,8 @@ func redo():
 	var snapshot = _redo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
+	_revisions.redone()
+	revision_changed.emit()
 	Global.notify_user("Redo.")
 
 func _input(event):

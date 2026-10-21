@@ -8,6 +8,8 @@ const ImportCoordinator = preload("res://main_scenes/controllers/import_controll
 const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
 const InstanceLock = preload("res://autoload/instance_lock.gd")
 const UpdateCoordinator = preload("res://main_scenes/controllers/update_controller.gd")
+const QuitCoordinator = preload("res://main_scenes/controllers/quit_controller.gd")
+const EditRevisions = preload("res://autoload/domain/edit_revisions.gd")
 
 class FakeSprite extends RefCounted:
 	var path: String
@@ -23,6 +25,7 @@ func run(t) -> void:
 	_test_ffmpeg_argument_contract(t)
 	_test_viewport_zoom_contract(t)
 	_test_session_recovery_contract(t)
+	_test_unsaved_changes_contract(t)
 	_test_avatar_file_extension_contract(t)
 	_test_save_image_encoding_contract(t)
 	_test_import_matching(t)
@@ -35,7 +38,7 @@ func run(t) -> void:
 # The usual cause is a bare global class_name: the isolated test workspace has no
 # script class registry, so controllers must reach other scripts via preload.
 func _test_controller_scripts_compile(t) -> void:
-	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator], ["avatar", AvatarCoordinator], ["import", ImportCoordinator], ["update", UpdateCoordinator]]:
+	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator], ["avatar", AvatarCoordinator], ["import", ImportCoordinator], ["update", UpdateCoordinator], ["quit", QuitCoordinator]]:
 		var script: GDScript = entry[1]
 		t.assert_true(
 			script != null and script.can_instantiate(),
@@ -93,6 +96,70 @@ func _test_session_recovery_contract(t) -> void:
 	t.assert_equal(SaveCoordinator.startup_choice("", "", true)["action"], "recover", "a session with no saved avatar is still offered")
 	var save_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/controllers/save_controller.gd"))
 	t.assert_true(save_source.contains("_show_session_recovery_dialog(path, true)"), "a file handed over while the recovery prompt is up re-asks instead of dismissing it")
+
+
+# Quitting with unsaved changes asks first. "Unsaved" is a revision compared
+# with the one last written to a file, so undoing back to it is clean again and
+# a no-op edit discarded by the command layer leaves no trace.
+func _test_unsaved_changes_contract(t) -> void:
+	var revisions := EditRevisions.new()
+	t.assert_false(revisions.has_unsaved_changes(), "a fresh rig has nothing unsaved")
+	revisions.pushed(50)
+	t.assert_true(revisions.has_unsaved_changes(), "an edit leaves unsaved changes")
+	revisions.undone()
+	t.assert_false(revisions.has_unsaved_changes(), "undoing back to the saved state is clean again")
+	revisions.redone()
+	t.assert_true(revisions.has_unsaved_changes(), "redoing the edit is unsaved again")
+	revisions.mark_saved(revisions.current)
+	t.assert_false(revisions.has_unsaved_changes(), "a save makes the live revision clean")
+	revisions.pushed(50)
+	revisions.discarded()
+	t.assert_false(revisions.has_unsaved_changes(), "an edit discarded as a no-op changes nothing")
+	revisions.undone()
+	t.assert_true(revisions.has_unsaved_changes(), "undoing past the save differs from the file")
+	revisions.redone()
+	var saved_at := revisions.current
+	revisions.pushed(50)
+	revisions.mark_saved(saved_at)
+	t.assert_true(revisions.has_unsaved_changes(), "an edit made while a save was writing stays unsaved")
+	revisions.mark_unsaved()
+	revisions.undone()
+	t.assert_true(revisions.has_unsaved_changes(), "a recovered session matches no file at any revision")
+
+	var trimmed := EditRevisions.new()
+	for i in 5:
+		trimmed.pushed(2)
+	trimmed.mark_saved(trimmed.current)
+	trimmed.undone()
+	trimmed.undone()
+	trimmed.undone()
+	t.assert_true(trimmed.has_unsaved_changes(), "undo stops at the trimmed history and stays unsaved")
+
+	t.assert_equal(QuitCoordinator.close_action(false, false, false), "quit", "nothing unsaved quits straight away")
+	t.assert_equal(QuitCoordinator.close_action(true, false, false), "prompt", "unsaved changes ask first")
+	t.assert_equal(QuitCoordinator.close_action(true, true, false), "wait", "a save or load in flight is waited out")
+	t.assert_equal(QuitCoordinator.close_action(false, true, false), "wait", "even with nothing unsaved, a write in flight finishes first")
+	t.assert_equal(QuitCoordinator.close_action(true, false, true), "quit", "an unanswered recovery prompt has nothing to save")
+
+	var main_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/main.gd"))
+	var quit_source := FileAccess.get_file_as_string("res://main_scenes/controllers/quit_controller.gd")
+	var update_source := FileAccess.get_file_as_string("res://main_scenes/controllers/update_controller.gd")
+	var avatar_source := FileAccess.get_file_as_string("res://main_scenes/controllers/avatar_controller.gd")
+	var save_source := FileAccess.get_file_as_string("res://main_scenes/controllers/save_controller.gd")
+	var undo_source := FileAccess.get_file_as_string("res://autoload/undo_manager.gd")
+	t.assert_true(quit_source.contains("set_auto_accept_quit(false)"), "closing the window no longer quits on its own")
+	t.assert_true(main_source.contains("quit_controller.request_quit()"), "a window close goes through the unsaved-changes check")
+	t.assert_true(main_source.contains("quit_controller.is_dialog_open()"), "the quit prompt holds the canvas like every other modal")
+	t.assert_true(update_source.contains("quit_app(true)"), "an update quits without the prompt and keeps the session for recovery")
+	t.assert_false(update_source.contains("propagate_notification"), "the updater no longer fakes a window close")
+	t.assert_true(_function_body(quit_source, "func quit_app").contains("is_recovery_pending()"), "quitting keeps a session the recovery prompt has not yet been answered for")
+	var load_body := _function_body(avatar_source, "func load_avatar")
+	t.assert_true(load_body.contains("_undo.mark_clean()"), "an opened file is clean")
+	t.assert_true(load_body.contains("_undo.mark_unsaved()"), "a recovered session is unsaved")
+	t.assert_true(_function_body(save_source, "func _on_save_finished").contains("mark_saved(_save_revision)"), "a save marks the revision it captured")
+	t.assert_true(save_source.contains("\"revision_changed\", mark_dirty"), "undo and redo reach the session auto-save")
+	t.assert_true(_function_body(undo_source, "func undo").contains("_revisions.undone()"), "undo moves the live revision back")
+	t.assert_true(_function_body(undo_source, "func abort").contains("_revisions.discarded()"), "a discarded edit restores the revision")
 
 
 # Avatars are written as .pixlab, legacy .save files still open, and a path

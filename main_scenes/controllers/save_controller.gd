@@ -12,6 +12,10 @@ const SESSION_AUTO_SAVE_INTERVAL := 60.0
 
 const RECOVERY_DIALOG_SIZE := Vector2(440, 150)
 
+# A manual save ended: written (true) or failed (false). The quit prompt waits on
+# it before closing the app.
+signal save_finished(ok: bool)
+
 var save_dialog: FileDialog = null
 var load_dialog: FileDialog = null
 
@@ -23,6 +27,7 @@ var _undo_manager: Node = null
 var _save_thread: Thread = null
 var _save_progress := 0.0
 var _save_progress_dialog: ModalDialogUI = null
+var _save_revision := 0
 
 var _session_dirty := false
 var _session_timer := 0.0
@@ -36,8 +41,8 @@ func setup(main_node: Node2D, global_service: Node, saving_service: Node, undo_s
 	_saving = saving_service
 	_undo_manager = undo_service
 	_create_file_dialogs()
-	if not _undo_manager.is_connected("state_saved", mark_dirty):
-		_undo_manager.connect("state_saved", mark_dirty)
+	if not _undo_manager.is_connected("revision_changed", mark_dirty):
+		_undo_manager.connect("revision_changed", mark_dirty)
 
 
 func _exit_tree() -> void:
@@ -92,6 +97,34 @@ func show_save_dialog() -> void:
 
 func show_load_dialog() -> void:
 	load_dialog.popup_file_dialog()
+
+
+# The file the rig was last opened from or saved to, or "" when there is none
+# to write back to: a first run, or a folder that has since gone.
+func current_avatar_path() -> String:
+	var path := String(_saving.settings.get("lastAvatar", ""))
+	if path.is_empty() or not DirAccess.dir_exists_absolute(path.get_base_dir()):
+		return ""
+	return path
+
+
+# Saves over the current file, or asks where when there is none.
+func save_current() -> void:
+	var path := current_avatar_path()
+	if path.is_empty():
+		show_save_dialog()
+	else:
+		save_to(path)
+
+
+func is_saving() -> bool:
+	return _save_thread != null
+
+
+# The startup recovery prompt is still waiting for an answer, so the session
+# file holds work the user has not yet chosen to keep or drop.
+func is_recovery_pending() -> bool:
+	return is_instance_valid(_session_recovery_dialog)
 
 
 func is_dialog_open() -> bool:
@@ -167,7 +200,7 @@ func _create_file_dialogs() -> void:
 	save_dialog.filters = PackedStringArray(["*.pixlab;PixelLab Avatar"])
 	save_dialog.use_native_dialog = true
 	save_dialog.current_dir = user_dir
-	save_dialog.file_selected.connect(_on_save_file_selected)
+	save_dialog.file_selected.connect(save_to)
 	_main.add_child(save_dialog)
 
 	load_dialog = FileDialog.new()
@@ -182,10 +215,11 @@ func _create_file_dialogs() -> void:
 	_main.add_child(load_dialog)
 
 
-func _on_save_file_selected(path: String) -> void:
+func save_to(path: String) -> void:
 	path = avatar_save_path(path)
 	_join_thread("save")
 	_join_thread("session")
+	_save_revision = _undo_manager.revision()
 	var data: Dictionary = _main._build_avatar_save_data()
 	_save_progress = 0.0
 	_save_progress_dialog = _main._create_progress_dialog("Saving avatar...")
@@ -217,6 +251,7 @@ func _on_save_finished(path: String, data: Dictionary, result: Dictionary) -> vo
 	if not result["ok"]:
 		_global.notify_user("Save failed: " + result["error"])
 		_session_dirty = true
+		save_finished.emit(false)
 		return
 	_saving.data = data
 	_saving.settings["lastAvatar"] = path
@@ -227,6 +262,8 @@ func _on_save_finished(path: String, data: Dictionary, result: Dictionary) -> vo
 	discard_session_file()
 	_session_dirty = false
 	_session_timer = 0.0
+	_undo_manager.mark_saved(_save_revision)
+	save_finished.emit(true)
 
 
 func _session_save_worker(data: Dictionary) -> void:
