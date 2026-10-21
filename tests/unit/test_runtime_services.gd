@@ -238,6 +238,10 @@ func _test_microphone_state_transitions(t) -> void:
 	monitor.update_from_rms(loud, frame)
 	t.assert_false(monitor.speaking, "mute overrides an active microphone level")
 	t.assert_equal(transitions["stopped"], 2, "mute emits one speaking stop transition")
+	monitor.update_from_rms(0.0, frame, true)
+	t.assert_true(monitor.speaking, "the simulate key still speaks while muted")
+	monitor.update_from_rms(loud, frame)
+	t.assert_false(monitor.speaking, "releasing the simulate key while muted closes the mouth")
 	monitor.muted = false
 	monitor.update_from_rms(0.0, frame, true)
 	t.assert_true(monitor.speaking, "the simulate key speaks regardless of level")

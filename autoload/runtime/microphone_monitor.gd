@@ -81,7 +81,8 @@ func update_from_rms(rms: float, delta: float, simulate_speaking: bool = false) 
 	else:
 		_gate_open = false
 		duration = maxf(0.0, duration - delta * 1000.0)
-	var next_speaking := not muted and (simulate_speaking or _gate_open or duration > duration_threshold)
+	# Mute silences the microphone only; the simulate key still speaks.
+	var next_speaking := simulate_speaking or (not muted and (_gate_open or duration > duration_threshold))
 	if next_speaking == speaking:
 		return
 	speaking = next_speaking

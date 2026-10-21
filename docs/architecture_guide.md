@@ -586,6 +586,11 @@ left zone; the viewer bar uses all three.
 > hysteresis, Duration fill and drain, mute), `test_persistence` (conversion) and
 > `test_release_contract` (bus layout).
 
+> Updated: 2026-10-21 — **Mute silences the microphone, not the `simMic` key (M).**
+> `MicrophoneMonitor.update_from_rms()` computes
+> `simulate_speaking or (not muted and (gate open or duration > threshold))`, so
+> holding M still opens the mouth while muted. Covered in `test_runtime_services`.
+
 > Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
 > now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
 > (`main_scenes/menu_actions.gd`), declared once so the two modes cannot drift in
