@@ -19,7 +19,7 @@ trap cleanup EXIT
 
 mkdir -p "$ARTIFACT_DIR"
 
-ENGINE_VERSION="$($GODOT_EXECUTABLE --version)"
+ENGINE_VERSION="$("$GODOT_EXECUTABLE" --version)"
 case "$ENGINE_VERSION" in
 	4.6.*) ;;
 	*)

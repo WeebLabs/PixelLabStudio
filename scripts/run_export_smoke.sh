@@ -19,7 +19,7 @@ case "${1:-}" in
 	*) echo "Unknown export preset: $1" >&2; exit 1 ;;
 esac
 
-ENGINE_VERSION="$($GODOT_EXECUTABLE --version)"
+ENGINE_VERSION="$("$GODOT_EXECUTABLE" --version)"
 case "$ENGINE_VERSION" in
 	4.6.*) ;;
 	*) echo "Expected Godot 4.6.x, found: $ENGINE_VERSION" >&2; exit 1 ;;

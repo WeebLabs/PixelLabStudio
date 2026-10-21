@@ -10,7 +10,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 	exit 0
 fi
 
-ENGINE_VERSION="$($GODOT_EXECUTABLE --version)"
+ENGINE_VERSION="$("$GODOT_EXECUTABLE" --version)"
 case "$ENGINE_VERSION" in
 	4.6.*) ;;
 	*) echo "Expected Godot 4.6.x, found: $ENGINE_VERSION" >&2; exit 1 ;;

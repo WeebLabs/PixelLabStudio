@@ -5,7 +5,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PROJECT_ROOT="$(dirname -- "$SCRIPT_DIR")"
 GODOT_EXECUTABLE="${GODOT_BIN:-godot}"
 
-ENGINE_VERSION="$($GODOT_EXECUTABLE --version)"
+ENGINE_VERSION="$("$GODOT_EXECUTABLE" --version)"
 case "$ENGINE_VERSION" in
 	4.6.*) ;;
 	*)
