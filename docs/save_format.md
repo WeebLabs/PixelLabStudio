@@ -2,7 +2,10 @@
 
 > Updated: 2026-08-06 — schema version 1 compatibility contract
 
-User avatars are UTF-8 JSON documents with the `.save` extension. The file is
+> Updated: 2026-10-21 — avatars are written as `.pixlab`. Older avatars use
+> `.save`; the contents are identical and both extensions load.
+
+User avatars are UTF-8 JSON documents with the `.pixlab` extension. The file is
 self-contained: each sprite's diffuse image and optional normal map are stored
 as base64-encoded PNG data. Internal settings and crash recovery use
 `user://settings.pngtp` and `user://session.pngtp`; those internal filenames do

@@ -115,6 +115,8 @@ PNGTuberPlus/
 │   │   └── push_updates.gd       On-screen notification system
 │
 ├── autoload/                      Global singletons (autoloaded)
+│   ├── instance_lock.gd           Single instance + launch-file handoff (first autoload, 2026-10-21)
+│   ├── runtime/app_version.gd     Semver compare + Windows numeric version (2026-10-21)
 │   ├── global.gd                  Central state: mic, selection, input, modes
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Transactional undo/redo (50-state history)
@@ -182,10 +184,27 @@ Registered in `project.godot` under `[autoload]`:
 
 | Singleton          | File                           | Purpose                                              |
 |--------------------|--------------------------------|------------------------------------------------------|
+| `InstanceLock`     | `autoload/instance_lock.gd`    | Single instance; hands a launched avatar file to the running window (must stay first) |
 | `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                         |
 | `Saving`           | `autoload/saving.gd`          | Avatar persistence (JSON + base64 images), settings  |
 | `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input routing |
 | `UndoManager`      | `autoload/undo_manager.gd`    | Snapshot-based undo/redo with image caching           |
+
+> Updated: 2026-10-21 — **`InstanceLock` comes first and owns launch files.**
+> Windows starts a new process for every double-clicked `.pixlab`. In `_init()`
+> the autoload reads the avatar path from `OS.get_cmdline_args()`, then either
+> listens on a loopback TCP port (OS-assigned, written to `user://instance.port`)
+> or, when a running instance answers the `PIXLAB1` handshake, sends it the path
+> and kills its own process. That happens before `Saving` or any scene
+> controller runs, so a duplicate never loads an avatar or writes settings on
+> exit; it is why the autoload must stay first. The running instance emits
+> `file_requested`, and `AvatarSaveController.open_external_avatar()` waits out
+> any in-flight load or save, drops a pending recovery prompt and loads the
+> file. At startup `startup_restore(InstanceLock.launch_file)` loads a launch
+> file instead of offering recovery or restoring `lastAvatar`. Files dropped on
+> the window take the same path. Editor runs, web builds and the isolated
+> automated sessions (`--release-smoke`, `--avatar-integration-test`) neither
+> listen nor hand off.
 
 Additional parsers (not autoloaded, instantiated on demand):
 - `PSDParser` (`autoload/psd_parser.gd`) — threaded PSD file parsing
@@ -1563,7 +1582,7 @@ before/after snapshot boundary exactly once.
 ### Save/Load (`saving.gd`, `main.gd`)
 
 - Format: JSON with base64-encoded PNG image data per sprite
-- User-facing file extension: `.save`
+- User-facing file extension: `.pixlab` (legacy `.save` avatars still load; the contents are identical)
 - PNG encoding for file saves runs on a background thread to avoid stalling the main loop (Updated: 2026-02-16)
 - Settings stored separately: volume, sensitivity, window size, background color, costume key bindings, etc.
 
@@ -1625,6 +1644,13 @@ write behavior are specified in `docs/save_format.md`.
 > now replace changed references, erase cleared normal maps, and prune IDs no
 > longer present in the rig; retained undo/redo snapshots themselves remain the
 > only owners needed to restore deleted layers.
+
+> Updated: 2026-10-21 — **Avatars save as `.pixlab`.** The save dialog offers
+> only `*.pixlab`, and `AvatarSaveController.avatar_save_path()` makes every
+> manual save end in it: a legacy `.save` name is converted (the new file is
+> written beside the old one, which is left alone) and a bare name gets the
+> extension. The load dialog accepts both extensions, and `lastAvatar` paths to
+> `.save` files keep working, since loading never looks at the extension.
 
 ### PSD Import (`psd_parser.gd`)
 

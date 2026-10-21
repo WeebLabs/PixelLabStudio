@@ -112,6 +112,8 @@ func _ready():
 	save_controller.name = "AvatarSaveController"
 	add_child(save_controller)
 	save_controller.setup(self, Global, Saving, UndoManager)
+	InstanceLock.file_requested.connect(save_controller.open_external_avatar)
+	get_window().files_dropped.connect(save_controller.on_files_dropped)
 
 	screen_scale = DisplayServer.screen_get_scale()
 
@@ -133,7 +135,7 @@ func _ready():
 	ElgatoStreamDeck.on_key_down.connect(changeCostumeStreamDeck)
 
 	if not Saving.is_isolated_session():
-		save_controller.startup_restore()
+		save_controller.startup_restore(InstanceLock.launch_file)
 	Saving.settings["newUser"] = false
 
 	if Saving.settings.has("windowSize"):

@@ -10,6 +10,7 @@ See `docs/architecture_guide.md` for the full architecture reference. **Keep it 
 
 ## Key Autoloads
 
+- `InstanceLock` — single instance and launch-file handoff; must stay the first autoload
 - `Global` — central state (selection, mic, input, modes)
 - `Saving` — JSON persistence, settings
 - `UndoManager` — snapshot-based undo/redo

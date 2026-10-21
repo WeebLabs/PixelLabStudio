@@ -46,7 +46,7 @@ still requires a real exported-build check on that platform.
   history.
 - Add or update tests with behavior changes. Prefer pure services and source
   contracts over instantiating the full application scene.
-- Keep user-facing `.save` files compatible. Persistent sprite fields belong in
+- Keep user-facing avatar files (`.pixlab`, and legacy `.save`) compatible. Persistent sprite fields belong in
   `autoload/domain/sprite_state.gd` and
   `autoload/persistence/avatar_save_schema.gd`; update both and add migration
   coverage. See `docs/save_format.md`.

@@ -6,6 +6,7 @@ const SaveCoordinator = preload("res://main_scenes/controllers/save_controller.g
 const AvatarCoordinator = preload("res://main_scenes/controllers/avatar_controller.gd")
 const ImportCoordinator = preload("res://main_scenes/controllers/import_controller.gd")
 const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
+const InstanceLock = preload("res://autoload/instance_lock.gd")
 
 class FakeSprite extends RefCounted:
 	var path: String
@@ -21,6 +22,7 @@ func run(t) -> void:
 	_test_ffmpeg_argument_contract(t)
 	_test_viewport_zoom_contract(t)
 	_test_session_recovery_contract(t)
+	_test_avatar_file_extension_contract(t)
 	_test_save_image_encoding_contract(t)
 	_test_import_matching(t)
 	_test_main_decomposition_contract(t)
@@ -78,6 +80,34 @@ func _test_session_recovery_contract(t) -> void:
 	t.assert_true(SaveCoordinator.should_recover(true, true, 20, 10), "a newer session recovers over an older avatar")
 	t.assert_false(SaveCoordinator.should_recover(true, true, 10, 20), "an older session does not replace a newer avatar")
 	t.assert_false(SaveCoordinator.should_recover(true, true, 10, 10), "equal timestamps do not prompt recovery")
+
+
+# Avatars are written as .pixlab, legacy .save files still open, and a path
+# Windows passes on launch (double-click) is recognised before any state loads.
+func _test_avatar_file_extension_contract(t) -> void:
+	t.assert_equal(SaveCoordinator.avatar_save_path("C:/a/Avatar.pixlab"), "C:/a/Avatar.pixlab", "a .pixlab save path is kept")
+	t.assert_equal(SaveCoordinator.avatar_save_path("C:/a/Avatar.PIXLAB"), "C:/a/Avatar.PIXLAB", "the extension match ignores case")
+	t.assert_equal(SaveCoordinator.avatar_save_path("C:/a/Avatar.save"), "C:/a/Avatar.pixlab", "saving over a legacy .save writes .pixlab beside it")
+	t.assert_equal(SaveCoordinator.avatar_save_path("C:/a/Avatar"), "C:/a/Avatar.pixlab", "a bare name gets the avatar extension")
+	t.assert_equal(SaveCoordinator.avatar_save_path("C:/a/my.avatar"), "C:/a/my.avatar.pixlab", "another extension is kept as part of the name")
+	t.assert_true(SaveCoordinator.is_avatar_path("x/Avatar.pixlab"), ".pixlab is an avatar file")
+	t.assert_true(SaveCoordinator.is_avatar_path("x/Avatar.save"), "legacy .save is an avatar file")
+	t.assert_false(SaveCoordinator.is_avatar_path("x/layer.png"), "artwork is not an avatar file")
+
+	var lock_script: GDScript = InstanceLock
+	t.assert_true(lock_script != null and lock_script.can_instantiate(), "the instance lock compiles in the isolated test workspace")
+	var launch_dir := OS.get_temp_dir().path_join("pixlab launch ä %d" % OS.get_process_id())
+	DirAccess.make_dir_recursive_absolute(launch_dir)
+	var launch_path := launch_dir.path_join("Lennie one.pixlab")
+	var file := FileAccess.open(launch_path, FileAccess.WRITE)
+	file.store_string("{}")
+	file.close()
+	var windows_path := launch_path.replace("/", "\\")
+	t.assert_equal(InstanceLock.find_avatar_arg(PackedStringArray(["--verbose", windows_path])), launch_path.replace("\\", "/"), "a launch path with spaces and non-ASCII characters is found and normalised")
+	t.assert_equal(InstanceLock.find_avatar_arg(PackedStringArray([launch_dir.path_join("missing.pixlab")])), "", "a launch path that does not exist is ignored")
+	t.assert_equal(InstanceLock.find_avatar_arg(PackedStringArray(["--avatar-integration-test"])), "", "engine and test flags are not avatar files")
+	DirAccess.remove_absolute(launch_path)
+	DirAccess.remove_absolute(launch_dir)
 
 
 func _test_save_image_encoding_contract(t) -> void:

@@ -139,9 +139,9 @@ divider padding) so adjusting one value reflows the whole panel.
 
 > **This section is for people who bought a ready-made avatar** and just
 > want to get it on screen and into a stream or a Discord call. You don't
-> need any art or software experience. If you've got the `.save` file
-> that came with your purchase, you're a few minutes away from your
-> character talking along with you.
+> need any art or software experience. If you've got the `.pixlab` file
+> (or, for older avatars, the `.save` file) that came with your purchase,
+> you're a few minutes away from your character talking along with you.
 >
 > If instead you want to *build* an avatar from scratch (importing
 > Photoshop files, arranging sprites, setting up the physics), head to
@@ -157,9 +157,13 @@ Grab the latest release for your platform from the
   macOS may warn that it's from an unidentified developer. That's
   normal for indie apps. Right-click (or Control-click) the app icon and
   choose **Open**, then confirm. You only have to do this once.
-- **Windows**: you'll get a `.zip` file. Right-click it, choose **Extract
-  All**, then open the folder and double-click `PixelLab Studio.exe`. You
-  can move that folder anywhere you like (for example, your Desktop).
+- **Windows**: download the file ending in `-Setup.exe` and run it. It
+  installs PixelLab Studio for your Windows account (no administrator
+  password needed) and adds it to the Start menu. Windows may show a
+  "Windows protected your PC" warning the first time; click **More info**,
+  then **Run anyway**. If you'd rather not install anything, the `.zip`
+  download is the same app: right-click it, choose **Extract All**, then
+  open the folder and double-click `PixelLab Studio.exe`.
 
 When the app opens you'll see an empty stage with a small cluster of
 controls in the **bottom-right corner**. The app starts in *display
@@ -169,11 +173,13 @@ it.
 
 ### 2. Load your avatar
 
-Your purchase downloads as a **`.zip` file**. Inside it is a **`.save`
-file**. That single file *is* your avatar (artwork, layers, and movement
-all bundled together). Before you can load it, you need to **unzip
-(extract)** the download so the app can see the `.save` file inside.
-Follow these steps in order:
+Your purchase downloads as a **`.zip` file**. Inside it is a **`.pixlab`
+file** (older avatars use **`.save`**, which works exactly the same way).
+That single file *is* your avatar (artwork, layers, and movement all
+bundled together). Before you can load it, you need to **unzip (extract)**
+the download so the app can see the avatar file inside. If you installed
+the app on Windows, double-clicking a `.pixlab` file after extracting it
+opens it straight away. Otherwise, follow these steps in order:
 
 1. Find the **`.zip` file** you downloaded (usually in your **Downloads**
    folder) and extract it:
@@ -181,7 +187,7 @@ Follow these steps in order:
      click **Extract**. A new folder opens with the contents inside.
    - **macOS**: double-click the `.zip`. A new folder with the same name
      appears right next to it.
-   You should now see a **`.save` file** in the extracted folder. That's
+   You should now see a **`.pixlab` (or `.save`) file** in the extracted folder. That's
    your avatar. (Loading straight from inside the `.zip` won't work, which
    is why this step matters.)
 2. Now open the app's loading menu. In the **bottom-right corner** of the
@@ -192,8 +198,8 @@ Follow these steps in order:
    like Exit, Import, Save, and **Load**.
 4. Click **Load** in that top menu bar.
 5. A file window opens (Finder on macOS, File Explorer on Windows).
-   Navigate to the **extracted folder** from step 1, click the **`.save`
-   file**, and choose **Open**.
+   Navigate to the **extracted folder** from step 1, click the **`.pixlab`
+   (or `.save`) file**, and choose **Open**.
 6. Your character appears on the stage. 🎉
 7. When you're happy, click **Exit** at the far-left of the top menu bar
    to leave Edit mode and return to the clean display view. (You can
@@ -369,7 +375,7 @@ modifier keys), see
 Click **Save** in the top menu. A progress bar appears while the images
 encode, followed by a confirmation message when it's done. Saves default
 to the app's data folder, but the file window lets you navigate anywhere.
-The resulting `.save` file is exactly the kind of self-contained avatar
+The resulting `.pixlab` file is exactly the kind of self-contained avatar
 file an end user loads in step 2 above.
 
 ## Features in detail

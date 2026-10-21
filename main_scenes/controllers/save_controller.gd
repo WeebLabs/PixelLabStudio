@@ -5,6 +5,8 @@ const JsonStore = preload("res://autoload/persistence/json_file_store.gd")
 const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 
+const AVATAR_EXTENSION := "pixlab"
+const LEGACY_AVATAR_EXTENSION := "save"
 const SESSION_SAVE_PATH := "user://session.pngtp"
 const SESSION_AUTO_SAVE_INTERVAL := 60.0
 
@@ -70,7 +72,12 @@ func process_frame(delta: float) -> void:
 	_session_thread.start(_session_save_worker.bind(data))
 
 
-func startup_restore() -> void:
+# An avatar passed on the command line (a double-clicked .pixlab) wins over
+# both the recovery prompt and lastAvatar; the session file is left untouched.
+func startup_restore(launch_file: String = "") -> void:
+	if not launch_file.is_empty():
+		_main.load_avatar_file(launch_file)
+		return
 	var last_avatar_path := String(_saving.settings.get("lastAvatar", ""))
 	if _has_recoverable_session(last_avatar_path):
 		_show_session_recovery_dialog(last_avatar_path)
@@ -95,6 +102,33 @@ func is_dialog_open() -> bool:
 	)
 
 
+# An avatar opened from outside while running: a second launch handing its file
+# over, or a file dropped on the window. Waits out a load or save in flight,
+# since both span frames, and drops a pending recovery prompt because the user
+# has picked a file instead.
+func open_external_avatar(path: String) -> void:
+	while _main.avatar_controller.is_loading() or _save_thread != null:
+		await _main.get_tree().create_timer(0.25).timeout
+	if not FileAccess.file_exists(path):
+		_global.notify_user("Avatar not found: " + path.get_file())
+		return
+	if is_instance_valid(_session_recovery_dialog):
+		_session_recovery_dialog.queue_free()
+		_session_recovery_dialog = null
+	_main.load_avatar_file(path)
+
+
+func on_files_dropped(files: PackedStringArray) -> void:
+	for file in files:
+		if is_avatar_path(file):
+			open_external_avatar(file.replace("\\", "/"))
+			return
+
+
+static func is_avatar_path(path: String) -> bool:
+	return path.get_extension().to_lower() in [AVATAR_EXTENSION, LEGACY_AVATAR_EXTENSION]
+
+
 func mark_dirty() -> void:
 	_session_dirty = true
 
@@ -114,7 +148,7 @@ func _create_file_dialogs() -> void:
 	save_dialog.title = "Save Avatar"
 	save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
 	save_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	save_dialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
+	save_dialog.filters = PackedStringArray(["*.pixlab;PixelLab Avatar"])
 	save_dialog.use_native_dialog = true
 	save_dialog.current_dir = user_dir
 	save_dialog.file_selected.connect(_on_save_file_selected)
@@ -124,7 +158,8 @@ func _create_file_dialogs() -> void:
 	load_dialog.title = "Load Avatar"
 	load_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	load_dialog.access = FileDialog.ACCESS_FILESYSTEM
-	load_dialog.filters = PackedStringArray(["*.save;PNGTuberPlus Avatar"])
+	# Legacy avatars used .save; the contents are identical, so keep loading them.
+	load_dialog.filters = PackedStringArray(["*.pixlab, *.save;PixelLab Avatar"])
 	load_dialog.use_native_dialog = true
 	load_dialog.current_dir = user_dir
 	load_dialog.file_selected.connect(_main.load_avatar_file)
@@ -132,6 +167,7 @@ func _create_file_dialogs() -> void:
 
 
 func _on_save_file_selected(path: String) -> void:
+	path = avatar_save_path(path)
 	_join_thread("save")
 	_join_thread("session")
 	var data: Dictionary = _main._build_avatar_save_data()
@@ -292,6 +328,17 @@ static func _encode_entry_images(entry: Variant) -> void:
 		var normal_image: Image = entry["_normal_image_ref"]
 		entry["normalImageData"] = Marshalls.raw_to_base64(normal_image.save_png_to_buffer())
 		entry.erase("_normal_image_ref")
+
+
+# Manual saves always write .pixlab: a legacy .save name is converted rather
+# than reused, and a bare name gets the extension appended.
+static func avatar_save_path(path: String) -> String:
+	match path.get_extension().to_lower():
+		AVATAR_EXTENSION:
+			return path
+		LEGACY_AVATAR_EXTENSION:
+			return path.get_basename() + "." + AVATAR_EXTENSION
+	return path + "." + AVATAR_EXTENSION
 
 
 static func should_recover(session_exists: bool, avatar_exists: bool, session_modified: int, avatar_modified: int) -> bool:

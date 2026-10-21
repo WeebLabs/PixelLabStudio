@@ -1,5 +1,7 @@
 extends RefCounted
 
+const AppVersion = preload("res://autoload/runtime/app_version.gd")
+
 const SOURCE_ROOTS := ["autoload", "effects", "main_scenes", "ndi", "ui_scenes"]
 const COMPACT_SCENES := [
 	"main_scenes/main.tscn",
@@ -40,7 +42,8 @@ func _test_product_metadata(t, source_root: String) -> void:
 	var project := ConfigFile.new()
 	t.assert_equal(project.load(source_root.path_join("project.godot")), OK, "release project configuration loads")
 	t.assert_equal(project.get_value("application", "config/name"), "PixelLab Studio", "product name is explicit")
-	t.assert_equal(project.get_value("application", "config/version"), "1.7.0a", "product version is explicit")
+	var version := String(project.get_value("application", "config/version", ""))
+	t.assert_true(AppVersion.is_valid(version), "product version is semver the updater can compare: %s" % version)
 	var features: PackedStringArray = project.get_value("application", "config/features", PackedStringArray())
 	t.assert_true(features.has("4.6"), "release metadata remains on the Godot 4.6 feature line")
 	# Project settings reference the bus layout by UID, which no export filter
@@ -78,7 +81,11 @@ func _test_export_presets(t, source_root: String) -> void:
 		t.assert_true(exclude_filter.split(",").has("ui_scenes/light/*"), "preset %d excludes the dormant light work" % index)
 		t.assert_equal(presets.get_value(section, "export_path"), expected[index][2], "preset %d writes below the ignored artifact directory" % index)
 
-	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), "1.7.0.0", "Windows product version matches the application")
+	var project := ConfigFile.new()
+	project.load(source_root.path_join("project.godot"))
+	var windows_version := AppVersion.windows_numeric(String(project.get_value("application", "config/version", "")))
+	t.assert_equal(presets.get_value("preset.0.options", "application/product_version"), windows_version, "Windows product version matches the application")
+	t.assert_equal(presets.get_value("preset.0.options", "application/file_version"), windows_version, "Windows file version matches the application")
 	t.assert_equal(presets.get_value("preset.2.options", "application/bundle_identifier"), "com.weeblabs.pixellabstudio", "macOS bundle identifier is stable")
 	t.assert_true(String(presets.get_value("preset.2.options", "privacy/microphone_usage_description", "")).contains("animate the avatar"), "macOS microphone purpose is user-facing")
 	for script_path in ["scripts/run_export_smoke.sh", "scripts/run_performance.sh", "scripts/run_release_checks.sh"]:
@@ -145,7 +152,8 @@ func _test_terminology_and_optional_native_input(t, source_root: String) -> void
 	t.assert_true(main_source.contains("ClassDB.instantiate(\"BackgroundInputCapture\")"), "background capture is instantiated dynamically")
 	t.assert_false(main_scene.contains("type=\"BackgroundInputCapture\""), "the production scene loads without the optional native input extension")
 	var save_controller := FileAccess.get_file_as_string(source_root.path_join("main_scenes/controllers/save_controller.gd"))
-	t.assert_true(save_controller.count("*.save;PNGTuberPlus Avatar") >= 2, "native save and load dialogs use the documented avatar extension")
+	t.assert_true(save_controller.contains("\"*.pixlab;PixelLab Avatar\""), "the native save dialog writes the documented avatar extension")
+	t.assert_true(save_controller.contains("\"*.pixlab, *.save;PixelLab Avatar\""), "the native load dialog still opens legacy .save avatars")
 	var saving_source := FileAccess.get_file_as_string(source_root.path_join("autoload/saving.gd"))
 	t.assert_true(saving_source.contains("--release-smoke") and saving_source.contains("begin_isolated_session()"), "release smoke isolates settings before other autoloads start")
 	t.assert_true(saving_source.contains("--avatar-integration-test"), "production-scene regression runs share the isolated settings boundary")
@@ -165,7 +173,7 @@ func _test_maintainer_documentation(t, source_root: String) -> void:
 		t.assert_true(FileAccess.file_exists(source_root.path_join(relative_path)), "maintainer contract exists: %s" % relative_path)
 	var architecture := FileAccess.get_file_as_string(source_root.path_join("docs/architecture_guide.md"))
 	t.assert_true(architecture.contains("visibility_binding_armed"), "architecture map documents the renamed signal")
-	t.assert_true(architecture.contains("User-facing file extension: `.save`"), "architecture map distinguishes avatar and internal persistence extensions")
+	t.assert_true(architecture.contains("User-facing file extension: `.pixlab`"), "architecture map distinguishes avatar and internal persistence extensions")
 
 
 # Phase 14: user mutations are undoable through one canonical path, and the

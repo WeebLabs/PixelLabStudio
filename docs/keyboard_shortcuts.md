@@ -116,7 +116,7 @@ disabled if you want to free up a key.
 Each sprite can have one key bound to show/hide it. Set the binding from
 the Visibility Toggle row in the right sidebar (with the sprite
 selected): click **Set Key**, then press the key you want. The binding
-is stored in the avatar's `.save` file.
+is stored in the avatar's `.pixlab` file.
 
 There is no default for these, since every avatar uses different props.
 

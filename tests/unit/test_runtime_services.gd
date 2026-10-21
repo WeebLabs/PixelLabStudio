@@ -2,13 +2,34 @@ extends RefCounted
 
 const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
 const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
+const AppVersion = preload("res://autoload/runtime/app_version.gd")
 
 
 func run(t) -> void:
+	_test_app_version(t)
 	_test_blink_scheduler(t)
 	_test_microphone_envelope(t)
 	_test_microphone_state_transitions(t)
 	_test_global_source_boundaries(t)
+
+
+# The updater decides whether a GitHub release is newer by this ordering, and
+# Windows version resources carry the numeric form, so both must stay monotonic.
+func _test_app_version(t) -> void:
+	t.assert_true(AppVersion.is_valid("1.7.0-alpha.3"), "a prerelease version is valid")
+	t.assert_true(AppVersion.is_valid("v1.7.0"), "a release tag with its v prefix is valid")
+	t.assert_false(AppVersion.is_valid("1.7.0a"), "the old letter-suffix scheme is not comparable and is rejected")
+	var ordered := ["1.6.1", "1.7.0-alpha.1", "1.7.0-alpha.3", "1.7.0-alpha.10", "1.7.0-beta.1", "1.7.0-rc.2", "1.7.0", "1.7.1-alpha.1", "1.10.0"]
+	for index in range(ordered.size() - 1):
+		t.assert_equal(AppVersion.compare(ordered[index], ordered[index + 1]), -1, "%s sorts before %s" % [ordered[index], ordered[index + 1]])
+		t.assert_equal(AppVersion.compare(ordered[index + 1], ordered[index]), 1, "%s sorts after %s" % [ordered[index + 1], ordered[index]])
+	t.assert_equal(AppVersion.compare("v1.7.0-beta.2", "1.7.0-beta.2"), 0, "a tag equals its version")
+	t.assert_true(AppVersion.is_prerelease("1.7.0-rc.1"), "rc builds are prereleases")
+	t.assert_false(AppVersion.is_prerelease("1.7.0"), "a plain version is a release")
+	t.assert_equal(AppVersion.windows_numeric("1.7.0-alpha.3"), "1.7.0.3", "alpha N maps to build N")
+	t.assert_equal(AppVersion.windows_numeric("1.7.0-beta.2"), "1.7.0.102", "beta N maps to build 100+N")
+	t.assert_equal(AppVersion.windows_numeric("1.7.0-rc.1"), "1.7.0.201", "rc N maps to build 200+N")
+	t.assert_equal(AppVersion.windows_numeric("1.7.0"), "1.7.0.1000", "a release outranks every prerelease build")
 
 
 func _test_blink_scheduler(t) -> void:
