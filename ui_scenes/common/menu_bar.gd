@@ -188,7 +188,9 @@ func _apply_crowding() -> void:
 		return
 	var hidden_width := 0.0
 	if not collapsible.visible:
-		hidden_width = collapsible.get_combined_minimum_size().x + GROUP_SEPARATION
+		# Its zone's own gap, which a bar owner may have tightened.
+		var zone := collapsible.get_parent() as Container
+		hidden_width = collapsible.get_combined_minimum_size().x + zone.get_theme_constant("separation")
 	collapsible.visible = zones_fit(
 		size.x,
 		left.get_combined_minimum_size().x,

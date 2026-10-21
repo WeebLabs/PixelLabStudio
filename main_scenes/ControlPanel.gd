@@ -64,6 +64,9 @@ func _build_actions() -> void:
 # Right zone: the mic meters, then mic mute and Settings closing the bar
 # opposite the mode switch. The two icons sit together as one pair.
 func _build_right_zone() -> void:
+	# The meters end in their grabber margin and the icons carry their own
+	# padding, so a group gap on top of those reads as a hole.
+	menu_bar.right.add_theme_constant_override("separation", AppMenuBar.ITEM_SEPARATION)
 	_build_mic_meters()
 	var icons := menu_bar.add_group(menu_bar.right)
 	_mute_button = menu_bar.add_icon_button(icons, MIC_ICON, "Mute microphone", _on_mute_pressed)
