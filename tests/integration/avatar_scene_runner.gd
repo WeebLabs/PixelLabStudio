@@ -83,6 +83,7 @@ func _run() -> void:
 	await _test_layer_list_fits_panel()
 	await _test_sidebar_fits_depth()
 	await _test_wiggle_child_follow()
+	await _test_wiggle_clear_path()
 	await _test_costumes()
 	await _test_command_history()
 	await _test_z_index_editor()
@@ -2120,6 +2121,35 @@ func _test_wiggle_child_follow() -> void:
 	child.position = authored
 	for field in saved:
 		base.set(field, saved[field])
+	await get_tree().process_frame
+
+
+func _test_wiggle_clear_path() -> void:
+	var base = Global.sprite_by_id(BASE_ID)
+	if base == null:
+		return
+	var saved := {}
+	for field in ["wiggleEnabled", "wigglePath", "wigglePathWidths"]:
+		saved[field] = base.get(field)
+	base.wiggleEnabled = true
+	base.setWiggle(true)
+	var runtime = base._wiggleRuntime
+	runtime.enter_path_edit()
+	base.wiggle_clear_path()
+	assert_equal(base.wigglePath.size(), 0, "Clear empties the ribbon path")
+	assert_equal(base.wigglePathWidths.size(), 0, "Clear drops the per-point widths with it")
+	runtime.path_editor._insert_point(Vector2(4, 4))
+	runtime.path_editor._insert_point(Vector2(12, 4))
+	assert_equal(base.wigglePath.size(), 2, "a cleared path is retraced point by point")
+	assert_equal(base.wigglePathWidths.size(), 2, "each retraced point gets a width")
+	base.wiggle_clear_path()
+	assert_true(runtime.exit_path_edit(), "leaving with a cleared path reports the refit")
+	assert_true(base.wigglePath.size() >= 2, "leaving the editor with a cleared path auto-fits a usable one")
+	assert_equal(base.wigglePathWidths.size(), base.wigglePath.size(), "the refit path has a width per point")
+	base.setWiggle(false)
+	for field in saved:
+		base.set(field, saved[field])
+	base.setWiggle(saved["wiggleEnabled"])
 	await get_tree().process_frame
 
 

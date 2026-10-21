@@ -55,6 +55,7 @@ var _cb_wag: CheckBox
 
 var _edit_btn: Button
 var _autofit_btn: Button
+var _clear_btn: Button
 var _edit_box_idle: StyleBoxFlat
 var _edit_box_hover: StyleBoxFlat
 var _edit_box_active: StyleBoxFlat
@@ -142,6 +143,7 @@ func sync() -> void:
 		_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
 		_edit_btn.add_theme_color_override("font_color",
 			Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
+		_clear_btn.visible = editing
 	if has:
 		_cb_enabled.set_pressed_no_signal(spr.wiggleEnabled)
 		_cb_wag.set_pressed_no_signal(spr.wiggleWagEnabled)
@@ -246,15 +248,22 @@ func _build_ribbon_group() -> void:
 	_edit_btn.pressed.connect(_on_edit_path_pressed)
 	_content.add_child(_edit_btn)
 
-	_autofit_btn = Button.new()
-	_autofit_btn.text = "Auto-fit to content"
-	_autofit_btn.flat = true
-	_autofit_btn.add_theme_font_size_override("font_size", 12)
-	_autofit_btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
-	_autofit_btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
-	_autofit_btn.add_theme_color_override("font_disabled_color", Color(0.45, 0.45, 0.48))
-	_autofit_btn.pressed.connect(_on_autofit_pressed)
-	_content.add_child(_autofit_btn)
+	# Secondary actions share a row as neutral chips (same look as the preset
+	# chips). Clear only appears while the path editor is open, where the empty
+	# path can be retraced; Auto-fit then takes the whole row back.
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_content.add_child(row)
+
+	_autofit_btn = _ribbon_chip("↻  Auto-fit", "Re-detect the path and width from the layer's artwork",
+		Color(1.0, 0.7, 0.8), _on_autofit_pressed)
+	row.add_child(_autofit_btn)
+
+	_clear_btn = _ribbon_chip("✕  Clear", "Remove every point, then click on the layer to trace a new path",
+		Color(1.0, 0.5, 0.5), _on_clear_path_pressed)
+	_clear_btn.visible = false
+	row.add_child(_clear_btn)
 
 	var hint = Label.new()
 	hint.text = "Drag points to shape · drag amber grips to taper · click to add · right-click to remove · Esc when done"
@@ -262,6 +271,25 @@ func _build_ribbon_group() -> void:
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_content.add_child(hint)
+
+# A neutral chip whose hover/press tint carries the action's accent, so Clear
+# reads as the destructive one without shouting while idle.
+func _ribbon_chip(text: String, tip: String, accent: Color, on_pressed: Callable) -> Button:
+	var b = Button.new()
+	b.text = text
+	b.tooltip_text = tip
+	b.add_theme_font_size_override("font_size", 12)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_stylebox_override("normal", _box(Color(1.0, 1.0, 1.0, 0.06)))
+	b.add_theme_stylebox_override("hover", _box(Color(accent, 0.24)))
+	b.add_theme_stylebox_override("pressed", _box(Color(accent, 0.34)))
+	b.add_theme_stylebox_override("disabled", _box(Color(0.3, 0.3, 0.32, 0.12)))
+	b.add_theme_color_override("font_color", _BODY)
+	b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	b.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
+	b.add_theme_color_override("font_disabled_color", Color(0.5, 0.5, 0.52))
+	b.pressed.connect(on_pressed)
+	return b
 
 # Presets: a wrapping row of chips (built-in + the user's saved customs) over a
 # "save current" affordance. Click a chip to apply; right-click a custom one to remove.
@@ -434,6 +462,15 @@ func _on_autofit_pressed() -> void:
 	MutationCommands.structural(func():
 		Global.heldSprite.wiggle_auto_fit_path()
 		return true)
+
+func _on_clear_path_pressed() -> void:
+	if Global.heldSprite == null or not Global.wigglePathMode: return
+	MutationCommands.structural(func():
+		if Global.heldSprite.wigglePath.is_empty():
+			return false
+		Global.heldSprite.wiggle_clear_path()
+		return true)
+	Global.notify_user("Path cleared. Click on the layer to place new points.")
 
 func _on_slider_changed(value: float, prop: String) -> void:
 	if Global.heldSprite == null: return

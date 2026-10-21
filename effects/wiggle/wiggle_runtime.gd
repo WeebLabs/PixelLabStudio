@@ -79,11 +79,13 @@ func set_active(active: bool) -> void:
 		_owner.sprite.scale = Vector2.ONE
 
 
-func update_path_editor(wanted: bool) -> void:
+# Returns true when leaving the editor had to auto-fit a cleared path.
+func update_path_editor(wanted: bool) -> bool:
 	if wanted and path_editor == null:
 		enter_path_edit()
 	elif not wanted and path_editor != null:
-		exit_path_edit()
+		return exit_path_edit()
+	return false
 
 
 func enter_path_edit() -> void:
@@ -98,10 +100,14 @@ func enter_path_edit() -> void:
 		appendage.visible = false
 
 
-func exit_path_edit() -> void:
+func exit_path_edit() -> bool:
 	if path_editor != null:
 		path_editor.queue_free()
 		path_editor = null
+	# A cleared path left untraced would keep the stale mesh; refit instead.
+	var refit: bool = _owner.wigglePath.size() < 2
+	if refit:
+		auto_fit_path()
 	if appendage != null:
 		apply_geometry()
 		appendage.reset()
@@ -109,6 +115,7 @@ func exit_path_edit() -> void:
 		_owner.sprite.visible = false
 	else:
 		_owner.sprite.visible = _path_edit_previous_visible
+	return refit
 
 
 func apply_path_changed() -> void:
@@ -131,6 +138,13 @@ func auto_fit_path() -> void:
 func auto_fit_and_refresh() -> void:
 	auto_fit_path()
 	apply_path_changed()
+	if path_editor != null:
+		path_editor.queue_redraw()
+
+
+func clear_path() -> void:
+	_owner.wigglePath = PackedVector2Array()
+	_owner.wigglePathWidths = PackedFloat32Array()
 	if path_editor != null:
 		path_editor.queue_redraw()
 

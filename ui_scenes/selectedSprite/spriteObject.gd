@@ -833,7 +833,8 @@ func _set_wiggle_active(on: bool):
 # this layer. Polled each frame (state-driven, like the rest of the app).
 func _update_path_editor():
 	var want: bool = Global.wigglePathMode and Global.heldSprite == self
-	_wiggleRuntime.update_path_editor(want)
+	if _wiggleRuntime.update_path_editor(want):
+		Global.notify_user("The ribbon path needs two points, so it was auto-fitted.")
 
 # Rebuild geometry after an external path/width/coverage change (editor commit,
 # auto-fit, coverage slider). No-op when the mesh isn't built yet — the path is
@@ -846,6 +847,11 @@ func apply_wiggle_path_changed():
 # Physics tab saves undo state first), so it's safe to use as a reset.
 func wiggle_auto_fit_path():
 	_wiggleRuntime.auto_fit_and_refresh()
+
+# The "Clear" button (path editor only): drop every point so the path can be
+# traced from scratch. Leaving the editor with fewer than two points auto-fits.
+func wiggle_clear_path():
+	_wiggleRuntime.clear_path()
 
 # Texture-pixel -> appendage/dragOrigin local: the Sprite2D is centered and
 # shifted by `offset`, so texture px maps to local (px - size/2 + offset).
