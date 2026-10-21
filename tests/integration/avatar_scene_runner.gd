@@ -7,6 +7,7 @@ const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.
 const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
 const SpriteRestPose = preload("res://ui_scenes/selectedSprite/sprite_rest_pose.gd")
 const SpriteListObject = preload("res://ui_scenes/spriteList/sprite_list_object.gd")
+const AppVersion = preload("res://autoload/runtime/app_version.gd")
 
 const REGRESSION_FIXTURE := "res://tests/fixtures/avatar_scene_regression.json"
 const INVALID_FIXTURE := "res://tests/fixtures/avatar_duplicate_id.json"
@@ -106,7 +107,13 @@ func _run() -> void:
 func _test_component_scenes() -> void:
 	var settings = _main.settingsMenu
 	assert_equal(settings.panel_size(), Vector2(420, 380), "settings facade retains its menu-bar sizing API")
-	assert_equal(settings._bodies.size(), 5, "settings scene constructs one real body per tab component")
+	assert_equal(settings._bodies.size(), 6, "settings scene constructs one real body per tab component")
+	# The updater is wired but stays offline in an isolated run: no request was
+	# started, and the Updates tab reports the running version.
+	assert_true(_main.update_controller != null, "the update controller is part of the scene")
+	assert_false(_main.update_controller.is_busy(), "an isolated run never checks for updates")
+	settings.setvalues()
+	assert_true(settings._updates_tab._version_label.text.begins_with(AppVersion.current()), "the Updates tab shows the running version")
 	for index in settings._bodies.size():
 		settings._show_tab(index)
 		for body_index in settings._bodies.size():

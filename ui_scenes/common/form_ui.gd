@@ -117,6 +117,21 @@ static func slider_row(
 	return {"row": line, "slider": slider, "readout": readout, "refresh": write}
 
 
+# Caption and read-only text that wraps, for status lines such as a version.
+static func value_row(parent: Node, caption: String, text := "") -> Label:
+	var line := row(parent, caption)
+	var value := Label.new()
+	value.text = text
+	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	value.add_theme_font_size_override("font_size", LABEL_FONT_SIZE)
+	value.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
+	line.add_child(value)
+	return value
+
+
 static func check_row(parent: Node, caption: String) -> CheckBox:
 	var line := row(parent, caption)
 	var check := CheckBox.new()

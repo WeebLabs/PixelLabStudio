@@ -6,6 +6,7 @@ const ViewportControllerScene = preload("res://main_scenes/controllers/viewport_
 const SaveControllerScene = preload("res://main_scenes/controllers/save_controller.gd")
 const AvatarControllerScene = preload("res://main_scenes/controllers/avatar_controller.gd")
 const ImportControllerScene = preload("res://main_scenes/controllers/import_controller.gd")
+const UpdateControllerScene = preload("res://main_scenes/controllers/update_controller.gd")
 const ModalDialogUI = preload("res://ui_scenes/common/modal_dialog.gd")
 const InputCommands = preload("res://autoload/input/input_commands.gd")
 const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
@@ -45,6 +46,7 @@ var viewport_controller: ViewportController = null
 var save_controller: AvatarSaveController = null
 var avatar_controller: AvatarController = null
 var import_controller: ImportController = null
+var update_controller: UpdateController = null
 
 
 #Scene Reference
@@ -114,6 +116,10 @@ func _ready():
 	save_controller.setup(self, Global, Saving, UndoManager)
 	InstanceLock.file_requested.connect(save_controller.open_external_avatar)
 	get_window().files_dropped.connect(save_controller.on_files_dropped)
+	update_controller = UpdateControllerScene.new()
+	update_controller.name = "UpdateController"
+	add_child(update_controller)
+	update_controller.setup(self, Global, Saving, save_controller)
 
 	screen_scale = DisplayServer.screen_get_scale()
 
@@ -136,6 +142,7 @@ func _ready():
 
 	if not Saving.is_isolated_session():
 		save_controller.startup_restore(InstanceLock.launch_file)
+		update_controller.startup_check()
 	Saving.settings["newUser"] = false
 
 	if Saving.settings.has("windowSize"):
@@ -358,6 +365,7 @@ func _process(delta):
 
 	import_controller.process_frame(delta)
 	save_controller.process_frame(delta)
+	update_controller.process_frame()
 	viewport_controller.process_frame()
 
 func _unhandled_input(event):

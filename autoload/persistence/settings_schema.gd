@@ -59,6 +59,10 @@ static func defaults() -> Dictionary:
 		"leftSidebarTab": 0,
 		"rightSidebarTab": 0,
 		"wigglePresets": {},
+		"updateChecks": true,
+		"updateIncludePrereleases": false,
+		"updateLastCheck": 0,
+		"updateSkippedVersion": "",
 	}
 
 
@@ -120,6 +124,10 @@ static func normalize(value: Variant) -> Dictionary:
 	result["leftSidebarTab"] = ValueCodec.int_value(source.get("leftSidebarTab"), base["leftSidebarTab"], 0, 1)
 	result["rightSidebarTab"] = ValueCodec.int_value(source.get("rightSidebarTab"), base["rightSidebarTab"], 0, 2)
 	result["wigglePresets"] = source["wigglePresets"].duplicate(true) if source.get("wigglePresets") is Dictionary else {}
+	result["updateChecks"] = ValueCodec.bool_value(source.get("updateChecks"), base["updateChecks"])
+	result["updateIncludePrereleases"] = ValueCodec.bool_value(source.get("updateIncludePrereleases"), base["updateIncludePrereleases"])
+	result["updateLastCheck"] = ValueCodec.int_value(source.get("updateLastCheck"), base["updateLastCheck"], 0, 1 << 40)
+	result["updateSkippedVersion"] = ValueCodec.string_value(source.get("updateSkippedVersion"), base["updateSkippedVersion"], 64)
 
 	return {"ok": true, "value": result, "error": ""}
 

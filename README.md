@@ -32,6 +32,7 @@ parenting workflow.
   - [NDI output](#ndi-output)
   - [Recording](#recording)
   - [Screenshot](#screenshot)
+  - [Updates](#updates)
   - [Persistence](#persistence)
   - [Editor ergonomics](#editor-ergonomics)
   - [Microphone and voice activation](#microphone-and-voice-activation)
@@ -496,6 +497,14 @@ Other details:
 
 `Ctrl+K` captures the current frame to a `.png` of your choice. Like
 the recorder, respects NDI cropping when NDI is enabled.
+
+### Updates
+
+The installed Windows app checks for a new version once a day and asks
+before updating; updating closes the app, installs the new version and
+opens it again, keeping unsaved changes for recovery. **Settings → Updates**
+turns the daily check off, opts in to pre-release versions, or checks right
+away. The portable `.zip` and macOS builds open the download page instead.
 
 ### Persistence
 

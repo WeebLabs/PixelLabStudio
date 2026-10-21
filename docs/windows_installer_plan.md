@@ -1,6 +1,6 @@
 # Windows Installer Plan
 
-> Updated: 2026-10-21 — Phases 1–5 implemented on `refactor`; Phase 6 is design only.
+> Updated: 2026-10-21 — Phases 1–6 implemented on `refactor`, including the updater.
 
 Goal: ship PixelLab Studio on Windows as a normal installed application — Start
 menu entry, Settings → Apps entry, clean uninstall, and `.pixlab` avatar files
@@ -26,6 +26,7 @@ auto-updater can drive it silently.
 | Version | `application/config/version` in `project.godot`; `autoload/runtime/app_version.gd` |
 | Installer | `installer/windows/PixelLabStudio.iss`, `installer/windows/build.ps1` |
 | Release CI | `.github/workflows/windows-release.yml` |
+| Updater | `autoload/runtime/update_feed.gd` (pure decisions), `main_scenes/controllers/update_controller.gd` (check, prompt, download, install), Settings → Updates (`ui_scenes/settings/updates_settings_tab.gd`) |
 | Contracts | `tests/unit/test_release_contract.gd` (`_test_windows_install_contract`, version and extension checks), `test_main_controllers.gd` (`_test_avatar_file_extension_contract`), `test_runtime_services.gd` (`_test_app_version`) |
 
 The architecture guide's Autoload Singletons, Save/Load and "Windows installer
@@ -58,22 +59,31 @@ One-time machine setup:
 3. The workflow attaches the assets to a draft release. Add notes and the macOS
    build there, then publish.
 
-## Phase 6 — Future auto-updater (design constraints only)
+## Phase 6 — The updater
 
-- **Checking.** Query `GET https://api.github.com/repos/WeebLabs/PixelLabStudio/releases/latest`,
-  which returns stable releases only. A beta opt-in would use `/releases` and
-  take the newest prerelease. Check at most once a day: the unauthenticated
-  limit is 60 requests an hour per IP.
-- **Comparing.** Compare the tag with `AppVersion.compare(tag, AppVersion.current())`.
-- **Installing.** Download the `-Setup.exe` asset with `HTTPRequest` and verify
-  it against `SHA256SUMS.txt`. Then run
-  `OS.create_process(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/RELAUNCH"])`
-  and quit. Don't wait on the process: setup's relaunched app is its child, so
-  waiting blocks until the app exits.
-- **Scope.** Only installed copies self-update. They're the ones with
-  `HKCU\Software\PixelLab Studio\InstallDir`. The portable zip links to the
-  release page instead.
-- **Before quitting.** Save the session first.
+- **When it checks:** at startup at most once a day (setting `updateChecks`, last run in
+  `updateLastCheck`), and whenever **Check for updates now** is pressed in
+  Settings → Updates. Never in editor runs or the isolated automated sessions.
+- **What it offers:** the newest release on `GET /repos/WeebLabs/PixelLabStudio/releases`
+  that is newer than the running version, skipping drafts and tags that are not
+  semver (so v1.7.0a and v1.7.0b are ignored). Pre-releases count when the user
+  ticked **Pre-releases** or is running one, so an alpha user gets the next alpha.
+  An installed copy needs the release to carry the setup and `SHA256SUMS.txt`.
+- **The prompt:** "Update now", "Later" or "Skip this version". A skipped version
+  stays quiet on automatic checks but still shows on a manual one. A background
+  result waits for the recovery prompt, a save or a load to finish first.
+- **Installing (installed Windows copies, detected by `unins000.exe` beside the exe):**
+  1. Download `SHA256SUMS.txt`, then the setup to `user://updates/`, with a
+     progress bar.
+  2. Refuse and delete the download if its SHA-256 does not match.
+  3. Write the session file, so unsaved edits come back through recovery.
+  4. Start setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH`,
+     without waiting on it, and quit.
+  5. Setup replaces the files and starts the new build, whose startup clears
+     `user://updates/`.
+- **Portable zip and macOS:** "Open download page" instead of "Update now".
+- **Testing against a local feed:** launch with `-- --update-feed=<url>`, pointing at a
+  JSON file shaped like GitHub's `/releases` response.
 
 ## Known gaps
 
@@ -99,6 +109,16 @@ One-time machine setup:
   then crashes on exit. Both problems already existed on this machine.
   `refactor`'s GitHub test runs have been failing on all three platforms since
   2026-09-17.
+- **Updater, against a local feed with an installed 1.7.0-alpha.3 and a built
+  1.7.0-alpha.4:**
+  - The startup check found alpha.4 and showed the prompt.
+  - "Update now" downloaded the checksums and setup, ran setup silently,
+    closed the old process and relaunched 1.7.0.4. The install marker read
+    1.7.0-alpha.4.
+  - With a wrong digest in `SHA256SUMS.txt`, the download was rejected and
+    deleted, nothing ran, and the app stayed on 1.7.0.3.
+  - Unit suites: 1117 assertions, 0 failures. Integration: 849 assertions,
+    the same 4 failures already there.
 - **Installer:**
   - Silent install: files, Start menu shortcut, Settings → Apps entry
     (publisher Weeb Labs, version 1.7.0-alpha.3) and the association were all

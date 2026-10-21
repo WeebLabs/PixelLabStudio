@@ -63,6 +63,7 @@ PNGTuberPlus/
 │   │   ├── import_controller.gd   PSD/APNG/PNG workers and import dialogs
 │   │   ├── import_matcher.gd      Pure replacement name matching
 │   │   ├── save_controller.gd     Save dialogs, workers, session recovery
+│   │   ├── update_controller.gd   GitHub-releases update check, prompt, download, install (2026-10-21)
 │   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
 │   ├── EditControls.gd            Top menu bar (edit mode)
 │   ├── pause_frame.gd             Frame around the canvas while motion is paused (2026-09-19)
@@ -117,6 +118,7 @@ PNGTuberPlus/
 ├── autoload/                      Global singletons (autoloaded)
 │   ├── instance_lock.gd           Single instance + launch-file handoff (first autoload, 2026-10-21)
 │   ├── runtime/app_version.gd     Semver compare + Windows numeric version (2026-10-21)
+│   ├── runtime/update_feed.gd     Pure update decisions: release pick, assets, checksums (2026-10-21)
 │   ├── global.gd                  Central state: mic, selection, input, modes
 │   ├── saving.gd                  JSON persistence, settings, save/load
 │   ├── undo_manager.gd            Transactional undo/redo (50-state history)
@@ -674,7 +676,7 @@ children all carried literal coordinates, whose scene file held a 27 KB node tre
 including ten spelled-out hotkey rows, and which grew its own background and
 shifted its own position as code-built sections were appended to it.
 
-Five tabs are declared in `_TABS`; each is built and refreshed by its matching
+Six tabs are declared in `_TABS`; each is built and refreshed by its matching
 `*_settings_tab.gd` component:
 
 | Tab | Contents |
@@ -684,6 +686,7 @@ Five tabs are declared in `_TABS`; each is built and refreshed by its matching
 | Motion | bounce force/gravity, bounce on costume change, blink speed/chance |
 | Hotkeys | the ten costume bindings |
 | Output | NDI (enable / width / mode / manual size / source name), recording (format, fps) |
+| Updates | running version (installed/portable), daily check, pre-release opt-in, check now, status (2026-10-21) |
 
 The tab strip is pinned at the top and the active body scrolls, matching the
 right sidebar. `setvalues()` re-reads every control from live state; it runs at
@@ -1682,6 +1685,25 @@ write behavior are specified in `docs/save_format.md`.
 > match on. `.github/workflows/windows-release.yml` runs it on a `v*` tag and
 > attaches the assets to a draft release. Assets are never replaced in place.
 > The plan and test record are in `docs/windows_installer_plan.md`.
+
+> Updated: 2026-10-21 — **The updater.** `UpdateController`
+> (`main_scenes/controllers/update_controller.gd`) checks GitHub's `/releases`
+> list at startup at most once a day (`updateLastCheck`; off with
+> `updateChecks`), never in editor runs or isolated sessions, and on demand
+> from Settings → Updates. `UpdateFeed.pick_update()` offers the newest release
+> newer than `AppVersion.current()`, skipping drafts and tags that are not
+> semver; prereleases count when the user opted in
+> (`updateIncludePrereleases`) or is running one. A background result waits for
+> the recovery prompt, saves and loads to finish, and stays quiet for a version
+> the user skipped (`updateSkippedVersion`). An installed Windows copy (Inno's
+> `unins000.exe` beside the exe) downloads `SHA256SUMS.txt` and the setup to
+> `user://updates/`, refuses anything whose SHA-256 does not match, writes the
+> session synchronously (`AvatarSaveController.save_session_now()`), starts the
+> setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH`
+> without waiting on it, and quits through the window-close path; the installer
+> relaunches the new build, whose next startup clears `user://updates/`. Portable
+> copies and other platforms open the release page instead. `-- --update-feed=<url>`
+> replaces the API URL for testing against a local feed.
 
 ### PSD Import (`psd_parser.gd`)
 

@@ -378,7 +378,7 @@ func _test_settings_panel_contract(t) -> void:
 	var tab_sources := []
 	for filename in [
 		"audio_settings_tab.gd", "display_settings_tab.gd", "motion_settings_tab.gd",
-		"hotkey_settings_tab.gd", "output_settings_tab.gd",
+		"hotkey_settings_tab.gd", "output_settings_tab.gd", "updates_settings_tab.gd",
 	]:
 		tab_sources.append(FileAccess.get_file_as_string(source_root.path_join("ui_scenes/settings/" + filename)))
 
@@ -390,7 +390,7 @@ func _test_settings_panel_contract(t) -> void:
 		t.assert_false(source.contains("Global."), "settings components use their injected application boundary")
 		t.assert_false(source.contains("Saving."), "settings components use their injected persistence boundary")
 	t.assert_true(panel.contains("SidebarUIFactory.DEFAULT_PANEL_COLOR"), "the settings panel uses the shared palette")
-	for tab in ["Audio", "Display", "Motion", "Hotkeys", "Output"]:
+	for tab in ["Audio", "Display", "Motion", "Hotkeys", "Output", "Updates"]:
 		t.assert_true(panel.contains('"%s"' % tab), "the settings panel declares the %s tab" % tab)
 
 	# The whole point of the rewrite: no child is placed by coordinate any more,

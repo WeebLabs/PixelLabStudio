@@ -3,10 +3,12 @@ extends RefCounted
 const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
 const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
 const AppVersion = preload("res://autoload/runtime/app_version.gd")
+const UpdateFeed = preload("res://autoload/runtime/update_feed.gd")
 
 
 func run(t) -> void:
 	_test_app_version(t)
+	_test_update_feed(t)
 	_test_blink_scheduler(t)
 	_test_microphone_envelope(t)
 	_test_microphone_state_transitions(t)
@@ -30,6 +32,76 @@ func _test_app_version(t) -> void:
 	t.assert_equal(AppVersion.windows_numeric("1.7.0-beta.2"), "1.7.0.102", "beta N maps to build 100+N")
 	t.assert_equal(AppVersion.windows_numeric("1.7.0-rc.1"), "1.7.0.201", "rc N maps to build 200+N")
 	t.assert_equal(AppVersion.windows_numeric("1.7.0"), "1.7.0.1000", "a release outranks every prerelease build")
+
+
+static func _release(tag: String, prerelease := false, assets := ["setup", "sums"], draft := false) -> Dictionary:
+	var listed := []
+	var version := tag.trim_prefix("v")
+	if assets.has("setup"):
+		listed.append({"name": "PixelLabStudio-v%s-Windows-x64-Setup.exe" % version, "browser_download_url": "https://dl/%s/setup" % version, "size": 1234})
+	if assets.has("sums"):
+		listed.append({"name": "SHA256SUMS.txt", "browser_download_url": "https://dl/%s/sums" % version, "size": 200})
+	listed.append({"name": "PixelLabStudio-v%s-macOS-universal.zip" % version, "browser_download_url": "https://dl/%s/mac" % version})
+	return {"tag_name": tag, "name": "PixelLab Studio " + tag, "html_url": "https://page/" + tag, "prerelease": prerelease, "draft": draft, "assets": listed}
+
+
+# What the updater offers, from the shape GitHub's /releases endpoint returns.
+func _test_update_feed(t) -> void:
+	var releases := [
+		_release("v1.7.0-alpha.3", true),
+		_release("v1.7.0b", true),
+		_release("v1.7.0-beta.1", true),
+		_release("v1.6.1"),
+		_release("v1.8.0", false, ["setup", "sums"], true),
+	]
+	t.assert_true(UpdateFeed.pick_update(releases, "1.6.1", false, true).is_empty(), "a stable user on the newest stable release is offered nothing")
+	var beta := UpdateFeed.pick_update(releases, "1.7.0-alpha.3", true, true)
+	t.assert_equal(beta.get("version"), "1.7.0-beta.1", "a pre-release user is offered the newest newer pre-release")
+	t.assert_equal(beta.get("setup_url"), "https://dl/1.7.0-beta.1/setup", "the offer carries the Windows setup asset")
+	t.assert_equal(beta.get("checksums_url"), "https://dl/1.7.0-beta.1/sums", "and the checksum file")
+	t.assert_equal(beta.get("setup_size"), 1234, "and the setup size for download progress")
+	t.assert_true(beta.get("prerelease"), "and says it is a pre-release")
+	t.assert_true(UpdateFeed.pick_update(releases, "1.7.0-beta.1", true, true).is_empty(), "drafts and non-semver tags are never offered")
+	t.assert_equal(UpdateFeed.pick_update(releases, "1.6.0", false, true).get("version"), "1.6.1", "stable users skip pre-releases")
+
+	var stable := releases + [_release("v1.7.0")]
+	t.assert_equal(UpdateFeed.pick_update(stable, "1.7.0-beta.1", true, true).get("version"), "1.7.0", "a release outranks the pre-releases before it")
+	var no_installer := [_release("v1.7.1", false, ["sums"])]
+	t.assert_true(UpdateFeed.pick_update(no_installer, "1.7.0", false, true).is_empty(), "a self-installing copy needs the setup asset")
+	t.assert_equal(UpdateFeed.pick_update(no_installer, "1.7.0", false, false).get("page_url"), "https://page/v1.7.1", "a portable copy only needs the release page")
+	t.assert_true(UpdateFeed.pick_update([_release("v1.7.1", false, ["setup"])], "1.7.0", false, true).is_empty(), "and the checksum file, since nothing unverified is run")
+	t.assert_true(UpdateFeed.pick_update({"message": "API rate limit exceeded"}, "1.7.0", true, true).is_empty(), "an error object from GitHub is not a release list")
+	t.assert_true(UpdateFeed.pick_update(null, "1.7.0", true, true).is_empty(), "an unparsable response offers nothing")
+
+	var digest := "0123456789abcdef".repeat(4)
+	var sums := "%s  PixelLabStudio-v1.7.0-Windows-x64-Setup.exe\r\n%s *other.zip\n" % [digest, "f".repeat(64)]
+	t.assert_equal(UpdateFeed.checksum_for(sums, "PixelLabStudio-v1.7.0-Windows-x64-Setup.exe"), digest, "the setup's digest is read from SHA256SUMS.txt")
+	t.assert_equal(UpdateFeed.checksum_for(sums, "other.zip"), "f".repeat(64), "binary-mode entries are read too")
+	t.assert_equal(UpdateFeed.checksum_for(sums, "missing.exe"), "", "an unlisted file has no digest")
+	t.assert_equal(UpdateFeed.checksum_for("zz  bad.exe", "bad.exe"), "", "a malformed line is ignored")
+
+	var day := UpdateFeed.CHECK_INTERVAL_SECONDS
+	t.assert_true(UpdateFeed.should_check(true, 1000, 0), "the first launch checks")
+	t.assert_false(UpdateFeed.should_check(true, 1000 + day - 1, 1000), "checks are at most daily")
+	t.assert_true(UpdateFeed.should_check(true, 1000 + day, 1000), "a day later it checks again")
+	t.assert_true(UpdateFeed.should_check(true, 500, 1000), "a clock set backwards does not stop checks")
+	t.assert_false(UpdateFeed.should_check(false, 1000 + day * 10, 0), "turning checks off stops them")
+	t.assert_true(UpdateFeed.include_prereleases(false, "1.7.0-alpha.3"), "a pre-release build is offered pre-releases")
+	t.assert_false(UpdateFeed.include_prereleases(false, "1.7.0"), "a release build is not, unless opted in")
+	t.assert_true(UpdateFeed.include_prereleases(true, "1.7.0"), "opting in offers them")
+	t.assert_equal(UpdateFeed.setup_asset_name("v1.7.0-rc.1"), "PixelLabStudio-v1.7.0-rc.1-Windows-x64-Setup.exe", "the setup name matches build.ps1")
+	t.assert_true(UpdateFeed.installer_arguments().has("/RELAUNCH"), "a silent install relaunches the app")
+
+	var install_dir := OS.get_temp_dir().path_join("pixlab-install-%d" % OS.get_process_id())
+	DirAccess.make_dir_recursive_absolute(install_dir)
+	var exe := install_dir.path_join("PixelLab Studio.exe")
+	t.assert_false(UpdateFeed.is_installed_copy(exe, true), "a folder without the uninstaller is a portable copy")
+	var uninstaller := FileAccess.open(install_dir.path_join("unins000.exe"), FileAccess.WRITE)
+	uninstaller.close()
+	t.assert_true(UpdateFeed.is_installed_copy(exe, true), "the uninstaller beside the exe marks an installed copy")
+	t.assert_false(UpdateFeed.is_installed_copy(exe, false), "only Windows copies install updates themselves")
+	DirAccess.remove_absolute(install_dir.path_join("unins000.exe"))
+	DirAccess.remove_absolute(install_dir)
 
 
 func _test_blink_scheduler(t) -> void:

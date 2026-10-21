@@ -15,11 +15,12 @@ const DisplaySettingsTab = preload("res://ui_scenes/settings/display_settings_ta
 const MotionSettingsTab = preload("res://ui_scenes/settings/motion_settings_tab.gd")
 const HotkeySettingsTab = preload("res://ui_scenes/settings/hotkey_settings_tab.gd")
 const OutputSettingsTab = preload("res://ui_scenes/settings/output_settings_tab.gd")
+const UpdatesSettingsTab = preload("res://ui_scenes/settings/updates_settings_tab.gd")
 
 const PANEL_SIZE := Vector2(420, 380)
 const PANEL_PADDING := 12
 const PANEL_CORNER_RADIUS := 4
-const _TABS := ["Audio", "Display", "Motion", "Hotkeys", "Output"]
+const _TABS := ["Audio", "Display", "Motion", "Hotkeys", "Output", "Updates"]
 
 # Read by main.gd: which costume slot is capturing a key, and whether the cursor
 # is over the panel (so a keypress aimed at the panel is not eaten elsewhere).
@@ -36,6 +37,7 @@ var _display_tab = DisplaySettingsTab.new()
 var _motion_tab = MotionSettingsTab.new()
 var _hotkeys_tab = HotkeySettingsTab.new()
 var _output_tab = OutputSettingsTab.new()
+var _updates_tab = UpdatesSettingsTab.new()
 
 
 func _ready() -> void:
@@ -63,6 +65,7 @@ func setvalues() -> void:
 	_motion_tab.refresh()
 	_hotkeys_tab.refresh()
 	_output_tab.refresh()
+	_updates_tab.refresh()
 
 
 func _process(_delta: float) -> void:
@@ -116,6 +119,8 @@ func _build_panel() -> void:
 	_hotkeys_tab.build(hotkeys_body, Global)
 	var output_body := _add_tab_body(stack)
 	_output_tab.build(output_body, Global, Saving)
+	var updates_body := _add_tab_body(stack)
+	_updates_tab.build(updates_body, Global, Saving)
 
 	_show_tab(0)
 

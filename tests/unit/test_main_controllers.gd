@@ -7,6 +7,7 @@ const AvatarCoordinator = preload("res://main_scenes/controllers/avatar_controll
 const ImportCoordinator = preload("res://main_scenes/controllers/import_controller.gd")
 const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
 const InstanceLock = preload("res://autoload/instance_lock.gd")
+const UpdateCoordinator = preload("res://main_scenes/controllers/update_controller.gd")
 
 class FakeSprite extends RefCounted:
 	var path: String
@@ -34,7 +35,7 @@ func run(t) -> void:
 # The usual cause is a bare global class_name: the isolated test workspace has no
 # script class registry, so controllers must reach other scripts via preload.
 func _test_controller_scripts_compile(t) -> void:
-	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator], ["avatar", AvatarCoordinator], ["import", ImportCoordinator]]:
+	for entry in [["capture", Capture], ["viewport", ViewportCoordinator], ["save", SaveCoordinator], ["avatar", AvatarCoordinator], ["import", ImportCoordinator], ["update", UpdateCoordinator]]:
 		var script: GDScript = entry[1]
 		t.assert_true(
 			script != null and script.can_instantiate(),

@@ -129,6 +129,18 @@ static func is_avatar_path(path: String) -> bool:
 	return path.get_extension().to_lower() in [AVATAR_EXTENSION, LEGACY_AVATAR_EXTENSION]
 
 
+# Writes unsaved edits to the session file right now, on this thread. Used when
+# the app is about to quit on purpose (an update), where the periodic auto-save
+# may be up to a minute behind; the next launch offers the session back.
+func save_session_now() -> void:
+	_join_thread("save")
+	_join_thread("session")
+	if not _main.saveLoaded or not _session_dirty:
+		return
+	_session_dirty = false
+	_session_save_worker(_main._build_avatar_save_data())
+
+
 func mark_dirty() -> void:
 	_session_dirty = true
 
