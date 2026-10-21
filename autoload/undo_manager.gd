@@ -1,16 +1,37 @@
 extends Node
 
-# Emitted when save_state() actually captures a snapshot (not when suppressed
+const SpriteState = preload("res://autoload/domain/sprite_state.gd")
+const ValueCodec = preload("res://autoload/persistence/value_codec.gd")
+
+# Emitted when a transaction actually captures a snapshot (not when suppressed
 # during an undo/redo restore). Subscribers — currently main.gd's session
 # auto-save — use this to flag the rig as "dirty since last persisted save."
 signal state_saved
+
+# Emitted after a snapshot has been applied back onto the scene. Undo owns
+# sprite state only; every scene/UI consequence of a restore belongs to the
+# subscriber (AvatarController), so this history has no UI knowledge.
+# Scope keys: structure_changed, hierarchy_changed, full_rebuild, light.
+signal state_restored(scope: Dictionary)
 
 const MAX_HISTORY = 50
 
 var _undo_stack: Array = []
 var _redo_stack: Array = []
-var _continuous_saved: bool = false
 var suppressed: bool = false
+
+# Transaction bookkeeping. begin()/commit()/abort() are the only way production
+# code captures history; MutationCommands is the single caller. Nested begins
+# join the outermost transaction so a composite command still yields one entry.
+var _txn_depth: int = 0
+var _txn_pushed: Array[bool] = []
+
+# The gesture currently collapsing into one history entry ("" = none). A
+# continuous edit (slider drag, held arrow key) snapshots on its first call and
+# then suppresses until the gesture ends. Keying by gesture rather than a single
+# global latch means switching controls mid-drag starts a new entry instead of
+# silently dropping the second control's history.
+var _active_gesture: String = ""
 
 var _sprite_scene = preload("res://ui_scenes/selectedSprite/spriteObject.tscn")
 
@@ -31,87 +52,34 @@ func _is_meta_key(item) -> bool:
 
 func _snapshot() -> Dictionary:
 	var data = {}
-	var nodes = get_tree().get_nodes_in_group("saved")
+	var nodes = Global.sprite_nodes()
+	var live_ids := {}
 	var idx = 0
 	for child in nodes:
 		if child.type == "sprite":
-			data[idx] = {}
-			data[idx]["type"] = "sprite"
-			data[idx]["path"] = child.path
-
-			if !_image_cache.has(child.id):
+			live_ids[child.id] = true
+			if _image_cache.get(child.id) != child.imageData:
 				_image_cache[child.id] = child.imageData
-			data[idx]["imageData"] = _image_cache[child.id]
-
-			data[idx]["identification"] = child.id
-			data[idx]["parentId"] = child.parentId
-			data[idx]["pos"] = var_to_str(child.position)
-			data[idx]["offset"] = var_to_str(child.offset)
-			data[idx]["zindex"] = child.z
-			data[idx]["drag"] = child.dragSpeed
-			data[idx]["xFrq"] = child.xFrq
-			data[idx]["xAmp"] = child.xAmp
-			data[idx]["yFrq"] = child.yFrq
-			data[idx]["yAmp"] = child.yAmp
-			data[idx]["rotDrag"] = child.rdragStr
-			data[idx]["showTalk"] = child.showOnTalk
-			data[idx]["showBlink"] = child.showOnBlink
-			data[idx]["rLimitMin"] = child.rLimitMin
-			data[idx]["rLimitMax"] = child.rLimitMax
-			data[idx]["costumeLayers"] = var_to_str(child.costumeLayers)
-			data[idx]["stretchAmount"] = child.stretchAmount
-			data[idx]["ignoreBounce"] = child.ignoreBounce
-			data[idx]["staticElement"] = child.staticElement
-			data[idx]["frames"] = child.frames
-			data[idx]["animSpeed"] = child.animSpeed
-			data[idx]["clipped"] = child.clipped
-			data[idx]["toggle"] = child.toggle
-			data[idx]["eyeTrack"] = child.eyeTrack
-			data[idx]["eyeTrackDistance"] = child.eyeTrackDistance
-			data[idx]["eyeTrackSpeed"] = child.eyeTrackSpeed
-			data[idx]["eyeTrackInvert"] = child.eyeTrackInvert
-			data[idx]["eyeTrackMode"] = child.eyeTrackMode
-			data[idx]["eyeTrackTargetId"] = child.eyeTrackTargetId
-			data[idx]["eyeTrackType"] = child.eyeTrackType
-			data[idx]["eyeTrackForward"] = child.eyeTrackForward
-			data[idx]["wiggleEnabled"] = child.wiggleEnabled
-			data[idx]["wigglePath"] = child.wigglePath.duplicate()
-			data[idx]["wigglePathWidths"] = child.wigglePathWidths.duplicate()
-			data[idx]["wiggleThickness"] = child.wiggleThickness
-			data[idx]["wiggleSegments"] = child.wiggleSegments
-			data[idx]["wiggleStiffness"] = child.wiggleStiffness
-			data[idx]["wiggleDamping"] = child.wiggleDamping
-			data[idx]["wiggleWeight"] = child.wiggleWeight
-			data[idx]["wiggleMaxBend"] = child.wiggleMaxBend
-			data[idx]["wiggleBendFocus"] = child.wiggleBendFocus
-			data[idx]["wiggleShapeReturn"] = child.wiggleShapeReturn
-			data[idx]["wiggleWagEnabled"] = child.wiggleWagEnabled
-			data[idx]["wiggleWagAmount"] = child.wiggleWagAmount
-			data[idx]["wiggleWagSpeed"] = child.wiggleWagSpeed
-			data[idx]["wiggleReactivity"] = child.wiggleReactivity
-			data[idx]["wiggleMotionIntensity"] = child.wiggleMotionIntensity
-			data[idx]["wiggleChildrenFollow"] = child.wiggleChildrenFollow
-			data[idx]["blendMode"] = child.blendMode
-			data[idx]["opacity"] = child.opacity
-			data[idx]["animClips"] = child.animClips.duplicate(true)
-
+			var normal_image: Image = null
 			if child.normalImageData != null:
-				if !_normal_cache.has(child.id):
+				if _normal_cache.get(child.id) != child.normalImageData:
 					_normal_cache[child.id] = child.normalImageData
-				data[idx]["normalImageData"] = _normal_cache[child.id]
-				data[idx]["normalPath"] = child.normalPath
+				normal_image = _normal_cache[child.id]
+			else:
+				_normal_cache.erase(child.id)
+			data[idx] = SpriteState.capture_snapshot(child, _image_cache[child.id], normal_image)
 		idx += 1
+	for sprite_id in _image_cache.keys():
+		if not live_ids.has(sprite_id):
+			_image_cache.erase(sprite_id)
+			_normal_cache.erase(sprite_id)
 
-	# Snapshot light gizmo
-	if Global.main and Global.main._light_gizmo:
-		var g = Global.main._light_gizmo
-		data["_light"] = {
-			"pos": var_to_str(g.position),
-			"energy": g.light_energy,
-			"color": var_to_str(g.light_color),
-			"range": g.light_range,
-			"enabled": g.light_enabled
-		}
+	# Snapshot light gizmo through the scene's public accessor rather than
+	# reaching into its private node reference.
+	if Global.main:
+		var light_data = Global.main.light_snapshot()
+		if light_data != null:
+			data["_light"] = light_data
 
 	# Global eye-tracking kill switch
 	data["_eyeTrackingGloballyEnabled"] = Global.eyeTrackingGloballyEnabled
@@ -119,7 +87,7 @@ func _snapshot() -> Dictionary:
 	return data
 
 func _restore(data: Dictionary):
-	var nodes = get_tree().get_nodes_in_group("saved")
+	var nodes = Global.sprite_nodes()
 	var current_ids = {}
 	for node in nodes:
 		current_ids[node.id] = node
@@ -151,17 +119,19 @@ func _restore(data: Dictionary):
 			scene_changed = true
 			var sprite = current_ids[id]
 			if Global.heldSprite == sprite:
-				Global.heldSprite = null
+				Global.clear_selection()
 			sprite.queue_free()
 
-	# 2. Add sprites not in current scene (parentId reparenting handled by _ready)
+	# 2. Add sprites not in current scene
+	var restored: Array = []
 	for item in data:
 		if _is_meta_key(item):
 			continue
 		var d = data[item]
 		if !current_ids.has(d["identification"]):
 			scene_changed = true
-			_add_sprite_from_data(d)
+			restored.append(_add_sprite_from_data(d))
+	_link_restored_parents(restored)
 
 	# 3. Update existing sprites' properties and reparent if needed
 	var reparented = false
@@ -176,9 +146,8 @@ func _restore(data: Dictionary):
 		var new_parent_id = d["parentId"]
 		if sprite.parentId != new_parent_id:
 			reparented = true
-			sprite.get_parent().remove_child(sprite)
 			if new_parent_id == null:
-				Global.main.origin.add_child(sprite)
+				sprite.moveUnder(Global.main.origin, false)
 				sprite.parentId = null
 				sprite.parentSprite = null
 			else:
@@ -186,200 +155,77 @@ func _restore(data: Dictionary):
 				if parent_nodes.size() > 0:
 					var new_parent = parent_nodes[0]
 					if sprite.is_ancestor_of(new_parent):
-						Global.main.origin.add_child(sprite)
+						sprite.moveUnder(Global.main.origin, false)
 						sprite.parentId = null
 						sprite.parentSprite = null
 					else:
-						new_parent.sprite.add_child(sprite)
+						sprite.moveUnder(new_parent.sprite, false)
 						sprite.parentId = new_parent_id
 						sprite.parentSprite = new_parent
 				else:
-					Global.main.origin.add_child(sprite)
+					sprite.moveUnder(Global.main.origin, false)
 					sprite.parentId = null
 					sprite.parentSprite = null
 
-		sprite.position = str_to_var(d["pos"])
-		sprite.offset = str_to_var(d["offset"])
-		sprite.sprite.offset = sprite.offset
-		sprite.grabArea.position = (sprite.size * -0.5) + sprite.offset
+		SpriteState.apply_existing(sprite, d)
 
-		sprite.z = d["zindex"]
-		sprite.setZIndex()
-		sprite.dragSpeed = d["drag"]
-
-		sprite.xFrq = d["xFrq"]
-		sprite.xAmp = d["xAmp"]
-		sprite.yFrq = d["yFrq"]
-		sprite.yAmp = d["yAmp"]
-
-		sprite.rdragStr = d["rotDrag"]
-		sprite.showOnTalk = d["showTalk"]
-		sprite.showOnBlink = d["showBlink"]
-
-		sprite.rLimitMin = d.get("rLimitMin", sprite.rLimitMin)
-		sprite.rLimitMax = d.get("rLimitMax", sprite.rLimitMax)
-
-		if d.has("costumeLayers"):
-			sprite.costumeLayers = str_to_var(d["costumeLayers"]).duplicate()
-		if d.has("stretchAmount"):
-			sprite.stretchAmount = d["stretchAmount"]
-		if d.has("ignoreBounce"):
-			sprite.ignoreBounce = d["ignoreBounce"]
-		if d.has("staticElement"):
-			sprite.staticElement = d["staticElement"]
-		if d.has("frames"):
-			var old_frames = sprite.frames
-			sprite.frames = d["frames"]
-			if sprite.frames != old_frames:
-				sprite.changeFrames()
-		if d.has("animSpeed"):
-			sprite.animSpeed = d["animSpeed"]
-		if d.has("clipped"):
-			sprite.setClip(d["clipped"])
-		if d.has("toggle"):
-			sprite.toggle = d["toggle"]
-		if d.has("eyeTrack"):
-			sprite.eyeTrack = d["eyeTrack"]
-		if d.has("eyeTrackDistance"):
-			sprite.eyeTrackDistance = d["eyeTrackDistance"]
-		if d.has("eyeTrackSpeed"):
-			sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
-		if d.has("eyeTrackInvert"):
-			sprite.eyeTrackInvert = d["eyeTrackInvert"]
-		if d.has("eyeTrackMode"):
-			sprite.eyeTrackMode = d["eyeTrackMode"]
-		if d.has("eyeTrackTargetId"):
-			sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
-		if d.has("eyeTrackType"):
-			sprite.eyeTrackType = d["eyeTrackType"]
-		if d.has("eyeTrackForward"):
-			sprite.eyeTrackForward = d["eyeTrackForward"]
-		if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
-		if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
-		if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()
-		if d.has("wiggleThickness"): sprite.wiggleThickness = d["wiggleThickness"]
-		if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
-		if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
-		if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
-		if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
-		if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
-		if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
-		if d.has("wiggleShapeReturn"): sprite.wiggleShapeReturn = d["wiggleShapeReturn"]
-		if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
-		if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
-		if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
-		if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
-		if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
-		if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
-		if d.has("blendMode"): sprite.blendMode = d["blendMode"]
-		if d.has("opacity"): sprite.opacity = d["opacity"]
-		if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
-		# Resync the bend material/chain to the restored enabled state, then the blend
-		# material/backbuffer (after setWiggle so the recreated ribbon gets the right material).
-		sprite.setWiggle(sprite.wiggleEnabled)
-		sprite.applyBlendMode()
-
-		if d.has("normalImageData") and d["normalImageData"] != null:
-			if sprite.normalImageData != d["normalImageData"]:
-				sprite.setNormalMap(d["normalImageData"], d.get("normalPath", ""))
-		elif sprite.hasNormalMap():
-			sprite.clearNormalMap()
-
-	# Update costume visibility without nulling heldSprite
-	var costume = Global.main.costume
-	for node in get_tree().get_nodes_in_group("saved"):
+	# Re-derive costume visibility without nulling heldSprite. This must go
+	# through applyCostumeVisibility(): reading costumeLayers directly ignores
+	# userHidden, so every eye-hidden layer used to reappear on undo/redo.
+	for node in Global.sprite_nodes():
 		if node.is_queued_for_deletion():
 			continue
-		if node.costumeLayers[costume - 1] == 1:
-			node.visible = true
-			node.changeCollision(true)
-		else:
-			node.visible = false
-			node.changeCollision(false)
-
-	if scene_changed:
-		Global.spriteList.updateData()
-	elif reparented:
-		Global.spriteList.refreshHierarchy()
-	if Global.heldSprite != null:
-		Global.spriteEdit.setImage()
-
-	# Restore light gizmo
-	if data.has("_light") and Global.main and Global.main._light_gizmo:
-		Global.main._apply_light_data(data["_light"])
+		node.applyCostumeVisibility()
 
 	# Restore global eye-tracking kill switch
 	if data.has("_eyeTrackingGloballyEnabled"):
 		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
-# Instantiate a single sprite from snapshot data and add to origin.
+	state_restored.emit({
+		"structure_changed": scene_changed,
+		"hierarchy_changed": reparented,
+		"full_rebuild": false,
+		"light": data.get("_light"),
+	})
+
+# Instantiate a single sprite from snapshot data and add to origin. Reparenting
+# is resolved by _link_restored_parents() once every sprite in the snapshot
+# exists, so the sprite's own deferred 0.1s reparent timer is skipped: that timer
+# outlives a short session (it leaks at exit) and cannot see siblings that the
+# same restore has not added yet.
 func _add_sprite_from_data(d: Dictionary):
 	var sprite = _sprite_scene.instantiate()
-	sprite.path = d["path"]
-	sprite.id = d["identification"]
-	sprite.parentId = d["parentId"]
-	sprite.offset = str_to_var(d["offset"])
-	sprite.z = d["zindex"]
-	sprite.dragSpeed = d["drag"]
-	sprite.xFrq = d["xFrq"]
-	sprite.xAmp = d["xAmp"]
-	sprite.yFrq = d["yFrq"]
-	sprite.yAmp = d["yAmp"]
-	sprite.rdragStr = d["rotDrag"]
-	sprite.showOnTalk = d["showTalk"]
-	sprite.showOnBlink = d["showBlink"]
-	if d.has("rLimitMin"): sprite.rLimitMin = d["rLimitMin"]
-	if d.has("rLimitMax"): sprite.rLimitMax = d["rLimitMax"]
-	if d.has("costumeLayers"):
-		sprite.costumeLayers = str_to_var(d["costumeLayers"]).duplicate()
-		if sprite.costumeLayers.size() < 8:
-			for i in range(5):
-				sprite.costumeLayers.append(1)
-	if d.has("stretchAmount"): sprite.stretchAmount = d["stretchAmount"]
-	if d.has("ignoreBounce"): sprite.ignoreBounce = d["ignoreBounce"]
-	if d.has("staticElement"): sprite.staticElement = d["staticElement"]
-	if d.has("frames"): sprite.frames = d["frames"]
-	if d.has("animSpeed"): sprite.animSpeed = d["animSpeed"]
-	if d.has("imageData"): sprite.loadedImage = d["imageData"]
-	if d.has("clipped"): sprite.clipped = d["clipped"]
-	if d.has("toggle"): sprite.toggle = d["toggle"]
-	if d.has("eyeTrack"): sprite.eyeTrack = d["eyeTrack"]
-	if d.has("eyeTrackDistance"): sprite.eyeTrackDistance = d["eyeTrackDistance"]
-	if d.has("eyeTrackSpeed"): sprite.eyeTrackSpeed = d["eyeTrackSpeed"]
-	if d.has("eyeTrackInvert"): sprite.eyeTrackInvert = d["eyeTrackInvert"]
-	if d.has("eyeTrackMode"): sprite.eyeTrackMode = d["eyeTrackMode"]
-	if d.has("eyeTrackTargetId"): sprite.eyeTrackTargetId = d["eyeTrackTargetId"]
-	if d.has("eyeTrackType"): sprite.eyeTrackType = d["eyeTrackType"]
-	if d.has("eyeTrackForward"): sprite.eyeTrackForward = d["eyeTrackForward"]
-	if d.has("wiggleEnabled"): sprite.wiggleEnabled = d["wiggleEnabled"]
-	if d.has("wigglePath"): sprite.wigglePath = d["wigglePath"].duplicate()
-	if d.has("wigglePathWidths"): sprite.wigglePathWidths = d["wigglePathWidths"].duplicate()
-	if d.has("wiggleThickness"): sprite.wiggleThickness = d["wiggleThickness"]
-	if d.has("wiggleSegments"): sprite.wiggleSegments = d["wiggleSegments"]
-	if d.has("wiggleStiffness"): sprite.wiggleStiffness = d["wiggleStiffness"]
-	if d.has("wiggleDamping"): sprite.wiggleDamping = d["wiggleDamping"]
-	if d.has("wiggleWeight"): sprite.wiggleWeight = d["wiggleWeight"]
-	if d.has("wiggleMaxBend"): sprite.wiggleMaxBend = d["wiggleMaxBend"]
-	if d.has("wiggleBendFocus"): sprite.wiggleBendFocus = d["wiggleBendFocus"]
-	if d.has("wiggleShapeReturn"): sprite.wiggleShapeReturn = d["wiggleShapeReturn"]
-	if d.has("wiggleWagEnabled"): sprite.wiggleWagEnabled = d["wiggleWagEnabled"]
-	if d.has("wiggleWagAmount"): sprite.wiggleWagAmount = d["wiggleWagAmount"]
-	if d.has("wiggleWagSpeed"): sprite.wiggleWagSpeed = d["wiggleWagSpeed"]
-	if d.has("wiggleReactivity"): sprite.wiggleReactivity = d["wiggleReactivity"]
-	if d.has("wiggleMotionIntensity"): sprite.wiggleMotionIntensity = d["wiggleMotionIntensity"]
-	if d.has("wiggleChildrenFollow"): sprite.wiggleChildrenFollow = d["wiggleChildrenFollow"]
-	if d.has("blendMode"): sprite.blendMode = d["blendMode"]
-	if d.has("opacity"): sprite.opacity = d["opacity"]
-	if d.has("animClips"): sprite.animClips = d["animClips"].duplicate(true)
-	if d.has("normalImageData") and d["normalImageData"] != null:
-		sprite.loadedNormalImage = d["normalImageData"]
-		sprite.normalPath = d.get("normalPath", "")
+	SpriteState.apply_before_ready(sprite, d)
+	SpriteState.prepare_snapshot_images(sprite, d)
+	sprite._skip_ready_reparent = true
 	Global.main.origin.add_child(sprite)
-	sprite.position = str_to_var(d["pos"])
+	sprite.position = ValueCodec.vector2_value(d["pos"], Vector2.ZERO)
+	return sprite
+
+
+# Attach restored sprites to their recorded parents. Runs after the whole
+# snapshot is instantiated so a parent added later in the same restore is found.
+func _link_restored_parents(restored: Array) -> void:
+	for sprite in restored:
+		if not is_instance_valid(sprite) or sprite.parentId == null:
+			continue
+		var parents = get_tree().get_nodes_in_group(str(sprite.parentId))
+		if parents.is_empty():
+			sprite.parentId = null
+			sprite.parentSprite = null
+			continue
+		var parent = parents[0]
+		if sprite.is_ancestor_of(parent):
+			continue
+		sprite.moveUnder(parent.sprite, false)
+		sprite.parentSprite = parent
+		sprite.set_owner(parent.sprite)
+		# Reparent changed the global transform — re-snap the top_level dragger.
+		sprite._force_drag_snap = true
 
 # Full rebuild — only used when loading a completely different avatar (no ID overlap).
 func _restore_full(data: Dictionary):
-	Global.heldSprite = null
+	Global.clear_selection()
 
 	_image_cache.clear()
 	_normal_cache.clear()
@@ -397,23 +243,23 @@ func _restore_full(data: Dictionary):
 	main.get_node("OriginMotion").add_child(new_origin)
 	main.origin = new_origin
 
+	var restored: Array = []
 	for item in data:
 		if _is_meta_key(item):
 			continue
-		_add_sprite_from_data(data[item])
-
-	# Re-create light gizmo on new origin
-	main._create_light_gizmo()
-	if data.has("_light"):
-		main._apply_light_data(data["_light"])
+		restored.append(_add_sprite_from_data(data[item]))
+	_link_restored_parents(restored)
 
 	# Restore global eye-tracking kill switch
 	if data.has("_eyeTrackingGloballyEnabled"):
 		Global.eyeTrackingGloballyEnabled = bool(data["_eyeTrackingGloballyEnabled"])
 
-	Global.main.changeCostume(Global.main.costume)
-	Global.spriteList.updateData()
-	Global.main.onWindowSizeChange()
+	state_restored.emit({
+		"structure_changed": true,
+		"hierarchy_changed": true,
+		"full_rebuild": true,
+		"light": data.get("_light"),
+	})
 
 func invalidate_image(sprite_id):
 	_image_cache.erase(sprite_id)
@@ -421,44 +267,84 @@ func invalidate_image(sprite_id):
 func invalidate_normal(sprite_id):
 	_normal_cache.erase(sprite_id)
 
-func save_state():
-	if suppressed or Global.main == null or !Global.main.saveLoaded:
+# --- Transactions ---
+#
+# Open a history transaction. An empty gesture is a discrete edit and always
+# captures; a named gesture captures once and then collapses until the gesture
+# ends. Every begin() must be paired with commit() or abort(); abort() discards
+# the snapshot so a command that changed nothing leaves no dead history entry.
+func begin(gesture: String = "") -> void:
+	var pushed := false
+	if _txn_depth == 0:
+		if gesture.is_empty():
+			pushed = _push_snapshot()
+			_active_gesture = ""
+		elif _active_gesture != gesture:
+			pushed = _push_snapshot()
+			if pushed:
+				_active_gesture = gesture
+	_txn_pushed.push_back(pushed)
+	_txn_depth += 1
+
+func commit() -> void:
+	if _txn_depth == 0:
 		return
+	_txn_depth -= 1
+	_txn_pushed.pop_back()
+
+func abort() -> void:
+	if _txn_depth == 0:
+		return
+	_txn_depth -= 1
+	if _txn_pushed.pop_back():
+		_undo_stack.pop_back()
+		_active_gesture = ""
+
+# End the current continuous gesture so the next continuous edit starts a new
+# history entry. Called on mouse release and when a held-key burst stops.
+# Pass the gesture name to end only that gesture: a per-frame poll that ends
+# gestures unconditionally would cut short an unrelated drag still in progress.
+func end_gesture(gesture: String = "") -> void:
+	if gesture.is_empty() or _active_gesture == gesture:
+		_active_gesture = ""
+
+func history_depth() -> int:
+	return _undo_stack.size()
+
+func _push_snapshot() -> bool:
+	if suppressed or Global.main == null or !Global.main.saveLoaded:
+		return false
 	_undo_stack.push_back(_snapshot())
 	_redo_stack.clear()
-	_continuous_saved = false
 	if _undo_stack.size() > MAX_HISTORY:
 		_undo_stack.pop_front()
 	state_saved.emit()
-
-func save_state_continuous():
-	if _continuous_saved:
-		return
-	save_state()
-	_continuous_saved = true
+	return true
 
 func undo():
 	if _undo_stack.is_empty():
-		Global.pushUpdate("Nothing to undo.")
+		Global.notify_user("Nothing to undo.")
 		return
+	end_gesture()
 	suppressed = true
 	_redo_stack.push_back(_snapshot())
 	var snapshot = _undo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
-	Global.pushUpdate("Undo.")
+	Global.notify_user("Undo.")
 
 func redo():
 	if _redo_stack.is_empty():
-		Global.pushUpdate("Nothing to redo.")
+		Global.notify_user("Nothing to redo.")
 		return
+	end_gesture()
 	suppressed = true
 	_undo_stack.push_back(_snapshot())
 	var snapshot = _redo_stack.pop_back()
 	_restore(snapshot)
 	suppressed = false
-	Global.pushUpdate("Redo.")
+	Global.notify_user("Redo.")
 
 func _input(event):
 	if event is InputEventMouseButton and !event.pressed:
-		_continuous_saved = false
+		end_gesture()

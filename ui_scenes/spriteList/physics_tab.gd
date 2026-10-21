@@ -1,6 +1,8 @@
 extends RefCounted
 class_name WigglePhysicsTab
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+
 # Builds and drives the Physics tab in the right sidebar. Controls edit the
 # selected layer's wiggle parameters (Global.heldSprite). Layout is fully
 # container-based and reuses the sidebar's shared slider styling, so it matches
@@ -56,6 +58,8 @@ var _autofit_btn: Button
 var _edit_box_idle: StyleBoxFlat
 var _edit_box_hover: StyleBoxFlat
 var _edit_box_active: StyleBoxFlat
+# Null so the first sync() always writes, whichever state it finds.
+var _was_editing = null
 
 # prop name -> { slider, label, prefix, suffix, is_int }
 var _rows: Dictionary = {}
@@ -128,10 +132,16 @@ func sync() -> void:
 	_edit_btn.disabled = not active
 	_autofit_btn.disabled = not active
 	var editing = active and Global.wigglePathMode
-	_edit_btn.text = "✓  Done editing" if editing else "✎  Edit ribbon path"
-	_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
-	_edit_btn.add_theme_color_override("font_color",
-		Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
+	# sync() runs every frame. A stylebox override invalidates the button's
+	# minimum size, so writing it unconditionally re-measured the text and
+	# re-ran the container layout 60 times a second for a state that changes
+	# on a click. It showed up in a profile as Button::get_minimum_size.
+	if editing != _was_editing:
+		_was_editing = editing
+		_edit_btn.text = "✓  Done editing" if editing else "✎  Edit ribbon path"
+		_edit_btn.add_theme_stylebox_override("normal", _edit_box_active if editing else _edit_box_idle)
+		_edit_btn.add_theme_color_override("font_color",
+			Color(0.16, 0.1, 0.12) if editing else Color(1.0, 0.82, 0.88))
 	if has:
 		_cb_enabled.set_pressed_no_signal(spr.wiggleEnabled)
 		_cb_wag.set_pressed_no_signal(spr.wiggleWagEnabled)
@@ -335,18 +345,21 @@ func _on_preset_pressed(pname: String) -> void:
 	var data: Dictionary = _BUILTIN_PRESETS.get(pname, _custom_presets.get(pname, {}))
 	if data.is_empty():
 		return
-	UndoManager.save_state()
-	for k in _PRESET_KEYS:
-		if data.has(k):
-			Global.heldSprite.set(k, data[k])
-	Global.pushUpdate("Wiggle preset: " + pname)
+	MutationCommands.structural(func():
+		var changed := false
+		for k in _PRESET_KEYS:
+			if data.has(k) and Global.heldSprite.get(k) != data[k]:
+				Global.heldSprite.set(k, data[k])
+				changed = true
+		return changed)
+	Global.notify_user("Wiggle preset: " + pname)
 
 func _on_chip_gui_input(event: InputEvent, pname: String) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		_custom_presets.erase(pname)
 		_persist_presets()
 		_rebuild_preset_chips()
-		Global.pushUpdate("Removed preset: " + pname)
+		Global.notify_user("Removed preset: " + pname)
 
 func _on_save_preset_pressed() -> void:
 	if Global.heldSprite == null:
@@ -361,12 +374,12 @@ func _on_name_submitted(text: String) -> void:
 	if pname == "" or Global.heldSprite == null:
 		return
 	if _BUILTIN_PRESETS.has(pname):
-		Global.pushUpdate("'" + pname + "' is a built-in preset name.")
+		Global.notify_user("'" + pname + "' is a built-in preset name.")
 		return
 	# Cap the total (built-ins + customs). Overwriting an existing custom is fine
 	# (count unchanged); only a brand-new name past the limit is refused.
 	if not _custom_presets.has(pname) and _BUILTIN_PRESETS.size() + _custom_presets.size() >= _MAX_PRESETS:
-		Global.pushUpdate("Preset limit reached (" + str(_MAX_PRESETS) + ") — remove one first.")
+		Global.notify_user("Preset limit reached (" + str(_MAX_PRESETS) + ") — remove one first.")
 		return
 	var data = {}
 	for k in _PRESET_KEYS:
@@ -374,7 +387,7 @@ func _on_name_submitted(text: String) -> void:
 	_custom_presets[pname] = data
 	_persist_presets()
 	_rebuild_preset_chips()
-	Global.pushUpdate("Saved preset: " + pname)
+	Global.notify_user("Saved preset: " + pname)
 
 func _box(col: Color) -> StyleBoxFlat:
 	var b = StyleBoxFlat.new()
@@ -390,36 +403,41 @@ func _update_label(prop: String) -> void:
 	var row = _rows[prop]
 	var v = row.slider.value
 	var shown = str(int(round(v))) if row.is_int else str(snappedf(v, 0.01))
+	if Global.selection_is_mixed(prop):
+		row.label.text = row.prefix + ": " + Global.MIXED_VALUE
+		return
 	row.label.text = row.prefix + ": " + shown + row.suffix
 
 # --- handlers ---
 
 func _on_enabled_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
 	if not pressed:
-		Global.wigglePathMode = false    # ribbon controls disable with wiggle
-	Global.heldSprite.setWiggle(pressed)
+		Global.set_wiggle_path_editing(false) # ribbon controls disable with wiggle
+	MutationCommands.structural(func():
+		if Global.heldSprite.wiggleEnabled == pressed:
+			return false
+		Global.heldSprite.setWiggle(pressed)
+		return true)
 
 func _on_wag_toggled(pressed: bool) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.wiggleWagEnabled = pressed
+	MutationCommands.set_layer_property(Global.heldSprite, "wiggleWagEnabled", pressed)
 
 func _on_edit_path_pressed() -> void:
 	if Global.heldSprite == null: return
-	Global.wigglePathMode = not Global.wigglePathMode
-	Global.pushUpdate("Editing ribbon path." if Global.wigglePathMode else "Finished editing ribbon path.")
+	Global.set_wiggle_path_editing(not Global.wigglePathMode)
+	Global.notify_user("Editing ribbon path." if Global.wigglePathMode else "Finished editing ribbon path.")
 
 func _on_autofit_pressed() -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state()
-	Global.heldSprite.wiggle_auto_fit_path()
+	MutationCommands.structural(func():
+		Global.heldSprite.wiggle_auto_fit_path()
+		return true)
 
 func _on_slider_changed(value: float, prop: String) -> void:
 	if Global.heldSprite == null: return
-	UndoManager.save_state_continuous()
-	Global.heldSprite.set(prop, value)
+	MutationCommands.drag_layer_property(Global.heldSprite, prop, value, "slider")
 	# Thickness scales the captured band, so it needs a re-bake to take effect.
 	if prop == "wiggleThickness":
 		Global.heldSprite.apply_wiggle_path_changed()

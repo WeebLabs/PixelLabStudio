@@ -1,0 +1,63 @@
+{
+	"_schemaVersion": 1,
+	"_eyeTrackingGloballyEnabled": false,
+	"0": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 4294967295,
+		"parentId": null,
+		"pos": "Vector2(10, 20)",
+		"offset": "Vector2(0, 0)",
+		"zindex": 0,
+		"xFrq": 0.0,
+		"xAmp": 0.0,
+		"yFrq": 0.041,
+		"yAmp": 11.0,
+		"costumeLayers": "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]",
+		"ndiRefLayer": true
+	},
+	"1": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 4294967294,
+		"parentId": 4294967295,
+		"pos": "Vector2(0, -40)",
+		"offset": "Vector2(2, 3)",
+		"zindex": 1,
+		"costumeLayers": "Array[int]([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])",
+		"animClips": "[]",
+		"eyeTrack": true,
+		"eyeTrackMode": 1,
+		"eyeTrackTargetId": 4294967295
+	},
+	"2": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 4294967293,
+		"parentId": 4294967295,
+		"pos": "Vector2(0, -50)",
+		"offset": "Vector2(0, 0)",
+		"zindex": 2,
+		"costumeLayers": "[0, 1, 0, 0, 0, 0, 0, 0, 0, 0]",
+		"animClips": "[]"
+	},
+	"3": {
+		"type": "sprite",
+		"path": "res://test/testBody.png",
+		"identification": 4294967292,
+		"parentId": 4294967293,
+		"pos": "Vector2(5, -10)",
+		"offset": "Vector2(0, 0)",
+		"zindex": 3,
+		"costumeLayers": "[1, 1, 0, 0, 0, 0, 0, 0, 0, 0]",
+		"animClips": "[]"
+	},
+	"4": {"type":"sprite","path":"res://test/testBody.png","identification":4000000004,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":4,"costumeLayers":"[0, 0, 1, 0, 0, 0, 0, 0, 0, 0]","animClips":"[]"},
+	"5": {"type":"sprite","path":"res://test/testBody.png","identification":4000000005,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":5,"costumeLayers":"[0, 0, 0, 1, 0, 0, 0, 0, 0, 0]","animClips":"[]"},
+	"6": {"type":"sprite","path":"res://test/testBody.png","identification":4000000006,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":6,"costumeLayers":"[0, 0, 0, 0, 1, 0, 0, 0, 0, 0]","animClips":"[]"},
+	"7": {"type":"sprite","path":"res://test/testBody.png","identification":4000000007,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":7,"costumeLayers":"[0, 0, 0, 0, 0, 1, 0, 0, 0, 0]","animClips":"[]"},
+	"8": {"type":"sprite","path":"res://test/testBody.png","identification":4000000008,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":8,"costumeLayers":"[0, 0, 0, 0, 0, 0, 1, 0, 0, 0]","animClips":"[]"},
+	"9": {"type":"sprite","path":"res://test/testBody.png","identification":4000000009,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":9,"costumeLayers":"[0, 0, 0, 0, 0, 0, 0, 1, 0, 0]","animClips":"[]"},
+	"10": {"type":"sprite","path":"res://test/testBody.png","identification":4000000010,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":10,"costumeLayers":"[0, 0, 0, 0, 0, 0, 0, 0, 1, 0]","animClips":"[]"},
+	"11": {"type":"sprite","path":"res://test/testBody.png","identification":4000000011,"parentId":4294967295,"pos":"Vector2(0, 0)","offset":"Vector2(0, 0)","zindex":11,"costumeLayers":"[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]","animClips":"[]"}
+}

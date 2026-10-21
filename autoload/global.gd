@@ -1,5 +1,20 @@
 extends Node
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const MotionTiming = preload("res://autoload/domain/motion_timing.gd")
+
+# What a control shows in place of a number when the selected layers disagree.
+const MIXED_VALUE := "—"
+const InputCommands = preload("res://autoload/input/input_commands.gd")
+const ZIndexEditor = preload("res://ui_scenes/zIndex/z_index_editor.gd")
+
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+
+const MicrophoneMonitorService = preload("res://autoload/runtime/microphone_monitor.gd")
+const BlinkSchedulerService = preload("res://autoload/runtime/blink_scheduler.gd")
+const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
+const SelectionStateService = preload("res://autoload/domain/selection_state.gd")
+
 # Shared UI layout constants used by both sidebar panels. ROW_GAP is the
 # baseline vertical distance between adjacent widgets; DIVIDER_PAD is the
 # padding on EACH side of a divider line. Tuning either reflows every panel
@@ -14,6 +29,8 @@ var fail = null
 var mouse = null
 var spriteList = null
 var chain = null
+var _sprite_registry := SpriteRegistryService.new()
+var _selection_state := SelectionStateService.new()
 
 var animationTick = 0
 
@@ -22,20 +39,26 @@ var _cursorScreenToWorldOffset: Vector2 = Vector2.ZERO
 
 var filtering = true
 var _text_field_active: bool = false
-var _z_overlay: Node2D = null
-var _z_input: LineEdit = null
+var _z_editor: Node2D = null
 var _z_style_normal: StyleBoxFlat = null
 var _z_style_focus: StyleBoxFlat = null
-var _z_input_active: bool = false
 var _suppress_keys_frame: int = -1
 
 var _screenshot_key_held: bool = false
 var _screenshot_press_time: int = 0
 
-#Object Selection
-var heldSprite = null
-var lastArray = []
-var i = 0
+# Object selection remains readable through the long-standing Global property,
+# but writes go through select_sprite()/clear_selection() so invalidation and
+# click-cycle state cannot diverge.
+var heldSprite:
+	get:
+		return _selection_state.current
+	# Read-only. Without a setter, GDScript quietly writes a hidden backing field
+	# the getter never reads, so assigning null to this looked like it cleared the
+	# selection and did nothing: the page switch relied on exactly that. Change the
+	# selection through select_sprite() / clear_selection().
+	set(_value):
+		push_error("Global.heldSprite is read-only; use select_sprite() or clear_selection().")
 
 var reparentMode = false
 
@@ -52,6 +75,12 @@ var eyeTrackPickBroadcast: bool = false
 # Sprite-level eyeTrack flags are never modified by this switch.
 var eyeTrackingGloballyEnabled: bool = true
 var originMode = false
+# Edit-mode motion pause. While on, every motion system (bounce, wobble/animation
+# clips, eye tracking, rotational drag, stretch, frame animation, wiggle) is held
+# at its authored rest pose instead of advancing, so layers can be rigged against
+# what they actually look like at rest. Runtime-only: never saved, and gated on
+# edit mode by motion_paused() so player mode always animates.
+var motionPaused = false
 # On while tracing a layer's wiggle ribbon path on the canvas (entered from the
 # Physics tab). Canvas clicks are routed to the WigglePathEditor instead of the
 # usual sprite selection while this is set.
@@ -77,24 +106,28 @@ var blinkTick = 0
 
 #Audio Listener
 
-var currentMicrophone = null
-
 var speaking = false
 var micMuted = false
-var spectrum
-var volume = 0
-var volumeSensitivity = 0.0
-
-var volumeLimit = 0.0
-var senseLimit = 0.0
+# The smoothed voice level in dBFS and the Duration bar (full while the voice
+# gate is open, draining after), for the viewer's two meters.
+var micLevelDb := -60.0
+var micDuration := 0.0
+# The two meter thumbs: the level that opens the voice gate, and the point on the
+# draining Duration bar where the mouth closes.
+var micThresholdDb := -40.0
+var micDurationThreshold := 850.0
 
 #Speak Signals
 signal startSpeaking
 signal stopSpeaking
+signal notification_requested(text: String)
+signal selection_changed(current: Object, previous: Object)
+# A pending layer visibility binding was ended without a key (see
+# cancel_layer_key_captures), so its section can stop saying it is waiting.
+signal layer_key_capture_cancelled
 
-var updatePusherNode = null
-
-var rand = RandomNumberGenerator.new()
+var _microphone_monitor = null
+var _blink_scheduler = BlinkSchedulerService.new()
 
 # Right-click a slider to reset it to its registered default. Stores the default
 # in node metadata and attaches a one-shot gui_input listener; calling again on
@@ -116,89 +149,352 @@ func make_slider_resettable(slider: Range, default_value):
 		# Skip if already at default so we don't push a redundant undo snapshot via
 		# the slider's value_changed handler
 		if is_equal_approx(slider.value, default):
-			pushUpdate("Already at default.")
+			notify_user("Already at default.")
 			return
 		slider.value = default
-		pushUpdate("Reset to default."))
+		notify_user("Reset to default."))
 
 func _ready():
-	spectrum = AudioServer.get_bus_effect_instance(1, 1)
-	
-	if !Saving.settings.has("useStreamDeck"):
-		Saving.settings["useStreamDeck"] = false
+	_selection_state.changed.connect(_on_selection_changed)
+	_microphone_monitor = MicrophoneMonitorService.new()
+	_microphone_monitor.name = "MicrophoneMonitor"
+	add_child(_microphone_monitor)
+	_microphone_monitor.speaking_started.connect(_on_microphone_speaking_started)
+	_microphone_monitor.speaking_stopped.connect(_on_microphone_speaking_stopped)
+	# Automated production-scene checks verify real scene lifecycles without
+	# opening the host's capture device or consuming persisted configuration.
+	if not Saving.is_isolated_session():
+		_microphone_monitor.initialize(Saving.settings.get("audioDevice", ""))
 
-	if Saving.settings.has("audioDevice") and Saving.settings["audioDevice"] != "":
-		var saved_device = Saving.settings["audioDevice"]
-		if saved_device in AudioServer.get_input_device_list():
-			AudioServer.input_device = saved_device
 
-	createMicrophone()
+func attach_main(main_node: Node) -> void:
+	main = main_node
 
-func createMicrophone():
-	deleteAllMics()
-	var playa = AudioStreamPlayer.new()
-	var mic = AudioStreamMicrophone.new()
-	playa.stream = mic
-	playa.bus = "MIC"
-	add_child(playa)
-	playa.play()
-	currentMicrophone = playa
 
-func deleteAllMics():
-	for child in get_children():
-		child.queue_free()
-	currentMicrophone = null
+func attach_failure_overlay(overlay: CanvasItem) -> void:
+	fail = overlay
+
+
+func attach_mouse(mouse_node: Node2D) -> void:
+	mouse = mouse_node
+
+
+func detach_mouse(mouse_node: Node2D) -> void:
+	if mouse == mouse_node:
+		mouse = null
+
+
+func attach_sprite_edit(editor: CanvasItem) -> void:
+	spriteEdit = editor
+
+
+func detach_sprite_edit(editor: CanvasItem) -> void:
+	if spriteEdit == editor:
+		spriteEdit = null
+
+
+func attach_sprite_list(list_node: CanvasItem) -> void:
+	spriteList = list_node
+
+
+func detach_sprite_list(list_node: CanvasItem) -> void:
+	if spriteList == list_node:
+		spriteList = null
+
+
+func attach_chain(chain_node: Node2D) -> void:
+	chain = chain_node
+
+
+func detach_chain(chain_node: Node2D) -> void:
+	if chain == chain_node:
+		chain = null
+
+
+func detach_main(main_node: Node) -> void:
+	if main != main_node:
+		return
+	main = null
+	fail = null
+	_z_editor = null
+	clear_selection()
+	spriteEdit = null
+	spriteList = null
+	mouse = null
+	chain = null
+	reparentMode = false
+	originMode = false
+	wigglePathMode = false
+	motionPaused = false
+	eyeTrackPickMode = false
+	eyeTrackPickSource = null
+	eyeTrackPickBroadcast = false
+	_sprite_registry.clear()
+
+
+func register_sprite(sprite: Object) -> void:
+	_sprite_registry.register(sprite)
+
+
+# Enumeration order decides where equal-z layers sit in the list, so a layer that
+# belongs beside another one says so here.
+func place_sprite_after(sprite: Object, anchor: Object) -> void:
+	_sprite_registry.place_after(sprite, anchor)
+
+
+func unregister_sprite(sprite: Object) -> void:
+	# Drop it from the selection without disturbing the rest: deleting several
+	# layers at once frees them one by one.
+	_selection_state.forget(sprite)
+	_sprite_registry.unregister(sprite)
+
+
+func sprite_by_id(sprite_id: Variant) -> Object:
+	return _sprite_registry.by_id(sprite_id)
+
+
+func sprite_nodes() -> Array:
+	return _sprite_registry.all()
+
+
+func sprite_count() -> int:
+	return _sprite_registry.size()
+
+
+func maximum_sprite_z() -> int:
+	return _sprite_registry.maximum_z()
+
+
+func is_eye_track_target(sprite_id: Variant) -> bool:
+	return _sprite_registry.is_eye_target(sprite_id)
+
+
+func select_sprite(sprite: Object) -> Object:
+	return _selection_state.select(sprite)
+
+
+func clear_selection() -> Object:
+	return _selection_state.clear()
+
+
+# Every selected layer, the active one first. One layer is the normal case; the
+# layer list's modifier-click is what makes it longer.
+func selected_sprites() -> Array:
+	return _selection_state.selection()
+
+
+func is_sprite_selected(sprite: Object) -> bool:
+	return _selection_state.is_selected(sprite)
+
+
+# True when several layers are selected and they do not all share this property's
+# value. A control showing the active layer's number would then be claiming
+# something about the others that is not true, so it shows MIXED_VALUE instead.
+func selection_is_mixed(property: String) -> bool:
+	var selected := selected_sprites()
+	if selected.size() < 2:
+		return false
+	var first: Variant = selected[0].get(property)
+	for index in range(1, selected.size()):
+		if not MutationCommands.values_match(first, selected[index].get(property)):
+			return true
+	return false
+
+
+# The text a control should show for `property`: the value it was given, or the
+# mixed-value dash when the selection disagrees.
+func selection_value_text(property: String, shown: String) -> String:
+	return MIXED_VALUE if selection_is_mixed(property) else shown
+
+
+func toggle_sprite_selection(sprite: Object) -> void:
+	_selection_state.toggle(sprite)
+
+
+func select_sprites(sprites: Array) -> void:
+	_selection_state.select_many(sprites)
+
+
+
+func sprite_from_hit_area(area: Area2D) -> Node:
+	## Sprite selection Area2Ds are nested exactly three levels below the sprite
+	## root. Keep that scene-shape knowledge here rather than duplicating fragile
+	## parent chains in input and selection consumers.
+	var current: Node = area
+	for _level in range(3):
+		if current == null:
+			return null
+		current = current.get_parent()
+	return current
+
+
+# The one place that decides whether motion is frozen. The pause is an editing
+# aid, so it only applies while the editor is up: swapping to player mode resumes
+# motion without clearing the toggle.
+func motion_paused() -> bool:
+	return motionPaused and main != null and main.editMode
+
+
+func is_text_entry_active() -> bool:
+	return _text_field_active
+
+
+func has_text_entry_focus() -> bool:
+	return _is_any_field_focused()
+
+
+func is_z_index_editor_active() -> bool:
+	return _z_editor != null and _z_editor.is_active()
+
+
+# End everything that belongs to the edit page: reparenting (and its chain line),
+# origin dragging, ribbon path editing, the eye-track pick, and the key bindings
+# armed from the editor's sidebars.
+# The page switch calls this. They used to end only as a side effect of the
+# switch clearing the selection, and survived onto the player page once it no
+# longer did.
+func end_edit_interactions() -> void:
+	reparentMode = false
+	originMode = false
+	wigglePathMode = false
+	if is_instance_valid(chain):
+		chain.enable(false)
+	if eyeTrackPickMode:
+		_clear_eye_track_pick()
+	cancel_layer_key_captures()
+
+
+func begin_reparenting() -> bool:
+	if heldSprite == null:
+		return false
+	reparentMode = true
+	originMode = false
+	wigglePathMode = false
+	if is_instance_valid(chain):
+		chain.enable(true)
+	return true
+
+
+# True while a click must not move the selection. The ribbon path editor lives
+# on the held layer and follows it, so letting a click move the selection opens
+# an editor on the newly clicked layer, which auto-fits a ribbon path onto
+# artwork the user never asked about. Origin mode pins the selection for the
+# same reason: the drag belongs to the layer it started on.
+func selection_locked() -> bool:
+	return wigglePathMode or originMode
+
+
+func set_wiggle_path_editing(enabled: bool) -> void:
+	wigglePathMode = enabled and heldSprite != null
+	if wigglePathMode:
+		reparentMode = false
+		originMode = false
+
+
+func begin_eye_track_pick(source: Object = null, broadcast: bool = false) -> void:
+	eyeTrackPickMode = true
+	eyeTrackPickSource = source
+	eyeTrackPickBroadcast = broadcast
+
+
+func cancel_eye_track_pick() -> void:
+	_clear_eye_track_pick()
+
+
+func finish_eye_track_pick(target: Object) -> void:
+	_finish_eye_track_pick(target)
+
+
+func begin_animation_key_capture(clip: Dictionary) -> void:
+	awaitingAnimKeyBind = true
+	animKeyBindClip = clip
+
+
+# True while the animation tab's "Bind key" is armed, so the input decoder can
+# route the next background key to the binding instead of triggering clips.
+func is_awaiting_animation_key_capture() -> bool:
+	return awaitingAnimKeyBind and animKeyBindClip != null
+
+
+func apply_animation_key_capture(key: String) -> bool:
+	if not awaitingAnimKeyBind or animKeyBindClip == null:
+		return false
+	animKeyBindClip["key"] = key
+	awaitingAnimKeyBind = false
+	animKeyBindClip = null
+	return true
+
+
+func begin_visibility_key_capture() -> void:
+	awaitingToggleBind = true
+
+
+func finish_visibility_key_capture() -> void:
+	awaitingToggleBind = false
+
+
+func _on_selection_changed(current: Object, previous: Object) -> void:
+	# The sidebars now show another layer, so a binding armed for the old one has
+	# lost the button that armed it. A multi-select edit that keeps the active
+	# layer changes nothing the sidebars show.
+	if current != previous:
+		cancel_layer_key_captures()
+	selection_changed.emit(current, previous)
+
+
+# End the key captures that bind a key to the selected layer: an animation clip's
+# "Bind key" and the layer's visibility toggle. Both are armed from the editor's
+# sidebars for the layer they show, and a capture belongs to the UI that armed it:
+# left armed, the next key pressed anywhere, the player page included, was
+# swallowed as a binding instead of triggering its clip or toggling its layer, and
+# while the visibility binding waited every layer's toggle key was ignored.
+func cancel_layer_key_captures() -> void:
+	awaitingAnimKeyBind = false
+	animKeyBindClip = null
+	if awaitingToggleBind:
+		awaitingToggleBind = false
+		layer_key_capture_cancelled.emit()
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_microphone_monitor):
+		_microphone_monitor.shutdown()
+
+
+func selectMicrophone(device_name: String, restart_delay_seconds: float = 1.0) -> bool:
+	if not is_instance_valid(_microphone_monitor):
+		return false
+	return _microphone_monitor.select_device(device_name, restart_delay_seconds)
+
+func _on_microphone_speaking_started() -> void:
+	speaking = true
+	startSpeaking.emit()
+
+
+func _on_microphone_speaking_stopped() -> void:
+	speaking = false
+	stopSpeaking.emit()
 
 
 func _process(delta):
 	_text_field_active = _is_any_field_focused()
 	animationTick += 1
 
-	if main != null:
+	if is_instance_valid(main):
 		cursorWorldPos = Vector2(DisplayServer.mouse_get_position()) + _cursorScreenToWorldOffset
 
-	volume = spectrum.get_magnitude_for_frequency_range(20, 20000).length()
-	if currentMicrophone != null:
-		volumeSensitivity = lerp(volumeSensitivity,0.0,delta*2)
+	_update_microphone(delta)
+	blinking()
+	if not is_instance_valid(main):
+		return
 	
-	if volume>volumeLimit:
-		volumeSensitivity = 1.0
-	
-	var prev = speaking
-	speaking = volumeSensitivity > senseLimit
+	_run_key_commands()
 
-	if micMuted:
-		speaking = false
-
-	if Input.is_action_pressed("simMic"):
-		speaking = true
-
-	if prev != speaking:
-		if speaking:
-			emit_signal("startSpeaking")
-		else:
-			emit_signal("stopSpeaking")
-	
 	if main != null and heldSprite != null and !_text_field_active:
-		if Input.is_action_just_pressed("zDown"):
-			UndoManager.save_state()
-			heldSprite.z -= 1
-			heldSprite.setZIndex()
-			pushUpdate("Moved sprite layer.")
-		if Input.is_action_just_pressed("zUp"):
-			UndoManager.save_state()
-			heldSprite.z += 1
-			heldSprite.setZIndex()
-			pushUpdate("Moved sprite layer.")
 		if main.editMode:
 			if wigglePathMode and Input.is_action_just_pressed("ui_cancel"):
 				wigglePathMode = false
-				pushUpdate("Finished editing ribbon path.")
-			if Input.is_action_just_pressed("reparent"):
-				reparentMode = !reparentMode
-				originMode = false
-				wigglePathMode = false
-				Global.chain.enable(reparentMode)
+				notify_user("Finished editing ribbon path.")
 			if Input.is_action_just_pressed("origin"):
 				_origin_press_time = Time.get_ticks_msec()
 			if Input.is_action_pressed("origin") and !originMode:
@@ -206,24 +502,27 @@ func _process(delta):
 					originMode = true
 					reparentMode = false
 					wigglePathMode = false
-					chain.enable(false)
-					pushUpdate("Origin adjustment mode.")
+					if is_instance_valid(chain):
+						chain.enable(false)
+					notify_user("Origin adjustment mode.")
 			if Input.is_action_just_released("origin"):
 				if Time.get_ticks_msec() - _origin_press_time < 300:
 					if heldSprite != null:
-						UndoManager.save_state()
-						heldSprite.snapOriginToMouse()
-						pushUpdate("Snapped origin to cursor.")
+						MutationCommands.structural(func():
+							heldSprite.snapOriginToMouse()
+							return true)
+						notify_user("Snapped origin to cursor.")
 				else:
 					if originMode:
 						originMode = false
-						pushUpdate("Exited origin adjustment mode.")
+						notify_user("Exited origin adjustment mode.")
 
 	else:
 		reparentMode = false
 		originMode = false
 		wigglePathMode = false
-		Global.chain.enable(reparentMode)
+		if is_instance_valid(chain):
+			chain.enable(reparentMode)
 
 	if main.editMode:
 		if reparentMode:
@@ -236,7 +535,6 @@ func _process(delta):
 			RenderingServer.set_default_clear_color(Color(0.3, 0.3, 0.3))
 
 	
-	blinking()
 	scrollSprites()
 
 	# Screenshot/record key release (outside control block so release is caught
@@ -245,158 +543,123 @@ func _process(delta):
 		main.onScreenshotReleased()
 		_screenshot_key_held = false
 
-	if !main.fileSystemOpen and !_text_field_active:
 
-		if Input.is_action_just_pressed("refresh"):
+# Foreground key commands. The decoder owns which action maps to which command
+# and every guard that suppresses it; this loop only runs what it is handed.
+func _run_key_commands() -> void:
+	var fired := {}
+	for action in InputCommands.FOREGROUND_ORDER:
+		fired[action] = Input.is_action_just_pressed(action)
+	var commands: Array = InputCommands.decode_foreground(fired, {
+		"has_selection": heldSprite != null,
+		"edit_mode": main.editMode,
+		"control_held": Input.is_action_pressed("control"),
+		"text_focus": _text_field_active,
+		"file_dialog_open": main.fileSystemOpen,
+	})
+	for command in commands:
+		_run_key_command(command)
+
+
+func _run_key_command(command: String) -> void:
+	match command:
+		"layer_depth_down":
+			_nudge_z(-1)
+		"layer_depth_up":
+			_nudge_z(1)
+		"toggle_reparent_mode":
+			reparentMode = !reparentMode
+			originMode = false
+			wigglePathMode = false
+			if is_instance_valid(chain):
+				chain.enable(reparentMode)
+		"unlink_layer":
+			if heldSprite != null and heldSprite.parentId != null:
+				MutationCommands.structural(func():
+					unlinkSprite()
+					return true)
+		"refresh_avatar":
 			refresh()
-		if Input.is_action_just_pressed("unlink"):
-			UndoManager.save_state()
-			unlinkSprite()
+		"save_images":
+			saveImagesFromData()
+		"undo":
+			UndoManager.undo()
+		"redo":
+			UndoManager.redo()
+		"screenshot_press":
+			_screenshot_key_held = true
+			_screenshot_press_time = Time.get_ticks_msec()
+			main.onScreenshotPressed()
 
-		if Input.is_action_pressed("control"):
-			if Input.is_action_just_pressed("saveImages"):
-				saveImagesFromData()
-			if Input.is_action_just_pressed("undo"):
-				UndoManager.undo()
-			if Input.is_action_just_pressed("redo"):
-				UndoManager.redo()
-			if Input.is_action_just_pressed("screenshot"):
-				_screenshot_key_held = true
-				_screenshot_press_time = Time.get_ticks_msec()
-				main.onScreenshotPressed()
-	
-	
+
+func _update_microphone(delta: float) -> void:
+	if not is_instance_valid(_microphone_monitor):
+		micLevelDb = -60.0
+		micDuration = 0.0
+		speaking = false
+		return
+	_microphone_monitor.threshold_db = micThresholdDb
+	_microphone_monitor.duration_threshold = micDurationThreshold
+	_microphone_monitor.muted = micMuted
+	_microphone_monitor.sample(delta, Input.is_action_pressed("simMic"))
+	micLevelDb = _microphone_monitor.level_db
+	micDuration = _microphone_monitor.duration
+	speaking = _microphone_monitor.speaking
+
+
+# One discrete history entry per key press, matching the pre-command behavior
+# (is_action_just_pressed fires once per press, so this is not a held gesture).
+func _nudge_z(step: int) -> void:
+	MutationCommands.structural(func():
+		heldSprite.z += step
+		heldSprite.setZIndex()
+		return true)
+	notify_user("Moved sprite layer.")
+
+
+# The z-index overlay is a UI component; Global keeps only the routing surface.
+func _show_z_input() -> void:
+	if heldSprite == null or main == null:
+		return
+	if _z_editor == null or not is_instance_valid(_z_editor):
+		_z_editor = ZIndexEditor.new()
+		main.add_child(_z_editor)
+		_z_editor.setup(self)
+	_z_editor.open()
+
+
+func _hide_z_input() -> void:
+	if _z_editor != null and is_instance_valid(_z_editor):
+		_z_editor.close()
+	_suppress_keys_frame = Engine.get_process_frames()
+
+
 func _is_any_field_focused() -> bool:
 	if _suppress_keys_frame == Engine.get_process_frames():
 		return true
 	var focused = get_viewport().gui_get_focus_owner()
 	return focused is LineEdit or focused is TextEdit
 
-# --- Z-Index input overlay ---
-
-func _build_z_overlay():
-	_z_overlay = Node2D.new()
-	_z_overlay.z_index = 4095
-	_z_overlay.visible = false
-	main.add_child(_z_overlay)
-
-	var panel = Panel.new()
-	var panel_style = StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.13, 0.13, 0.15, 0.97)
-	panel_style.set_corner_radius_all(8)
-	panel_style.border_color = Color(0.3, 0.3, 0.35, 0.6)
-	panel_style.set_border_width_all(1)
-	panel.add_theme_stylebox_override("panel", panel_style)
-	panel.position = Vector2(-110, -40)
-	panel.size = Vector2(220, 80)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_z_overlay.add_child(panel)
-
-	var title = Label.new()
-	title.text = "Set Z-Index"
-	title.position = Vector2(-100, -32)
-	title.size = Vector2(200, 22)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-	_z_overlay.add_child(title)
-
-	_z_input = LineEdit.new()
-	_z_input.position = Vector2(-90, -4)
-	_z_input.size = Vector2(180, 32)
-	_z_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_z_input.add_theme_font_size_override("font_size", 16)
-	_z_input.caret_blink = true
-	_z_input.caret_blink_interval = 0.5
-	var fs_normal = StyleBoxFlat.new()
-	fs_normal.bg_color = Color(0.08, 0.08, 0.08)
-	fs_normal.set_corner_radius_all(4)
-	fs_normal.content_margin_left = 8
-	fs_normal.content_margin_right = 8
-	fs_normal.content_margin_top = 4
-	fs_normal.content_margin_bottom = 4
-	var fs_focus = fs_normal.duplicate()
-	fs_focus.border_color = Color(0.45, 0.45, 0.5)
-	fs_focus.set_border_width_all(1)
-	_z_input.add_theme_stylebox_override("normal", fs_normal)
-	_z_input.add_theme_stylebox_override("focus", fs_focus)
-	_z_input.text_submitted.connect(_on_z_input_submitted)
-	_z_input.gui_input.connect(func(event):
-		if event is InputEventKey and event.pressed:
-			if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-				_on_z_input_submitted(_z_input.text)
-				_z_input.accept_event()
-	)
-	_z_overlay.add_child(_z_input)
-
-	# Store normal style for flash effect
-	_z_style_normal = fs_normal
-	_z_style_focus = fs_focus
-
-func _show_z_input():
-	if heldSprite == null or main == null:
+# A click anywhere outside a focused text field hands the keyboard back. Clicking
+# a label, a panel's blank area or the canvas does not move focus by itself, so a
+# field kept focus and went on swallowing the app's shortcuts (undo among them)
+# until something else focusable was clicked.
+func _release_text_focus_outside(event: InputEventMouseButton) -> void:
+	var vp := get_viewport()
+	if vp == null:
 		return
-	if _z_overlay == null:
-		_build_z_overlay()
-	var vp_size = get_viewport().get_visible_rect().size / main.camera.zoom
-	_z_overlay.position = main.camera.position + Vector2(0, vp_size.y * 0.5 - 80)
-	_z_overlay.visible = true
-	_z_input.text = str(heldSprite.z)
-	_z_input.select_all()
-	_z_input.grab_focus()
-	_z_input_active = true
-
-func _hide_z_input():
-	if _z_overlay != null:
-		_z_overlay.visible = false
-		_z_input.release_focus()
-	_z_input_active = false
-	_suppress_keys_frame = Engine.get_process_frames()
-
-func _on_z_input_submitted(_text: String):
-	_apply_z_input()
-
-func _apply_z_input():
-	var text = _z_input.text.strip_edges()
-	if heldSprite == null or !text.is_valid_int():
+	var focused := vp.gui_get_focus_owner()
+	if not (focused is LineEdit or focused is TextEdit):
 		return
-	UndoManager.save_state()
-	heldSprite.z = text.to_int()
-	heldSprite.setZIndex()
-	pushUpdate("Set z-index to " + str(heldSprite.z) + ".")
-	spriteList.updateData()
-	_z_input.select_all()
-	_flash_z_confirm()
+	if focused.get_global_rect().has_point(event.position):
+		return
+	focused.release_focus()
 
-var _z_flash_tween: Tween = null
-
-func _flash_z_confirm():
-	if _z_flash_tween != null and _z_flash_tween.is_valid():
-		_z_flash_tween.kill()
-	var flash_style = _z_style_focus.duplicate()
-	_z_input.add_theme_stylebox_override("normal", flash_style)
-	_z_input.add_theme_stylebox_override("focus", flash_style)
-	var bg_from = _z_style_focus.bg_color
-	var bg_peak = Color(0.22, 0.12, 0.15)
-	var border_from = _z_style_focus.border_color
-	var border_peak = Color(1.0, 0.7, 0.8)
-	_z_flash_tween = create_tween()
-	_z_flash_tween.tween_method(func(t: float):
-		flash_style.bg_color = bg_from.lerp(bg_peak, t)
-		flash_style.border_color = border_from.lerp(border_peak, t)
-	, 0.0, 1.0, 0.15)
-	_z_flash_tween.tween_method(func(t: float):
-		flash_style.bg_color = bg_peak.lerp(bg_from, t)
-		flash_style.border_color = border_peak.lerp(border_from, t)
-	, 0.0, 1.0, 0.35)
-	_z_flash_tween.tween_callback(_reset_z_style)
-
-func _reset_z_style():
-	if _z_input != null:
-		_z_input.add_theme_stylebox_override("normal", _z_style_normal)
-		_z_input.add_theme_stylebox_override("focus", _z_style_focus)
 
 func _input(event):
+	if event is InputEventMouseButton and event.pressed:
+		_release_text_focus_outside(event)
+
 	# Refresh screen-to-world offset whenever the cursor is inside the window,
 	# so out-of-window tracking can extrapolate from DisplayServer.mouse_get_position().
 	if event is InputEventMouseMotion and main != null:
@@ -404,7 +667,7 @@ func _input(event):
 
 	# Z-index overlay: Escape to cancel, click outside to dismiss, N to open
 	if event is InputEventKey and event.pressed and !event.echo:
-		if _z_input_active:
+		if is_z_index_editor_active():
 			if event.physical_keycode == KEY_ESCAPE or event.keycode == KEY_ESCAPE:
 				_hide_z_input()
 				get_viewport().set_input_as_handled()
@@ -414,9 +677,8 @@ func _input(event):
 				_show_z_input()
 				get_viewport().set_input_as_handled()
 				return
-	if _z_input_active and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var local = _z_overlay.to_local(main.get_global_mouse_position())
-		if abs(local.x) > 110 or abs(local.y) > 40:
+	if is_z_index_editor_active() and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if _z_editor.is_click_outside(main.get_global_mouse_position()):
 			_hide_z_input()
 			get_viewport().set_input_as_handled()
 			return
@@ -424,13 +686,14 @@ func _input(event):
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		if reparentMode:
 			reparentMode = false
-			chain.enable(false)
-			pushUpdate("Linking cancelled.")
+			if is_instance_valid(chain):
+				chain.enable(false)
+			notify_user("Linking cancelled.")
 			get_viewport().set_input_as_handled()
 			return
 		if eyeTrackPickMode:
 			_clear_eye_track_pick()
-			pushUpdate("Eye target pick cancelled.")
+			notify_user("Eye target pick cancelled.")
 			get_viewport().set_input_as_handled()
 			return
 	# Wheel while the cursor is over a sidebar (left/right panel or top bar):
@@ -462,25 +725,31 @@ func _input(event):
 		if event.is_action_pressed("scrollDown"):
 			_scroll_input -= 1
 
-# True while the cursor is over the editing chrome (left/right sidebar or the
-# top menu bar) in edit mode. Screen-space bounds are used because the sidebar
+# True while the cursor is over application chrome rather than the canvas: the
+# left/right sidebars and top menu bar in edit mode, the revealed portion of the
+# menu bar in viewer mode. Screen-space bounds are used because the panel
 # backgrounds are MOUSE_FILTER_IGNORE, so gui_get_hovered_control() reads null
 # over their blank areas. Shared by the zoom guard, the Ctrl+scroll slider
 # nudge, and the sprite-cycle scroll accumulator. Bounds match mouse_cursor.gd.
 func isMouseOverSidebar() -> bool:
-	if main == null or not main.editMode:
+	if main == null:
 		return false
 	var vp = get_viewport()
 	if vp == null:
 		return false
-	var sp = vp.get_mouse_position()
-	if sp.y < 28:
-		return true
-	if spriteEdit != null and sp.x < spriteEdit.panel_width + 19:
-		return true
-	if spriteList != null and sp.x > vp.get_visible_rect().size.x - spriteList.panel_width - 7:
-		return true
-	return false
+	var left_width := -1.0 if spriteEdit == null else float(spriteEdit.panel_width)
+	var right_width := -1.0 if spriteList == null else float(spriteList.panel_width)
+	return SidebarUIFactory.is_over_app_chrome(
+		vp.get_mouse_position(),
+		vp.get_visible_rect().size,
+		main.editMode,
+		left_width,
+		right_width,
+		SidebarUIFactory.MENU_BAR_HEIGHT,
+		SidebarUIFactory.LEFT_CHROME_PADDING,
+		SidebarUIFactory.RIGHT_CHROME_PADDING,
+		main.controlPanel.chrome_height(),
+	)
 
 # Walk up from the control under the cursor to the nearest Range (HSlider /
 # VSlider / SpinBox). Null when the cursor is not over an adjustable range.
@@ -498,40 +767,31 @@ func select(areas):
 		return
 
 	for area in areas:
-		if area.is_in_group("penis"):
+		if area.is_in_group("canvas_input_blocker"):
 			return
 
 	# Eye-track pick mode consumes the click; empty clicks are a no-op so the user
 	# doesn't accidentally deselect the source sprite mid-pick. Right-click cancels.
 	if eyeTrackPickMode:
 		if areas.size() > 0:
-			var picked = areas[0].get_parent().get_parent().get_parent()
+			var picked = sprite_from_hit_area(areas[0])
 			_finish_eye_track_pick(picked)
 		return
 
 	var prevSpr = heldSprite
 	if areas.size() <= 0:
-		heldSprite = null
+		clear_selection()
 		originMode = false
 		wigglePathMode = false
-		i = 0
-		lastArray = []
 		return
-	
-	if areas != lastArray:
-		heldSprite = areas[0].get_parent().get_parent().get_parent()
-		i = 0
-	else:
-		i += 1
-		
-		if i >= areas.size():
-			i = 0
-		
-		heldSprite = areas[i].get_parent().get_parent().get_parent()
+
+	_selection_state.choose_from_hits(areas, sprite_from_hit_area)
+	if heldSprite == null:
+		return
 	
 	var count = heldSprite.path.get_slice_count("/") - 1
 	var i1 = heldSprite.path.get_slice("/",count)
-	pushUpdate("Selected sprite \"" + i1 + "\"" + ".")
+	notify_user("Selected sprite \"" + i1 + "\"" + ".")
 	
 	heldSprite.set_physics_process(true)
 	
@@ -542,11 +802,11 @@ func select(areas):
 		if heldSprite.parentId == prevSpr.id:
 			return
 		
-		UndoManager.save_state()
-		linkSprite(prevSpr,heldSprite)
-		Global.chain.enable(reparentMode)
-	
-	lastArray = areas.duplicate()
+		MutationCommands.structural(func():
+			linkSprite(prevSpr, heldSprite, true)
+			return true)
+		if is_instance_valid(chain):
+			chain.enable(reparentMode)
 	
 	spriteEdit.setImage()
 
@@ -555,20 +815,22 @@ func _finish_eye_track_pick(target):
 		_clear_eye_track_pick()
 		return
 	if not eyeTrackPickBroadcast and target == eyeTrackPickSource:
-		pushUpdate("A sprite can't eye-track itself.")
+		notify_user("A sprite can't eye-track itself.")
 		_clear_eye_track_pick()
 		return
-	UndoManager.save_state()
 	if eyeTrackPickBroadcast:
-		var assigned = 0
-		for spr in get_tree().get_nodes_in_group("saved"):
+		var receivers: Array = []
+		for spr in sprite_nodes():
 			if spr.eyeTrack and spr != target:
+				receivers.append(spr)
+		MutationCommands.structural(func():
+			for spr in receivers:
 				spr.eyeTrackTargetId = target.id
-				assigned += 1
-		pushUpdate("Eye target set on " + str(assigned) + " layer(s).")
+			return not receivers.is_empty())
+		notify_user("Eye target set on " + str(receivers.size()) + " layer(s).")
 	else:
-		eyeTrackPickSource.eyeTrackTargetId = target.id
-		pushUpdate("Eye target set to \"" + target.path.get_file() + "\".")
+		MutationCommands.set_layer_property(eyeTrackPickSource, "eyeTrackTargetId", target.id)
+		notify_user("Eye target set to \"" + target.path.get_file() + "\".")
 	_flash_pink(target)
 	_clear_eye_track_pick()
 	if spriteList != null:
@@ -590,7 +852,10 @@ func _clear_eye_track_pick():
 	if spriteList != null:
 		spriteList.refreshEyePickWhip()
 
-func linkSprite(sprite,newParent):
+# `parent_picked_on_canvas` decides how the layer list follows the link: a parent
+# clicked on the canvas has the list bring the child and parent into view, while
+# a parent clicked in the list leaves the list where the user scrolled it.
+func linkSprite(sprite, newParent, parent_picked_on_canvas := false):
 	if sprite == newParent:
 		reparentMode = false
 
@@ -600,36 +865,14 @@ func linkSprite(sprite,newParent):
 		return
 
 	if sprite.is_ancestor_of(newParent):
-		pushUpdate("Can't link to own child sprite!")
+		notify_user("Can't link to own child sprite!")
 		reparentMode = false
 		return
 
-	# Zero all ancestor wobbles for stable reparent position
-	var saved_wobbles = []
-	var current = sprite
-	while current != null:
-		saved_wobbles.append([current, current.wob.position])
-		current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-	current = newParent
-	while current != null:
-		var already_saved = false
-		for entry in saved_wobbles:
-			if entry[0] == current:
-				already_saved = true
-				break
-		if not already_saved:
-			saved_wobbles.append([current, current.wob.position])
-			current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-
-	sprite.reparent(newParent.sprite,true)
-
-	for entry in saved_wobbles:
-		entry[0].wob.position = entry[1]
-
-	sprite.parentId = newParent.id
-	sprite.parentSprite = newParent
+	# Placed from the rest pose, like unlinking: a keep-global reparent of the live
+	# pose baked the new parent's drag lag and rotation, and the idle motion, into
+	# the child's authored position whenever the link was made mid-motion.
+	attach_at_rest(sprite, newParent)
 
 	# Brief pink flash on the new parent — same confirmation cue the eye-track
 	# layer pick uses, applied here so successful links feel consistent.
@@ -637,7 +880,7 @@ func linkSprite(sprite,newParent):
 
 	reparentMode = false
 
-	Global.spriteList._pending_scroll_target = newParent
+	Global.spriteList.prepareLinkFraming(sprite, newParent, parent_picked_on_canvas)
 	Global.spriteList.refreshHierarchy()
 	
 	var count = sprite.path.get_slice_count("/") - 1
@@ -646,7 +889,7 @@ func linkSprite(sprite,newParent):
 	count = newParent.path.get_slice_count("/") - 1
 	var i2 = newParent.path.get_slice("/",count)
 	
-	pushUpdate("Linked sprite \"" + i1 + "\" to sprite \"" + i2 + "\".")
+	notify_user("Linked sprite \"" + i1 + "\" to sprite \"" + i2 + "\".")
 	newParent.set_physics_process(true)
 
 func scrollSprites():
@@ -665,7 +908,7 @@ func scrollSprites():
 	if main.fileSystemOpen:
 		return
 
-	if get_viewport().gui_get_hovered_control() != null and !_z_input_active:
+	if get_viewport().gui_get_hovered_control() != null and !is_z_index_editor_active():
 		return
 
 	if heldSprite == null:
@@ -675,7 +918,7 @@ func scrollSprites():
 		return
 	
 	
-	var obj = get_tree().get_nodes_in_group("saved")
+	var obj = sprite_nodes()
 	
 	if obj.size() <= 0:
 		return
@@ -686,34 +929,26 @@ func scrollSprites():
 	elif scrollSelection < 0:
 		scrollSelection = obj.size() - 1
 	
-	heldSprite = obj[scrollSelection]
+	select_sprite(obj[scrollSelection])
 	
 	var count = heldSprite.path.get_slice_count("/") - 1
 	var i1 = heldSprite.path.get_slice("/",count)
-	pushUpdate("Selected sprite \"" + i1 + "\"" + ".")
+	notify_user("Selected sprite \"" + i1 + "\"" + ".")
 	
 	heldSprite.set_physics_process(true)
 
 	spriteEdit.setImage()
 
-	if _z_input_active and heldSprite != null:
-		_z_input.text = str(heldSprite.z)
-		_z_input.grab_focus()
-		_z_input.select_all()
+	if _z_editor != null and is_instance_valid(_z_editor):
+		_z_editor.sync_to_selection()
 
 func blinking():
-	# Floor scales with blinkChance so the slider actually moves the gap between blinks
-	var floor_frames = 2 * blinkChance * blinkSpeed
-	blinkTick += 1
-	if blinkTick == 0:
-		blink = false
-		if rand.randf_range(-1.0,1.0) > 0.5:
-			blinkTick = floor_frames + 1
-	if blinkTick > floor_frames:
-		if rand.randi() % int(blinkChance) == 0:
-			blink = true
-
-			blinkTick = -12
+	_blink_scheduler.speed = maxf(blinkSpeed, 0.0)
+	_blink_scheduler.chance = maxi(int(blinkChance), 1)
+	_blink_scheduler.active = blink
+	_blink_scheduler.tick = blinkTick
+	blink = _blink_scheduler.advance(MotionTiming.frames(get_process_delta_time()))
+	blinkTick = _blink_scheduler.tick
 	
 func epicFail(err):
 	print(fail)
@@ -742,60 +977,82 @@ func epicFail(err):
 	fail.visible = false
 
 func refresh():
-	var objs = get_tree().get_nodes_in_group("saved")
+	var objs = sprite_nodes()
 	for object in objs:
 		object.replaceSprite(object.path)
 		object.sprite.frame = 0
 		object.remadePolygon = false
-	pushUpdate("Refreshed all sprites.")
+	notify_user("Refreshed all sprites.")
 
 func unlinkChildren(parentSpr):
-	var children = parentSpr.getAllLinkedSprites()
-	if children.size() == 0:
-		return
-	var saved_wob = parentSpr.wob.position
-	parentSpr.wob.position = Vector2.ZERO
-	for child in children:
-		var glob = child.global_position
-		child.get_parent().remove_child(child)
-		main.origin.add_child(child)
-		child.parentId = null
-		child.parentSprite = null
-		child.position = glob - main.origin.position
-	parentSpr.wob.position = saved_wob
+	for child in parentSpr.getAllLinkedSprites():
+		_detach_to_origin(child)
 
 func unlinkSprite():
-	if heldSprite == null:
+	var layer = heldSprite
+	if layer == null or layer.parentId == null:
 		return
-	if heldSprite.parentId == null:
-		return
-
-	# Zero all ancestor wobbles for stable position calculation
-	var saved_wobbles = []
-	var current = heldSprite
-	while current != null:
-		saved_wobbles.append([current, current.wob.position])
-		current.wob.position = Vector2.ZERO
-		current = current.parentSprite
-
-	var glob = heldSprite.global_position
-	glob = Vector2(int(glob.x),int(glob.y))
-
-	heldSprite.get_parent().remove_child(heldSprite)
-	main.origin.add_child(heldSprite)
-	heldSprite.set_owner(main.origin)
-	heldSprite.parentId = null
-	heldSprite.parentSprite = null
-	heldSprite.position = glob - main.origin.position
-
-	for entry in saved_wobbles:
-		entry[0].wob.position = entry[1]
-
+	_detach_to_origin(layer)
 	Global.spriteList.refreshHierarchy()
-	pushUpdate("Unlinked sprite.")
+	notify_user("Unlinked sprite.")
+
+
+# Where a layer sits at rest, in the avatar origin's frame: its authored transform
+# composed up through every ancestor's. At rest an ancestor's WobbleOrigin,
+# DragOrigin and Sprite2D are identity (see sprite_rest_pose.gd), so the authored
+# transforms are the whole chain.
+#
+# Unlinking used to read global_position instead, which samples the rig
+# mid-motion: every ancestor's drag lag and rotation, squash, and the idle and
+# bounce motion on OriginMotion (which `glob - origin.position` never removed),
+# so the layer landed wherever the motion happened to be.
+func rest_transform_in_origin(layer) -> Transform2D:
+	var xform := Transform2D(layer.authoredRotation(), layer.authoredPosition())
+	var ancestor = _parent_layer(layer)
+	var visited := {}
+	while ancestor != null and not visited.has(ancestor):
+		visited[ancestor] = true
+		xform = Transform2D(ancestor.authoredRotation(), ancestor.authoredPosition()) * xform
+		ancestor = _parent_layer(ancestor)
+	return xform
+
+
+func _parent_layer(layer):
+	if layer.parentSprite != null and is_instance_valid(layer.parentSprite):
+		return layer.parentSprite
+	if layer.parentId != null:
+		return sprite_by_id(layer.parentId)
+	return null
+
+
+# Hang a layer off the avatar origin, at the place it has at rest, carrying its
+# children with it.
+func _detach_to_origin(layer) -> void:
+	var rest := rest_transform_in_origin(layer)
+	layer.leaveWiggleParent()
+	layer.moveUnder(main.origin, false)
+	layer.set_owner(main.origin)
+	layer.parentId = null
+	layer.parentSprite = null
+	layer.position = rest.origin
+	layer.rotation = rest.get_rotation()
+	layer._force_drag_snap = true
+
+
+# Hang a layer off `new_parent` without moving it at rest: its authored transform
+# becomes its rest place re-expressed in the parent's rest frame.
+func attach_at_rest(layer, new_parent) -> void:
+	var local := rest_transform_in_origin(new_parent).affine_inverse() * rest_transform_in_origin(layer)
+	layer.leaveWiggleParent()
+	layer.moveUnder(new_parent.sprite, false)
+	layer.parentId = new_parent.id
+	layer.parentSprite = new_parent
+	layer.position = local.origin
+	layer.rotation = local.get_rotation()
+	layer._force_drag_snap = true
 
 func saveImagesFromData():
-	var sprites = get_tree().get_nodes_in_group("saved")
+	var sprites = sprite_nodes()
 	if sprites.size() <= 0:
 		return
 	for sprite in sprites:
@@ -806,8 +1063,7 @@ func saveImagesFromData():
 		DirAccess.make_dir_recursive_absolute(sprite.path.left(length-1))
 		img.save_png(sprite.path)
 	
-	pushUpdate("Saved all avatar images to computer.")
+	notify_user("Saved all avatar images to computer.")
 	
-func pushUpdate(text):
-	if is_instance_valid(updatePusherNode):
-		updatePusherNode.pushUpdate(text)
+func notify_user(text: String) -> void:
+	notification_requested.emit(text)

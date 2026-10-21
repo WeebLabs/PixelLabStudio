@@ -153,7 +153,7 @@ func _unhandled_input(event):
 			if _dragging != H_NONE:
 				_dragging = H_NONE
 				_set_freeze(false)
-				Global.pushUpdate("NDI crop box updated.")
+				Global.notify_user("NDI crop box updated.")
 				get_viewport().set_input_as_handled()
 
 	elif event is InputEventMouseMotion and _dragging != H_NONE:
@@ -246,8 +246,7 @@ func _set_freeze(frozen: bool):
 		Global.main.origin.get_parent().position.y = 0
 		Global.main.yVel = 0
 		# Push sprites to max downward wobble extent, zero horizontal wobble
-		var sprites = get_tree().get_nodes_in_group("saved")
-		for sprite_obj in sprites:
+		for sprite_obj in Global.sprite_nodes():
 			if sprite_obj.visible:
 				sprite_obj.wob.position.y = abs(sprite_obj.yAmp)
 				sprite_obj.wob.position.x = 0

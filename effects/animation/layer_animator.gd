@@ -36,20 +36,30 @@ func _ensure(n: int) -> void:
 	while _rt.size() > n:
 		_rt.pop_back()
 
-# Advance every clip one frame. `tick` is the layer's frame counter (sine phase).
-func evaluate(clips: Array, tick: int, delta: float) -> void:
+# Advance every clip. `phase` is elapsed time counted in 60 fps frames, which is
+# what the sine-driven clips were tuned against; passing real frame counts made
+# an oscillation run faster or slower with the frame rate.
+func evaluate(clips: Array, phase: float, delta: float) -> void:
 	rot = 0.0
 	trans = Vector2.ZERO
+	if clips.is_empty():
+		_rt.clear()
+		return
 	_ensure(clips.size())
 	for i in clips.size():
 		var c: Dictionary = clips[i]
 		var st: Dictionary = _rt[i]
 		if String(c.get("shape", "twitch")) == "oscillate":
-			_eval_oscillate(c, String(c.get("channel", "rotation")), tick, st)
+			_eval_oscillate(c, String(c.get("channel", "rotation")), phase, st)
 		else:
 			_eval_twitch(c, String(c.get("channel", "rotation")), st, delta)
 
-func _eval_oscillate(c: Dictionary, channel: String, tick: int, st: Dictionary) -> void:
+func reset() -> void:
+	rot = 0.0
+	trans = Vector2.ZERO
+	_rt.clear()
+
+func _eval_oscillate(c: Dictionary, channel: String, tick: float, st: Dictionary) -> void:
 	if channel == "translation":
 		var fx := float(c.get("freqX", 0.0))
 		trans += Vector2(

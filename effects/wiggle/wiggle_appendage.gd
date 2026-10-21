@@ -22,6 +22,11 @@ const _PREV := 0   # reference to the previous point's array (null for root)
 const _POS := 1    # Vector2 world position
 const _ROT := 2    # float segment angle (radians)
 const _MOM := 3    # float angular momentum (radians/sec)
+# The spring force grows with the square root of the bend, which has unbounded
+# gain at zero bend: each time a joint's deflection swings through rest (at the
+# top and bottom of an idle bob) it was yanked across, a visible flick. Within
+# roughly this many radians of rest the force eases to linear instead.
+const SPRING_SOFT_ZONE := 0.02
 
 # --- Dynamics (configure()) ---
 var stiffness := 20.0
@@ -117,8 +122,9 @@ func reset() -> void:
 		_points.append([_points[-1], pos, ang, 0.0])
 	_update_mesh()
 
-# Advance one frame. frame_tick drives auto-wag (a per-layer frame counter).
-func tick(delta: float, frame_tick: int) -> void:
+# Advance one frame. `frame_tick` drives auto-wag: elapsed time counted in 60 fps
+# frames, so the sway keeps its speed whatever the frame rate.
+func tick(delta: float, frame_tick: float) -> void:
 	if delta <= 0.0 or _points.size() < 2:
 		return
 	# Auto-wag is a clean sinusoidal sway of the root direction; the chain follows
@@ -154,7 +160,7 @@ func _process_point(point: Array, delta: float, index: int) -> void:
 	var ideal: float = prev[_ROT] + _rest_rel[index]
 	var diff := _angle_diff(ideal, rot)
 	var k := maxf(0.0, stiffness - pow(float(index), stiffness_decay_exponent) * stiffness_decay)
-	var force := _signed_sqrt(diff) * k
+	var force := _spring_curve(diff) * k
 	force += gravity.length() * cos(rot - gravity.angle() + TAU / 4.0)
 	# Standard linear damping: smooth, symmetric response (no brake-on-reversal
 	# stutter). The momentum cap then limits how fast a rotation travels down.
@@ -266,17 +272,29 @@ func _update_mesh() -> void:
 		verts[i * 2 + 1] = center[i] - perp * w
 	polygon = verts
 
-# Position along the chain at normalized t in [0,1], in this node's local space.
-# Used by child-follow so attached props ride the ribbon.
-func sample_local(t: float) -> Vector2:
-	if _points.is_empty():
-		return Vector2.ZERO
-	t = clampf(t, 0.0, 1.0)
-	var fpos := t * float(_points.size() - 1)
-	var i := int(fpos)
-	if i >= _points.size() - 1:
-		return to_local(_points[-1][_POS])
-	return to_local(_points[i][_POS]).lerp(to_local(_points[i + 1][_POS]), fpos - float(i))
+# The live chain joints in this node's local space. Child-follow binds each child
+# to one joint segment, so it reads the same joints the physics moves.
+func joints_local() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for p in _points:
+		out.append(to_local(p[_POS]))
+	return out
+
+# The chain joints at REST in this node's local space, laid out exactly as reset()
+# lays them out from the current transform. Binding a child against these (rather
+# than the smoothed rest path) means an at-rest chain moves the child by zero.
+func rest_joints_local() -> PackedVector2Array:
+	var out := PackedVector2Array()
+	if _rest_rel.size() < 2:
+		return out
+	var ang := _base_rest_angle + global_rotation
+	var pos := get_global_position()
+	out.append(to_local(pos))
+	for i in range(1, segment_count + 1):
+		ang += _rest_rel[i]
+		pos += Vector2(segment_length, 0).rotated(ang)
+		out.append(to_local(pos))
+	return out
 
 # --- Geometry helpers (static, shared with the owner's bake) ---
 
@@ -340,5 +358,6 @@ func _angle_diff(a: float, b: float) -> float:
 		d -= TAU * signf(d)
 	return d
 
-func _signed_sqrt(v: float) -> float:
-	return sqrt(absf(v)) * signf(v)
+# Signed square root away from rest, linear through it (see SPRING_SOFT_ZONE).
+func _spring_curve(v: float) -> float:
+	return v / sqrt(absf(v) + SPRING_SOFT_ZONE)

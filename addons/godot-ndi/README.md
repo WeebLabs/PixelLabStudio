@@ -4,6 +4,10 @@
 >
 > [ NDI® is a registered trademark of Vizrt NDI AB ]
 
+> PNGTuberPlus note: the bundled macOS libraries include a narrowly scoped
+> teardown fix for upstream issue 44. See `PATCHES.md` for the source patch,
+> build inputs, and binary digests.
+
 Adds a new [VideoStream](https://godot-ndi.readthedocs.io/stable/classes/class_videostreamndi.html) class to implement **NDI playback**.
 For **outputting the Viewport** as an NDI source, add the [NDIOutput](https://godot-ndi.readthedocs.io/stable/classes/class_ndioutput.html) Node to the scene.
 Check out the **demo scenes** included with all releases.

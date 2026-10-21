@@ -1,0 +1,68 @@
+From: PNGTuberPlus maintainers
+Subject: [PATCH] Quiesce viewport texture routing before server teardown
+Based-on: godot-ndi v1.2.6 (d99e749aff1aa09daf9a7beadfb699d56ccd106b)
+Upstream-issue: https://github.com/unvermuthet/godot-ndi/issues/44
+
+The router destructor queried RenderingServer after server deinitialization,
+which crashes Godot on macOS even when no NDIOutput node was created. Active
+output also leaves asynchronous texture callbacks queued during shutdown.
+
+Quiesce the router at scene deinitialization while RenderingServer is valid,
+retain the object through server cleanup so queued callbacks have a live
+target, and delete it at core deinitialization without touching the server.
+
+diff --git a/src/ndi.cpp b/src/ndi.cpp
+index f2f3c9c..d9f5c1e 100644
+--- a/src/ndi.cpp
++++ b/src/ndi.cpp
+@@ -170,0 +171,5 @@ void uninitialize(ModuleInitializationLevel p_level) {
++			if (Engine::get_singleton()->has_singleton("ViewportTextureRouter")) {
++				ViewportTextureRouter *vptr = Object::cast_to<ViewportTextureRouter>(Engine::get_singleton()->get_singleton("ViewportTextureRouter"));
++				vptr->shutdown();
++			}
++
+diff --git a/src/viewport_texture_router.cpp b/src/viewport_texture_router.cpp
+index e79919c..5737bdf 100644
+--- a/src/viewport_texture_router.cpp
++++ b/src/viewport_texture_router.cpp
+@@ -22,2 +21,0 @@ ViewportTextureRouter::~ViewportTextureRouter() {
+-	// Ensure the disconnection from the frame_post_draw signal if it's connected
+-	SIGNAL_DISCONNECT(RenderingServer::get_singleton(), "frame_post_draw", callable_mp(this, &ViewportTextureRouter::request_textures));
+@@ -27,0 +26 @@ void ViewportTextureRouter::add_viewport(Viewport *viewport) {
++	ERR_FAIL_COND_MSG(shutting_down, "ViewportTextureRouter is shutting down");
+@@ -40,0 +40,3 @@ void ViewportTextureRouter::remove_viewport(Viewport *viewport) {
++	if (shutting_down) {
++		return;
++	}
+@@ -57,0 +60,10 @@ void ViewportTextureRouter::remove_viewport(Viewport *viewport) {
++void ViewportTextureRouter::shutdown() {
++	if (shutting_down) {
++		return;
++	}
++
++	shutting_down = true;
++	SIGNAL_DISCONNECT(RenderingServer::get_singleton(), "frame_post_draw", callable_mp(this, &ViewportTextureRouter::request_textures));
++	vps.clear();
++}
++
+@@ -62,0 +75,4 @@ void ViewportTextureRouter::request_textures() {
++	if (shutting_down) {
++		return;
++	}
++
+@@ -86,0 +103,4 @@ void ViewportTextureRouter::forward_texture(PackedByteArray p_data, const Ref<RD
++	if (shutting_down) {
++		return;
++	}
++
+diff --git a/src/viewport_texture_router.hpp b/src/viewport_texture_router.hpp
+index 32d9afe..3e46a6e 100644
+--- a/src/viewport_texture_router.hpp
++++ b/src/viewport_texture_router.hpp
+@@ -11,0 +12,2 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
++#include <atomic>
++
+@@ -25,0 +28 @@ public:
++	void shutdown();
+@@ -31,0 +35 @@ private:
++	std::atomic_bool shutting_down = false;

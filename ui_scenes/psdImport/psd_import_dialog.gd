@@ -1,5 +1,8 @@
 extends Node2D
 
+const SidebarUIFactory = preload("res://ui_scenes/common/sidebar_ui.gd")
+const ImportMatcher = preload("res://main_scenes/controllers/import_matcher.gd")
+
 signal import_confirmed(selected_layers: Array, canvas_size: Vector2, normal_layers: Dictionary)
 signal import_cancelled
 
@@ -26,7 +29,7 @@ func _on_visibility_changed():
 func _build_ui():
 	# Blocker Area2D to prevent sprite interaction
 	blocker = Area2D.new()
-	blocker.add_to_group("penis")
+	blocker.add_to_group("canvas_input_blocker")
 	var col = CollisionShape2D.new()
 	var shape = RectangleShape2D.new()
 	shape.size = Vector2(3840, 2160)
@@ -38,7 +41,8 @@ func _build_ui():
 	var panel_bg = ColorRect.new()
 	panel_bg.position = Vector2(-250, -230)
 	panel_bg.size = Vector2(500, 460)
-	panel_bg.color = Color(0.15, 0.15, 0.15, 1.0)
+	panel_bg.color = SidebarUIFactory.DEFAULT_PANEL_COLOR
+	panel_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_bg)
 
 	# Title
@@ -139,8 +143,8 @@ func setup(psd):
 			continue
 
 		# Detect normal map layers — don't show in selection, track for pairing
-		if layer.name.to_lower().ends_with("_nrml"):
-			var base = layer.name.substr(0, layer.name.length() - 5)
+		if ImportMatcher.is_normal_layer(layer.name):
+			var base = layer.name.substr(0, layer.name.length() - ImportMatcher.NORMAL_SUFFIX.length())
 			normal_layers[base.to_lower()] = layer
 			nrml_count += 1
 			continue
@@ -179,7 +183,7 @@ func setup(psd):
 		var dims_label = Label.new()
 		dims_label.text = str(layer.width) + " x " + str(layer.height)
 		dims_label.add_theme_font_size_override("font_size", 11)
-		dims_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		dims_label.add_theme_color_override("font_color", SidebarUIFactory.TEXT_BODY)
 		info.add_child(dims_label)
 
 		entry.add_child(info)

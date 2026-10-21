@@ -1,0 +1,37 @@
+{
+	"0": {
+		"type": "sprite",
+		"path": "user://legacy/body.png",
+		"identification": 100,
+		"parentId": null,
+		"pos": "Vector2(10, 20)",
+		"offset": "Vector2(0, 0)",
+		"zindex": -1,
+		"drag": 0,
+		"xFrq": 0.002,
+		"xAmp": 9,
+		"yFrq": 0.004,
+		"yAmp": 11,
+		"rotDrag": 0,
+		"showTalk": 0,
+		"showBlink": 0
+	},
+	"1": {
+		"type": "sprite",
+		"path": "user://legacy/head.png",
+		"identification": 101,
+		"parentId": 100,
+		"pos": "Vector2(0, -100)",
+		"offset": "Vector2(0, 5)",
+		"zindex": 0,
+		"drag": 1,
+		"xFrq": 0,
+		"xAmp": 0,
+		"yFrq": 0,
+		"yAmp": 0,
+		"rotDrag": 0,
+		"showTalk": 0,
+		"showBlink": 0
+	},
+	"_ndiRulerY": 240
+}

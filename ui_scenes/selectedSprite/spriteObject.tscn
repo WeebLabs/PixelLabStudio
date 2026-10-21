@@ -24,3 +24,4 @@ texture = ExtResource("4_i4lmg")
 centered = false
 
 [node name="Grab" type="Area2D" parent="WobbleOrigin/DragOrigin"]
+collision_mask = 0

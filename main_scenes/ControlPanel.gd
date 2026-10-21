@@ -1,10 +1,197 @@
 extends Node2D
 
-@onready var editSprite = $Edit/Fancy
-@onready var editButton = $Edit/Button
+# Viewer mode's control surface. Everything the streamer needs while live sits
+# on a single top menu bar built from the same shared component edit mode uses,
+# so the two modes read as one application.
+#
+# The bar conceals itself off the top edge and slides back in while the cursor
+# is near the top of the window (see AppMenuBar's auto-reveal constants), which
+# keeps it out of the way of the avatar and out of a capture.
+#
+# This node also owns the settings panel and the transient zoom readout. The
+# panel is placed through AppMenuBar.anchor_popup, the one seam for bar popups.
 
-func _process(delta):
-	if Rect2(editButton.get_parent().position-Vector2(24,24),editButton.size).has_point(get_local_mouse_position()):
-		editSprite.scale = lerp(editSprite.scale,Vector2(1.2,1.2),0.2)
-	else:
-		editSprite.scale = lerp(editSprite.scale,Vector2(1.0,1.0),0.2)
+
+const GEAR_ICON = preload("res://ui_scenes/settings/settingsWheel.png")
+
+const LEVEL_COLOR := Color(0.55, 0.78, 1.0)
+const DURATION_COLOR := Color(1.0, 0.7, 0.8)
+
+# The zoom readout is deliberately NOT on the bar: it is transient feedback for
+# a canvas gesture, and the cursor is nowhere near the top edge when zooming.
+const ZOOM_SIZE := Vector2(266, 26)
+const ZOOM_MARGIN := Vector2(74, 51)
+const ZOOM_FADE := 0.02
+const ZOOM_HOLD := 6.0
+
+@onready var settings_menu: Node2D = $SettingsMenu
+
+var menu_bar: AppMenuBar = null
+
+var _settings_button: Button = null
+var _zoom_label: Label = null
+var _meters: Array = []
+var _active := false
+
+
+func _ready() -> void:
+	menu_bar = AppMenuBar.new()
+	menu_bar.name = "AppMenuBar"
+	menu_bar.configure_auto_reveal(true)
+	add_child(menu_bar)
+
+	_build_actions()
+	_build_right_zone()
+	_build_zoom_readout()
+
+
+# --- Bar contents -------------------------------------------------------------
+
+# Mode switch at the far left, avatar file actions in the middle, and the mic
+# meters plus Settings at the far right. The two mode bars therefore agree on
+# where the mode switch and the file actions live.
+func _build_actions() -> void:
+	menu_bar.add_button(menu_bar.left, "Switch to Editor", _on_edit_pressed)
+	MenuActions.add_avatar_file_actions(menu_bar, menu_bar.center)
+
+
+
+# Right zone: the mic meters, then Settings closing the bar opposite the mode
+# switch.
+func _build_right_zone() -> void:
+	_build_mic_meters()
+	_settings_button = menu_bar.add_icon_button(
+		menu_bar.right, GEAR_ICON, "Settings", _on_settings_pressed
+	)
+
+
+# The two microphone controls are the same widget with different wiring, so they
+# are declared once and built in a loop. "Level" is the smoothed voice level in
+# dBFS against the threshold that opens the voice gate. "Duration" fills whenever
+# the gate is open and drains once the voice drops; the mouth closes when it falls
+# past the thumb, so a thumb further left holds the mouth open longer.
+func _build_mic_meters() -> void:
+	var defaults := SettingsSchema.defaults()
+	var specs := [
+		{
+			"caption": "Duration",
+			"fill": DURATION_COLOR,
+			"min": 0.0,
+			"max": SettingsSchema.MIC_DURATION_FULL_MS,
+			"step": 10.0,
+			"setting": "micDurationThreshold",
+			"default": defaults["micDurationThreshold"],
+			"source": func() -> float: return Global.micDuration,
+			"apply": func(limit: float) -> void: Global.micDurationThreshold = limit,
+		},
+		{
+			"caption": "Level",
+			"fill": LEVEL_COLOR,
+			"min": SettingsSchema.MIC_LEVEL_MIN_DB,
+			"max": SettingsSchema.MIC_LEVEL_MAX_DB,
+			"step": 0.5,
+			"setting": "micThresholdDb",
+			"default": defaults["micThresholdDb"],
+			"source": func() -> float: return Global.micLevelDb,
+			"apply": func(limit: float) -> void: Global.micThresholdDb = limit,
+		},
+	]
+
+	# The meters share one group so they can yield together when the bar is too
+	# narrow for everything; the buttons around them stay reachable.
+	var meters := menu_bar.add_group(menu_bar.right, AppMenuBar.GROUP_SEPARATION)
+	menu_bar.set_collapsible(meters)
+
+	for spec in specs:
+		var control := menu_bar.add_level_meter(
+			meters,
+			spec["caption"],
+			spec["fill"],
+			spec["max"],
+			spec["max"],
+			spec["step"],
+			spec["min"],
+		)
+		var slider: HSlider = control["slider"]
+		var setting: String = spec["setting"]
+		var apply: Callable = spec["apply"]
+
+		# The thumb is a threshold marker sharing the meter's scale, so the limit
+		# IS the thumb position: the voice gate opens once the Level bar reaches
+		# its thumb, and the mouth closes once the draining Duration bar falls
+		# past its own.
+		slider.value_changed.connect(func(value: float) -> void:
+			apply.call(value)
+			Saving.settings[setting] = value
+		)
+		# The cursor leaves the reveal band while dragging, so hold the bar open.
+		slider.drag_started.connect(func() -> void: menu_bar.set_pin(&"drag", true))
+		slider.drag_ended.connect(func(_changed: bool) -> void: menu_bar.set_pin(&"drag", false))
+
+		slider.value = Saving.settings.get(setting, spec["default"])
+		apply.call(slider.value)
+		Global.make_slider_resettable(slider, spec["default"])
+
+		_meters.append({"meter": control["meter"], "source": spec["source"]})
+
+
+func _build_zoom_readout() -> void:
+	_zoom_label = Label.new()
+	_zoom_label.name = "ZoomLabel"
+	_zoom_label.text = "Zoom : 100%"
+	_zoom_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_zoom_label.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_zoom_label.offset_left = -(ZOOM_MARGIN.x + ZOOM_SIZE.x)
+	_zoom_label.offset_right = -ZOOM_MARGIN.x
+	_zoom_label.offset_top = -(ZOOM_MARGIN.y + ZOOM_SIZE.y)
+	_zoom_label.offset_bottom = -ZOOM_MARGIN.y
+	_zoom_label.modulate.a = 0.0
+	add_child(_zoom_label)
+
+
+# --- Public surface ------------------------------------------------------------
+
+# Viewer mode on/off. Processing is tied to visibility so a concealed bar is not
+# tracking the cursor while the editor is up.
+func set_active(active: bool) -> void:
+	_active = active
+	visible = active
+	set_process(active)
+	menu_bar.set_process(active)
+	if not active:
+		menu_bar.snap_hidden()
+		settings_menu.visible = false
+
+
+# How much of the bar is on screen, for canvas hit-testing.
+func chrome_height() -> float:
+	return menu_bar.revealed_height() if _active else 0.0
+
+
+func show_zoom(percent: int) -> void:
+	_zoom_label.text = "Zoom : %d%%" % percent
+	if _active:
+		_zoom_label.modulate.a = ZOOM_HOLD
+
+
+func _process(_delta: float) -> void:
+	for entry in _meters:
+		entry["meter"].value = entry["source"].call()
+	menu_bar.set_pin(&"popup", settings_menu.visible)
+	_zoom_label.modulate.a = lerpf(_zoom_label.modulate.a, 0.0, ZOOM_FADE)
+
+
+# --- Bar actions ----------------------------------------------------------------
+
+func _on_edit_pressed() -> void:
+	Global.main.swapMode()
+
+
+func _on_settings_pressed() -> void:
+	settings_menu.visible = not settings_menu.visible
+	if settings_menu.visible:
+		settings_menu.setvalues()
+		menu_bar.anchor_popup(_settings_button, settings_menu, settings_menu.panel_size())
+
+

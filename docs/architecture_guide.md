@@ -1,10 +1,48 @@
 # PNGTuberPlus Architecture Guide
 
-> Last updated: 2026-03-12 — Draggable point light gizmo for normal maps
+> Last updated: 2026-08-06 — Phase 8 release and maintenance contracts
 
 ## Overview
 
-PNGTuberPlus is a Godot 4.4 desktop application for creating and performing with PNGTuber avatars. Users import sprite images (PNG, APNG, PSD), arrange them in a hierarchical layer tree, and the app responds to microphone input with bounce, wobble, blink, and eye-tracking animations.
+PNGTuberPlus is a Godot 4.6 desktop application for creating and performing with PNGTuber avatars. The supported and CI-pinned patch release is Godot 4.6.3. Users import sprite images (PNG, APNG, PSD), arrange them into a layered rig, and the app responds to microphone input with bounce, wobble, blink, and eye-tracking animations.
+
+> Updated: 2026-08-06 — Godot 4.6 is the single engine baseline. `scripts/run_tests.sh` imports the project and runs the headless GDScript suite; `scripts/run_performance.sh` records repeatable CPU microbenchmarks under `.artifacts/`. CI runs the tests on macOS, Windows, and Linux using the official Godot 4.6.3 binaries. Native code must use the repository's pinned Godot 4.6 `godot-cpp` submodule revision. The duplicate top-level `godot-ndi/` package was removed; `addons/godot-ndi/` is the sole NDI integration. The obsolete bundled Git editor extension was also removed; source-control operations use the installed Git tooling and no longer add a native library to application/editor startup.
+
+> Updated: 2026-08-06 — `scripts/run_release_checks.sh` composes unit/source
+> contracts, performance budgets, and a standalone production resource-pack
+> launch. Export presets select `main.tscn` and explicitly include indirect
+> script/scene resources, keeping developer saves and imported artwork out of
+> release packs. CI runs the export/launch smoke on all three desktop hosts.
+
+> Updated: 2026-08-17 — Export `include_filter` covers whole source directories
+> (`autoload/*`, `main_scenes/*`, `ui_scenes/*`, `effects/*`, `ndi/*`,
+> `shader/*`, `icons/*`, `font/*`, the Stream Deck addon) plus the three
+> `*.gdextension` manifests, with `exclude_filter="ui_scenes/light/*"` for the
+> dormant light work. Per-file patterns had silently dropped whatever a release
+> added later: v1.7.0a exports were missing `main_scenes/menu_actions.gd`, the
+> new `ui_scenes/settings/` assets, and — because a `.gdextension` manifest is
+> only exported when the filter names it — every native library (NDI, PSD,
+> background input). Godot copies a manifest's platform libraries beside the
+> binary only when the manifest itself is packed, so those patterns are the
+> switch that ships native features. `run_export_smoke.sh` now mirrors the
+> native libraries into the smoke directory before launching the pack; without
+> them the macOS loader aborts on the missing dylib.
+>
+> The filter must also name `default_bus_layout.tres`: project settings
+> reference it by UID and no export filter follows that, so the first v1.7.0a
+> build booted with a Master bus alone. `MicrophoneMonitor` sets
+> `player.bus = &"MIC"`, which then falls through to Master and plays the
+> microphone out of the speakers, and `get_bus_index(&"MIC")` returns -1, so
+> `_refresh_spectrum()` finds no analyzer and the level meters read zero. Any
+> resource reached only through project settings needs the same treatment.
+>
+> Updated: 2026-09-19 — **The `MIC` bus is muted.** It was unmuted at −80 dB and
+> sent to Master, so the microphone played out of the system output, quietly but
+> audibly on some devices and on one channel, since the signal is mono. That
+> layout came from upstream. `bus/1/mute = true` silences the send while the
+> bus's Record and SpectrumAnalyzer effects keep running, the arrangement Godot's
+> own microphone demo uses. Verified in the running app: the avatar still reacts
+> to speech and the leak is gone.
 
 The app has two primary modes:
 
@@ -18,67 +56,129 @@ The app has two primary modes:
 ```
 PNGTuberPlus/
 ├── main_scenes/           Main scene, edit controls, control panel
-│   ├── main.tscn / main.gd       Entry point and orchestrator (~28 KB)
+│   ├── main.tscn / main.gd       Entry point and scene coordinator
+│   ├── controllers/               Explicit main-scene lifecycle boundaries
+│   │   ├── avatar_controller.gd   Avatar assembly, edits, costumes, save data
+│   │   ├── capture_controller.gd  Screenshot, recording, FFmpeg ownership
+│   │   ├── import_controller.gd   PSD/APNG/PNG workers and import dialogs
+│   │   ├── import_matcher.gd      Pure replacement name matching
+│   │   ├── save_controller.gd     Save dialogs, workers, session recovery
+│   │   ├── update_controller.gd   GitHub-releases update check, prompt, download, install (2026-10-21)
+│   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
 │   ├── EditControls.gd            Top menu bar (edit mode)
+│   ├── pause_frame.gd             Frame around the canvas while motion is paused (2026-09-19)
 │   ├── ControlPanel.gd            Right-side streaming panel (view mode)
 │   ├── Tutorial.gd                First-run tutorial overlay
-│   ├── MicInputSelect.gd          Microphone dropdown
 │   └── originLineDrawing.gd       Origin crosshair lines
 │
 ├── ui_scenes/
+│   ├── common/
+│   │   ├── menu_bar.gd           Shared edit/player menu bar and meters
+│   │   ├── form_ui.gd            Constructed settings-form primitives
+│   │   ├── modal_dialog.gd        Shared modal layout and input guard
+│   │   ├── tab_bar.gd             Shared sidebar/settings tabs
+│   │   └── sidebar_ui.gd          Shared styles, bounds, and chrome hit tests
 │   ├── mouse/
 │   │   └── mouse_cursor.gd       Click detection & tooltip in edit mode
 │   ├── selectedSprite/
-│   │   └── spriteObject.gd       Core sprite: rendering, physics, collision, outline
+│   │   ├── spriteObject.gd       Scene-facing layer lifecycle facade
+│   │   ├── sprite_collision_builder.gd Alpha/fallback hitbox construction
+│   │   ├── sprite_collision_runtime.gd Shape lifecycle and active-state coordination
+│   │   ├── sprite_hierarchy.gd   Pure child/descendant lookup policy
+│   │   ├── sprite_rest_pose.gd   Authored rest pose for the edit-mode motion pause (2026-09-16)
+│   │   ├── sprite_image_swap.gd  Artwork swap for file/PSD replace and undo restore (2026-09-19)
+│   │   ├── sprite_visibility_policy.gd Pure talk/blink/costume visibility
+│   │   └── sprite_visual_runtime.gd Texture, normal, blend, and depth synchronization
 │   ├── spriteEditMenu/
-│   │   ├── sprite_viewer.gd      Left sidebar — sprite property editor (265px)
+│   │   ├── sprite_viewer.gd      Left sidebar scene facade/layout (265px)
+│   │   ├── selection_presenter.gd Selected-layer preview and field synchronization
+│   │   ├── normal_map_panel.gd   Normal-map import/clear component
+│   │   ├── rotation_preview_renderer.gd Rotation-circle texture construction
 │   │   └── chain.gd              Visual line during reparenting
 │   ├── spriteList/
-│   │   ├── viewer.gd             Right sidebar — layer tree + tabbed controls (310px, resizable)
-│   │   ├── sidebar_tab_bar.gd    Reusable Details/Tracking/Physics tab strip
+│   │   ├── viewer.gd             Right sidebar scene facade/layout (310px, resizable)
+│   │   ├── layer_tree_controller.gd Layer rows, hierarchy, filtering, and scroll
+│   │   ├── eye_tracking_panel.gd Tracking controls and target presentation
+│   │   ├── layer_details_panel.gd Details controls and NDI reference policy
 │   │   ├── physics_tab.gd        Physics tab — wiggle controls
+│   │   ├── costume_row.gd        Costume chips 1-10 under the layer list (2026-09-19)
 │   │   └── sprite_list_object.gd Individual list item with thumbnail
 │   ├── psdImport/
+│   │   ├── legacy_replace_prompt.gd Legacy full-canvas compatibility prompts
 │   │   ├── psd_import_dialog.gd     PSD layer selection dialog (import flow)
 │   │   └── replace_review_dialog.gd Unified replace review dialog (PSD/folder/PNG)
 │   ├── settings/
-│   │   └── settings_menu.gd      Settings panel
+│   │   ├── settings_menu.gd      Constructed settings scene facade
+│   │   └── *_settings_tab.gd     Audio/display/motion/hotkey/output components
+│   ├── zIndex/
+│   │   └── z_index_editor.gd     On-canvas z-index entry overlay
 │   ├── pushUpdates/
 │   │   └── push_updates.gd       On-screen notification system
-│   ├── light/
-│   │   └── light_gizmo.gd        Draggable PointLight2D + edit-mode gizmo
-│   └── volume/                    Audio level sliders & visualization
 │
 ├── autoload/                      Global singletons (autoloaded)
+│   ├── instance_lock.gd           Single instance + launch-file handoff (first autoload, 2026-10-21)
+│   ├── runtime/app_version.gd     Semver compare + Windows numeric version (2026-10-21)
+│   ├── runtime/update_feed.gd     Pure update decisions: release pick, assets, checksums (2026-10-21)
 │   ├── global.gd                  Central state: mic, selection, input, modes
 │   ├── saving.gd                  JSON persistence, settings, save/load
-│   ├── undo_manager.gd            Snapshot-based undo/redo (50-state history)
+│   ├── undo_manager.gd            Transactional undo/redo (50-state history)
+│   ├── domain/sprite_state.gd     Canonical sprite property compatibility map
+│   ├── domain/sprite_registry.gd  Canonical live layer enumeration/ID index
+│   ├── domain/selection_state.gd  Selected layer and click-cycle state
+│   ├── domain/mutation_commands.gd Canonical undoable mutation commands
+│   ├── domain/legacy_canvas_compat.gd Full-canvas rig detection and replace placement
+│   ├── input/input_commands.gd    Pure key/device command decoding
+│   ├── import/import_limits.gd    Shared binary import resource budgets
 │   ├── psd_parser.gd              PSD file parser (background thread)
-│   ├── apng_parser.gd             APNG/GIF detection and sprite sheet assembly
+│   ├── apng_parser.gd             Bounded APNG parser and compositor
 │   └── defaultAvatarData.gd       Built-in default avatar data
 │
 ├── shader/
 │   └── wobble.gdshader            Wave oscillation effect
 │
 ├── effects/
+│   ├── animation/layer_animator.gd Per-layer transform animation evaluator
 │   └── wiggle/                    Wiggly-appendage physics (per-layer)
 │       ├── wiggle_appendage.gd    Deformable textured mesh (Polygon2D) + verlet/angular-spring chain
-│       └── wiggle_path_editor.gd  On-canvas ribbon-path tracer (Global.wigglePathMode)
+│       ├── wiggle_geometry.gd     Pure path tracing, coverage, projection
+│       ├── wiggle_path_editor.gd  On-canvas ribbon-path tracer (Global.wigglePathMode)
+│       └── wiggle_runtime.gd      Live mesh, editor, and child-follow ownership
 │
 ├── ndi/                           NDI video output system
 │   ├── ndi_output_manager.gd      SubViewport + Camera + NDIOutput orchestrator
+│   ├── ndi_output_geometry.gd     Pure crop/output sizing calculation
 │   └── ndi_crop_box.gd            Resizable crop box (8 gizmos) defining the output frame
 │
 ├── addons/
 │   ├── godot-ndi/                 NDI GDExtension plugin (optional)
 │   ├── godot-streamdeck-addon/    Elgato Stream Deck integration
-│   └── godot-git-plugin/          Git version control plugin
+│   └── psd-native/                Native PSD decode accelerator
 │
 ├── font/                          Custom fonts
 ├── bin/                           GDExtension binaries
-├── docs/                          Documentation
+├── docs/
+│   ├── architecture_guide.md      System map and data flows
+│   ├── dependencies.md            Native/runtime provenance and upgrade policy
+│   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
+│   ├── refactor_plan.md           Phased execution and acceptance gates
+│   ├── save_format.md             Versioned avatar/settings compatibility contract
+│   └── windows_installer_plan.md  Installer decisions, release steps, test record (2026-10-21)
+├── tests/
+│   ├── integration/               Isolated production-scene behavioral runner
+│   ├── performance/               Pure, avatar-load, and lifecycle benchmarks
+│   ├── native/                    Native extension lifecycle smokes
+│   └── unit/                      Headless unit and source-contract suites
+├── scripts/                       Local quality-gate entry points
+├── installer/windows/             Inno Setup script + build.ps1 (installer, zip, checksums; 2026-10-21)
+├── CONTRIBUTING.md                Setup, acceptance gates, and change contracts
 └── project.godot                  Godot project configuration
 ```
+
+> Updated: 2026-08-17 — The directory map reflects the constructed menu and
+> settings rebuild and the production-scene integration/performance harness.
+
+> Updated: 2026-08-17 — The main-scene controller map includes the completed
+> avatar and import boundaries from Phase 11.
 
 ---
 
@@ -88,14 +188,76 @@ Registered in `project.godot` under `[autoload]`:
 
 | Singleton          | File                           | Purpose                                              |
 |--------------------|--------------------------------|------------------------------------------------------|
+| `InstanceLock`     | `autoload/instance_lock.gd`    | Single instance; hands a launched avatar file to the running window (must stay first) |
+| `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                         |
 | `Saving`           | `autoload/saving.gd`          | Avatar persistence (JSON + base64 images), settings  |
-| `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input    |
-| `DefaultAvatarData`| `autoload/defaultAvatarData.gd`| Built-in default avatar data                        |
+| `Global`           | `autoload/global.gd`          | Central state manager, mic input, selection, input routing |
 | `UndoManager`      | `autoload/undo_manager.gd`    | Snapshot-based undo/redo with image caching           |
+
+> Updated: 2026-10-21 — **`InstanceLock` comes first and owns launch files.**
+> Windows starts a new process for every double-clicked `.pixlab`. In `_init()`
+> the autoload reads the avatar path from `OS.get_cmdline_args()`, then either
+> listens on a loopback TCP port (OS-assigned, written to `user://instance.port`)
+> or, when a running instance answers the `PIXLAB1` handshake, sends it the path
+> and kills its own process. That happens before `Saving` or any scene
+> controller runs, so a duplicate never loads an avatar or writes settings on
+> exit; it is why the autoload must stay first. The running instance emits
+> `file_requested`, and `AvatarSaveController.open_external_avatar()` waits out
+> any in-flight load or save, then loads the file. At startup
+> `startup_restore(InstanceLock.launch_file)` opens a launch file in place of
+> `lastAvatar`. Files dropped on the window take the same path. Editor runs, web
+> builds and the isolated automated sessions (`--release-smoke`,
+> `--avatar-integration-test`) neither listen nor hand off.
+
+> Updated: 2026-10-21 — **A launch file never skips crash recovery.** The first
+> version loaded a double-clicked avatar outright, so reopening an avatar that
+> way after a crash bypassed the recovery prompt and the next auto-save
+> overwrote the session. `AvatarSaveController.startup_choice()` now judges
+> recovery against `lastAvatar` (the file the session was editing) as before;
+> a launch file only changes what Discard opens, and the prompt names it. A file
+> handed over while the prompt is still up re-asks with that file rather than
+> dismissing it. Once a listener has accepted, a second launch now waits up to
+> `ACK_TIMEOUT_MS` (10 s) for the reply, which only comes when the running
+> instance's main loop polls; the old 500 ms limit could expire during that
+> instance's startup and open a second window that also loaded the file.
 
 Additional parsers (not autoloaded, instantiated on demand):
 - `PSDParser` (`autoload/psd_parser.gd`) — threaded PSD file parsing
-- `APNGParser` (`autoload/apng_parser.gd`) — APNG/GIF detection and sprite sheet assembly
+- `APNGParser` (`autoload/apng_parser.gd`) — APNG detection and sprite sheet assembly
+
+> Updated: 2026-08-06 — `Global` remains the compatibility-facing application
+> state autoload, but runtime ownership is delegated under `autoload/runtime/`.
+> `MicrophoneMonitor` owns exactly one tracked capture player, resolves the MIC
+> bus's effects by type instead of numeric indexes (the capture since
+> 2026-09-19, previously a spectrum analyser), applies the level
+> envelope and speaking transitions, validates device selection, and owns a
+> generation-guarded delayed restart. It never frees unrelated autoload
+> children and shuts down explicitly. Player shutdown clears the native stream
+> before deletion; standalone release smoke sessions do not open the host
+> capture device. `BlinkScheduler` owns deterministic blink timing and
+> random-roll evaluation. `Global` mirrors their established public
+> fields/signals so existing sprite/UI polling remains compatible. Toasts flow
+> through `Global.notification_requested` rather than a retained UI-node
+> pointer. `main.gd` attaches/detaches itself explicitly so scene-bound Global
+> references and interaction modes are cleared during shutdown or scene swaps.
+> Pure transition tests live in `tests/unit/test_runtime_services.gd`.
+
+> Updated: 2026-08-17 — `Global` owns a `SpriteRegistry` populated by each
+> sprite's ready/exit lifecycle. It is now the canonical enumeration and lookup
+> boundary for production code; the `"saved"` group remains on sprite roots for
+> scene/debugging compatibility. The registry prunes invalid objects,
+> atomically handles reused IDs, and rebuilds the set of eye-target IDs at most
+> once per process frame. `SelectionState` separately owns the held layer and
+> repeated-hit cycling. Feature scripts read the compatible
+> `Global.heldSprite` property but mutate it only through
+> `select_sprite()`/`clear_selection()`, and selected nodes are invalidated when
+> they leave the registry. `Global.main`, `spriteEdit`, `spriteList`, `mouse`,
+> and `chain` remain the canonical shared node references, now registered and
+> cleared through paired attach/detach methods. Notifications use
+> `notify_user()` and the existing lifecycle-safe signal; text-focus, Z-index
+> capture, reparent, wiggle-path, eye-target, and key-capture state expose
+> purpose-named methods rather than private-field calls. Boundary contracts live
+> in `tests/unit/test_application_boundaries.gd`.
 
 ---
 
@@ -107,12 +269,131 @@ Key child nodes:
 - `OriginMotion/Origin` — root container for all sprites; bounces vertically on speech
 - `Camera2D` — main viewport camera (zoom 10%-400%, middle-mouse pan)
 - `EditControls` — top menu bar in edit mode
-- `ControlPanel` — right-side streaming controls in view mode
+- `ControlPanel` — viewer mode's top menu bar, plus its popups and zoom readout
 - `SpriteViewer` — left sidebar sprite editor (child of EditControls)
 - `SpriteList` — right sidebar layer tree
 - `Lines` — origin crosshair drawing
 - `PushUpdates` — floating notification system
 - Various file dialog nodes
+
+> Updated: 2026-08-06 — `main.gd` is the compatibility-facing scene
+> coordinator and delegates independent lifecycles under
+> `main_scenes/controllers/`. `CaptureController` owns screenshots, recording
+> viewports/files, FFmpeg discovery/arguments/progress, and deterministic
+> cleanup. `ViewportController` owns resize settling, camera pan/zoom,
+> selection-shadow following, window transparency, and edit/view layout.
+> `AvatarSaveController` owns native save/load dialogs, manual and session-save
+> threads, recovery selection, and save confirmation. Each controller receives
+> `main`, `Global`, and `Saving` explicitly in `setup()` rather than resolving
+> autoloads internally. Existing scene-signal method names remain as thin
+> wrappers on `main.gd`. Pure format, zoom-boundary, recovery-policy, and image
+> encoding contracts live in `tests/unit/test_main_controllers.gd`.
+
+> Updated: 2026-08-17 — `main.gd` is now a 597-line lifecycle and scene-signal
+> facade. `AvatarController` owns transactional avatar assembly, validation,
+> hierarchy reconstruction, save-data construction, edit commands, costume
+> application, and its decode-worker shutdown. `ImportController` owns the
+> PSD/APNG/PNG pipelines, bounded preparation workers, native file dialogs,
+> replacement review, and import cancellation/shutdown. `ImportMatcher` is the
+> pure, deterministic duplicate-name matching policy shared by replacement
+> flows. All receive their scene and autoload dependencies in `setup()` and
+> existing signal method names remain thin `main.gd` facades. A duplicated
+> sprite must set `_skip_ready_reparent` before `add_child()`: `_ready()` runs
+> synchronously on insertion, so setting the guard afterward leaks the deferred
+> reparent timer and can move the clone unexpectedly. Production-scene tests
+> exercise load/save, duplicate, replacement, costume, hierarchy, and shutdown
+> through the real controller graph.
+
+> Updated: 2026-09-17 — **A replace matches a layer's own name first.**
+> `ImportMatcher.match_items` runs two rounds: `layerName` (via
+> `renamed_match_name`, blank for a layer that was never renamed), then the name
+> the layer was imported under (`source_match_name`, which is `sprite_name(path)`).
+> A layer claimed in the first round is not offered again in the second, and
+> duplicate names still match every layer that carries them, as before. The
+> second round is what keeps a rename free: rename a layer and it still matches
+> the source layer it came from. The first round is the only way to follow a
+> layer the artist renamed in the PSD, by renaming the rig's layer to the new
+> name. The cost is that renaming a layer onto another layer's source name takes
+> that match, which the review shows before anything is applied.
+>
+> `replace_review_dialog` names every row with `displayName()` and adds
+> `imported as "<source>"` underneath when the two differ, for matched rows and
+> orphans alike. The orphan list is where the user decides what to delete, so it
+> could not go on naming layers by a name the layer list no longer shows. The
+> single-PNG replace prompt in `ImportController` reads `displayName()` for the
+> same reason, and its `_extract_sprite_name` facade is gone with its last caller.
+
+> Updated: 2026-09-19 — **Every row of the replace review toggles.** Matched rows
+> ("Will Be Replaced") carry a `CheckBox`, ticked by default, in place of the old
+> static ✓, so confirming untouched still replaces every match.
+> `replace_review_dialog._on_replace()` emits only the ticked entries of
+> `_matched_checkboxes`, as it already did for new layers. An unticked match is
+> left as it is and is not an orphan, since the layer is in the source. With
+> nothing ticked and no orphans being removed, `ImportController._on_replace_confirmed`
+> returns before `apply_replacement`, whose `capture_bulk()` would otherwise record
+> an empty history step. Covered by `_test_replace_review_toggles_matches`.
+> Sections with checkboxes ("Will Be Replaced", "New") carry **All** / **None**
+> buttons on their header (`_add_section_header(text, toggles)`, `_set_all`). The
+> buttons hold the section's checkbox array itself, which `setup()` clears in
+> place rather than reassigning, so they act on every row the section ends up with.
+>
+> Updated: 2026-09-19 — **Undoing a replace restores the artwork.**
+> `SpriteState.apply_existing()`, the undo path for a layer that still exists,
+> restored offsets, fields and the normal map but never the diffuse image or
+> `path`. An undone replace kept the new art and a `psd://` path, and a later save
+> wrote a layer the loader could not reopen ("Error opening file 'psd://…'").
+> It now restores the image first, through `spriteObject.restoreImage(img, path)`,
+> whenever the snapshot's `imageData` is a different object from the layer's.
+> The undo image cache makes snapshots share Image objects, so identity means the
+> artwork changed and any other undo rebuilds nothing. The swap lives in
+> `ui_scenes/selectedSprite/sprite_image_swap.gd`. `replaceSprite(path)` (a file),
+> `replaceSpriteFromData()` (a PSD layer, with the legacy canvas shift) and
+> `restoreImage()` are thin facades over it, and they share one rebuild of the
+> texture, normal-map check, collision and handles, where the first two had each
+> carried a copy. Only a replace announces a dropped normal map; a restore
+> applies the snapshot's own normal map straight after. The move also keeps
+> `spriteObject.gd` under the `test_sprite_state` facade size ceiling. Covered by `_test_replace_undo_restores_artwork`
+> (undo and redo).
+
+> Updated: 2026-08-18 — **Legacy full-canvas replace compatibility.** Rigs built
+> before PSD import existed carry one full-canvas PNG per layer: the artwork sits
+> inside its own transparent padding, so layers line up by construction. PSD
+> layers are cropped to their own bounds, so replacing a legacy layer with one
+> drops the padding that was carrying its placement. `ImportController` now runs
+> `LegacyCanvasCompat.evaluate()` on the live rig before the review dialog opens.
+> Uniform still-layer sizing plus at least one filesystem-backed layer path
+> identifies the legacy shape; a PSD authored at other dimensions is refused
+> outright through `legacy_replace_prompt.gd`, since cropped layers cannot be
+> re-aligned to a canvas of a different size. Otherwise the user chooses
+> compatibility placement, a plain replace, or cancel, and the answer rides to
+> `AvatarController.apply_replacement()` as `legacy_canvas`.
+>
+> The placement is arithmetic, not re-padding: padding every layer back out costs
+> a full-canvas texture and alpha scan per layer and leaves the rig permanently in
+> the legacy shape. The layer's Sprite2D is centred, so its artwork centre sits at
+> local `offset` and the node origin (the rotation/drag pivot) lands at texture
+> pixel `size/2 - offset`. Holding `position` still and re-deriving
+> `offset = offset + (layer centre - canvas centre)` keeps that pivot on the canvas
+> coordinate it already occupied. Compensating with `position` instead would drag
+> the pivot onto a different part of the artwork and carry every linked child
+> layer with it. The correction is applied per layer (`is_legacy_layer`), so a rig
+> that mixes legacy layers with later cropped ones corrects only the former, and
+> it degenerates to a no-op when the replacement spans the whole canvas.
+> `replaceSpriteFromData()` takes the shift as an optional third argument and also
+> moves the wiggle rest path, which is stored in texture pixels
+> (`WiggleRuntime.remap_path`). `ImportMatcher.items_from_psd()` now drops `_NRML`
+> layers, which previously entered a replace as ordinary visible artwork;
+> `psd_import_dialog` asks `ImportMatcher.is_normal_layer()` for the same rule.
+> Normal maps are still cleared on a size change, so a legacy replace drops them.
+> Placement math and detection are covered in `tests/unit/test_pure_behavior.gd`;
+> the production runner verifies a marker pixel lands on the same screen position
+> across a cropped replacement.
+
+> Updated: 2026-08-06 — Global background capture is a dynamically instantiated
+> optional boundary. `main.gd` checks for `BackgroundInputCapture` through
+> `ClassDB`, connects its two signals when available, and otherwise keeps
+> foreground input working with one warning. `main.tscn` no longer requires the
+> native custom class merely to instantiate the application.
 
 ---
 
@@ -120,7 +401,7 @@ Key child nodes:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Exit | Add | Duplicate | Import PSD | Replace | Save | …  │  ← EditControls (menu_bar_bg, 28px)
+│ Switch to Player     Import | Duplicate | Replace | Save | …  │  ← EditControls menu bar (28px)
 ├──────────────┬──────────────────────────┬───────────────────┤
 │              │                          │  [speak][blink]   │
 │  Sprite      │                          │  [link][unlink]   │
@@ -129,7 +410,7 @@ Key child nodes:
 │  sidebar,    │       here, click to     │  Layer list       │
 │  265px)      │       select)            │  (scrollable)     │
 │              │                          │───────────────────│
-│  - 3D preview│                          │  Costume buttons  │
+│  - 2D preview│                          │  Costume buttons  │
 │  - Sliders   │                          │───────────────────│
 │  - Properties│                          │ [Details|Eye|Phys]│  ← tab bar
 │  - Dividers  │                          │  active tab body  │  (scrollable)
@@ -147,7 +428,382 @@ Key child nodes:
 
 > Updated: 2026-06-01 — **Physics tab Presets.** A **Presets** section (top of the tab) holds a wrapping `HFlowContainer` of chips: 2 built-in starting points (`_BUILTIN_PRESETS` — Fluffy / Stiff) plus the user's saved customs (faint-pink tint). Click a chip → `_on_preset_pressed` applies the `_PRESET_KEYS` "feel" bundle (stiffness/damping/springiness/shape-return/weight/reactivity/motion-intensity/wag*/max-bend/Bones — NOT coverage, path, or enable/children) to the held layer (undoable; live via the per-frame `configure`). **+ Save current as preset** reveals a `LineEdit` (Enter captures the current layer's feel as a named custom; total presets are capped at `_MAX_PRESETS` = 10 incl. built-ins — a new name past the cap is refused, overwriting an existing one is fine); **right-click** a custom chip removes it. Customs persist in `Saving.settings["wigglePresets"]` (written immediately via `Saving.write_settings`). Preset controls enable only with an active wiggle layer. (Also: the **Bones** slider is `wiggleSegments`, renamed from "resolution".)
 
+> Updated: 2026-09-17 — **The costume strip greys a costume an ancestor blocks.** A linked child is a real node descendant (`Global.linkSprite` calls `sprite.reparent`), so Godot's inherited visibility hides it whenever an ancestor is off for the current costume, whatever the child's own `costumeLayers` bit says. The strip used to read that bit raw and light the button anyway, promising a layer the viewer never sees. `viewer._refresh` now walks `_ancestor_costume_chain(sprite)` (nearest parent first, cycle-guarded) and passes it to the pure `SpriteVisibility.costume_allowed_by_ancestors(chain, costume)`. A button lights only when the layer's own bit is set **and** every ancestor admits that costume. This is display only: the stored bit is untouched, the button still toggles it, and the child lights up again as soon as the ancestor rejoins the costume. Making a suppressed child actually render would mean abandoning node-tree visibility inheritance, which is out of scope here. The eye in the layer list was already honest (`sprite_list_object._update_vis_display` uses `is_visible_in_tree()`). Manual eye-hiding on an ancestor deliberately does not grey the strip, since that is a transient toggle rather than costume membership.
+
 > Updated: 2026-06-04 — The **Eye Tracking** tab is renamed **Tracking**. Its enable checkbox is now scope-labelled by `refreshEyeUI()`: **"Enable (Layer)"** when a layer is selected (per-layer toggle), **"Enable (Global)"** otherwise (the global kill switch).
+
+> Updated: 2026-08-17 — **Both sidebars are scene facades below 700 lines.**
+> The right facade delegates row creation/hierarchy/filtering/scrolling to
+> `LayerTreeController`, tracking scope/controls/tooltip/pick-whip behavior to
+> `EyeTrackingPanel`, and layer flags to `LayerDetailsPanel`; its established
+> `Global.spriteList` methods remain compatibility wrappers. The left facade
+> delegates selected-layer preview and field synchronization to
+> `SelectionPresenter`, normal-map file actions to `NormalMapPanel`, and
+> one-time circle textures to `RotationPreviewRenderer`, alongside the existing
+> animation component. `Global.spriteEdit` and its `setImage()`,
+> `setLayerButtons()` surface remains stable. The left
+> scene no longer instantiates its replaced 3D viewports, old top buttons,
+> legacy wobble sliders, costume strip, visibility controls, or eye controls;
+> old saves still migrate legacy wobble data in the sprite runtime. Extracted
+> components receive their state/services explicitly and never reach into a
+> sibling panel's private fields.
+
+---
+
+## Menu Bar (both modes)
+
+> Added: 2026-08-07 — Viewer mode rebuilt as a constructed layout on a shared menu bar.
+
+Both modes draw their top bar from one component, `ui_scenes/common/menu_bar.gd`
+(`class_name AppMenuBar extends Control`; the name is prefixed because Godot 4
+already ships a native `MenuBar`). Chrome, item styling, resize behaviour and
+popup placement live there once, so the two bars cannot drift apart.
+
+**Layout is constructed, not placed.** Three container zones. The side zones ride
+a row pinned to both edges; the center zone sits in its own full-width
+`CenterContainer`, so it centres on the **window**:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ left zone                center zone               right zone│  28px
+└──────────────────────────────────────────────────────────────┘
+   pinned left        centred on the bar            pinned right
+```
+
+> Updated: 2026-08-07 — The center zone used to sit between the two side zones,
+> balanced by expanding spacers. That reads as centred only while the two sides
+> happen to be the same width: once the viewer bar's right zone grew to hold the
+> meters and Settings, it silently dragged the centre strip left. The center zone
+> now has its own container spanning the bar, and is centred to within a pixel
+> regardless of what the sides hold.
+
+Edit mode keeps its editing actions in the center and puts the mode switch in the
+left zone; the viewer bar uses all three.
+
+- **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center; `Pause Motion` right. The file now only declares items; it owns no styling.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a gear icon for Settings, right.
+
+> Added: 2026-09-16 — **Motion pause** (edit bar, right zone). A toggle button
+> that holds the whole avatar at its authored rest pose so a rig can be edited
+> against what it actually looks like at rest. It sets `Global.motionPaused`; every
+> consumer reads `Global.motion_paused()`, which also requires `main.editMode`, so
+> swapping to player mode resumes motion without clearing the toggle. The flag is
+> runtime-only: never saved, never in undo, and cleared by `Global.detach_main`.
+> Two consumers. `main.gd` `_process` folds it into the existing NDI crop freeze
+> branch, pinning `OriginMotion.position.y`, `yVel` and `bounceChange` at rest.
+> `spriteObject._process` takes an early branch that calls
+> `SpriteRestPose.apply(self)` (`ui_scenes/selectedSprite/sprite_rest_pose.gd`)
+> instead of advancing anything: the animator is reset and `_animRot`/`_animTrans`,
+> eye-track offset/rotation and `_micRot` are zeroed, `wob` returns to origin, the
+> dragger and `DragOrigin` snap onto it, sprite rotation/scale reset, frame
+> animation returns to frame 0, and `_wiggleRuntime.rest()` snaps the chain onto
+> its rest path and re-places linked children on it (which by construction lands
+> each child exactly where it was authored). `tick` does not advance, so frame
+> animation and the wiggle auto-wag are frozen too. The rest pose is re-applied
+> every frame rather than once on entry, so a layer moved or re-rigged while
+> paused still shows its true rest position. The rest pass arms `_force_drag_snap`
+> so unpausing does not read the pause as one huge frame of movement and feed it
+> into rotational drag and stretch. The selection chrome moved out of `_process`
+> into `_update_selection_gizmos()` so both the live and paused paths draw it.
+
+> Updated: 2026-09-19 — **A frame shows the pause on the canvas.** The button's
+> colour alone was easy to miss. `main_scenes/pause_frame.gd` is a `Node2D` that
+> `EditControls` adds as its first child, so the menu bar and sidebars draw over
+> it. While `Global.motion_paused()` holds, it draws a 3 px stroke in the pause
+> button's active tone (an inner glow band was tried and dropped), fading in and
+> out over `FADE_SECONDS` (0.25 s, eased with `smoothstep`, frame-rate
+> independent; a fade-out keeps its last rect), around
+> `SidebarUI.edit_canvas_rect()`: below the menu bar and between the sidebars'
+> visual edges. That rect is now the single definition `is_over_app_chrome()` also
+> tests against, so the frame's edges are exactly where clicks stop reaching the
+> canvas. It polls each frame and only redraws when the pause or the bounds
+> change, so it follows a dragged sidebar or a window resize. Living under
+> `EditControls` puts it on the edit page only and keeps it out of NDI output
+> and recordings. Covered by `_test_pause_frame` and
+> `_test_editor_chrome_contract`.
+
+> Updated: 2026-08-17 — The two mic controls are **threshold markers, not
+> knobs**. Each is a meter with a slider riding on it, both on the same scale
+> (`SettingsSchema.MIC_LEVEL_RANGE` 0.2, `MIC_DURATION_RANGE` 1.0), and the limit
+> handed to `MicrophoneMonitor` IS the thumb position: a trigger holds while the
+> bar behind the thumb has reached it. `Level` compares the live signal, so the
+> avatar speaks once the bar arrives at the thumb; `Duration` compares the decay
+> that follows a trigger, so a thumb further left holds the mouth open longer.
+> Two things this depends on. The meter spans exactly the grabber's travel
+> (`METER_EDGE`), because with `center_grabber` the grabber's centre crosses the
+> slider's whole rect, so a full-width meter drifted up to 7 px from the thumb;
+> alignment was measured in rendered pixels, not by eye. And settings schema 2
+> mirrors the stored `volume` / `sense` once, since schema 1 stored
+> `range - thumb` (the slider read as a sensitivity knob). Defaults moved to the
+> mirrored values, so upgrades keep the thresholds they had.
+
+> Updated: 2026-09-19 — **Voice detection measures the samples, not a spectrum
+> bin.** The note above is superseded for units and measurement; the
+> threshold-marker model stands.
+>
+> - **Bus.** `MIC` (muted) carries `AudioEffectHighPassFilter` (90 Hz, 12 dB/oct),
+>   `AudioEffectLowPassFilter` (5 kHz) and `AudioEffectCapture` (0.2 s buffer).
+>   The spectrum analyser and the unused Record effect are gone.
+> - **Level.** `MicrophoneMonitor.sample()` drains every captured frame each
+>   frame and takes `buffer_rms()`, using the louder channel of each frame because
+>   a mono microphone can arrive on one channel only. A frame with no new audio
+>   keeps the last RMS rather than reading as silence. `follow_envelope()` is a
+>   one-pole follower, attack 15 ms and release 70 ms (200 ms at first; shortened
+>   so the bar falls faster), written with
+>   `exp(-delta / tau)` so it does not depend on the frame rate. `to_db()` converts
+>   to dBFS, floored at `FLOOR_DB` (−60).
+> - **Gate.** Opens at `threshold_db` and closes `HYSTERESIS_DB` (4 dB) below it.
+> - **Duration.** `duration` jumps to `DURATION_FULL_MS` (1000) whenever the gate
+>   is open, and drains 1 ms per ms once it closes. `speaking` holds while the
+>   gate is open or `duration > duration_threshold`, so the mouth closes when the
+>   bar falls past the thumb, `DURATION_FULL_MS - thumb` ms after the voice stops.
+>   A thumb further left holds longer, as the Duration bar always behaved. A
+>   first version showed the hold remaining instead, which only ever reached the
+>   thumb.
+> - **Meters.** Level runs from `MIC_LEVEL_MIN_DB` to `MIC_LEVEL_MAX_DB` (−60 to
+>   0 dBFS) and shows `Global.micLevelDb`. Duration runs from 0 to
+>   `MIC_DURATION_FULL_MS` and shows `Global.micDuration`.
+>   `menu_bar.add_level_meter` gained `meter_min` for the dB scale. `Global`'s
+>   `volume` / `volumeSensitivity` / `volumeLimit` / `senseLimit` / `spectrum`
+>   became `micLevelDb` / `micDuration` / `micThresholdDb` /
+>   `micDurationThreshold`.
+> - **Settings.** Schema 3 stores `micThresholdDb` and `micDurationThreshold`.
+>   Older `volume` / `sense` are converted once and removed. The level uses
+>   `20·log10(volume)`, which is approximate, since the old value was one FFT
+>   bin. The duration uses the old hold, `ln(1 / sense) / 2` s (exact for the old
+>   `e^-2t` decay), as `1000 − hold_ms`. A key that was never stored takes
+>   today's default.
+>
+> Why: the old reading was the loudest single bin of the latest 256 samples, taken
+> once a frame. It saw about a third of the audio, landed on a random point in
+> each pitch period, ignored energy spread over harmonics, and was shown on a
+> linear bar where −30 dBFS filled 16%. On simulated voice-like signals it varied
+> 36–58% frame to frame while speaking, against about 10% now, and read about
+> 5 dB low on a vowel. Covered by `test_runtime_services` (RMS, envelope, gate,
+> hysteresis, Duration fill and drain, mute), `test_persistence` (conversion) and
+> `test_release_contract` (bus layout).
+
+> Updated: 2026-08-07 — The viewer bar gained the avatar file actions. Both bars
+> now take `Save Load | Clear Reset` from `MenuActions.add_avatar_file_actions`
+> (`main_scenes/menu_actions.gd`), declared once so the two modes cannot drift in
+> wording, order, grouping or wiring. On the viewer bar the group comes last in
+> the left zone, which keeps the destructive pair furthest from the frequently
+> pressed mode switch and puts it in the same relative position as in edit mode.
+
+> Updated: 2026-08-07 — The mode toggle is labelled `Switch to Editor` /
+> `Switch to Player`, is toned like any other item, and leads the left zone on
+> both bars, so it sits in the same place whichever mode you are in. Moving it
+> out of the edit bar's center strip shifts that strip slightly right of the
+> viewport centre, because the center zone is centred between the left and right
+> zones rather than against the window.
+
+> Updated: 2026-08-07 — Viewer bar rearranged: mode switch far left, the shared
+> file actions in the center, and `Duration  Level  Settings` filling the right
+> zone so Settings closes the bar opposite the mode switch. The green NDI
+> telltale is gone; NDI state is reported in the settings panel's NDI section. The `Mic`
+> button is built but hidden pending its move into the settings panel; its device
+> popup and right-click mute stay wired so that becomes a relocation rather than
+> a rewrite. With the file actions now in the center, the crowding rule can no
+> longer assume the center is expendable: `set_collapsible(node)` nominates the
+> item that yields, and the viewer bar nominates its mic-meter group.
+
+**Item factories** are the only supported way to put something on a bar:
+`add_button`, `add_icon_button`, `add_separator`, `add_label`, `add_group`,
+`add_level_meter`.
+`set_button_tone` / `set_button_enabled` restyle in place.
+
+**Sizing gotcha.** A `Control` parented to a `Node2D` inherits a zero-sized
+anchorable rect, so anchors collapse it to its minimum width. The bar therefore
+sets its own `size` from the viewport in `_fit_to_viewport()` (reconnected to
+`Window.size_changed`) and positions itself directly. Its children anchor
+normally, because their parent is a `Control`.
+
+**Crowding.** Nothing warns when the centred strip runs into a side zone; they
+simply draw over each other. `set_collapsible(node)`
+nominates the one item that yields, and `_apply_crowding()` hides it when
+`zones_fit()` says the zones cannot clear each other, restoring it as soon as
+they can. Because the strip is centred on the bar, the binding constraint is the
+**wider** side zone, not the sum: two layouts with identical total content can
+differ, one fitting when balanced and the other colliding when lopsided. Which item is expendable is the bar owner's judgement, not the
+component's: the viewer bar nominates its mic-meter group so the buttons around
+it stay reachable, and a bar that nominates nothing never collapses. The
+measurement always counts the collapsible item as if it were showing, so hiding
+it cannot change the answer and the state cannot oscillate. It re-runs on window
+resize and whenever a zone's minimum size changes.
+
+### Auto-reveal (viewer mode only)
+
+The viewer bar hides off the top edge and slides in while the cursor is near the
+top of the window. `configure_auto_reveal(true)` arms it; the edit bar stays
+pinned. Tunables are constants at the top of `menu_bar.gd`:
+
+| Constant | Meaning |
+|---|---|
+| `REVEAL_BAND_RATIO` (0.125) | fraction of window height that summons the bar |
+| `HIDE_BAND_RATIO` (0.180) | fraction the cursor must leave to dismiss it |
+| `BAND_MIN_PX` / `BAND_MAX_PX` | clamp, so the band works on both a tall desktop window and a small avatar window |
+| `SLIDE_SPEED` | reveal/conceal rate |
+| `LINGER_SECONDS` (2.0) | how long the bar stays up after the cursor leaves |
+
+The hide band is the larger of the two, so the bar cannot flicker on the
+boundary. The slide is a `_reveal` float advanced per frame (not a `Tween`), so
+re-entering mid-conceal reverses smoothly. `set_pin(key, bool)` holds the bar
+open while a popup is open or a slider is being dragged, when the cursor is
+legitimately outside the band. Pure helpers `reveal_band()` and `should_reveal()`
+are unit tested in `tests/unit/test_ui_components.gd`.
+
+> Updated: 2026-08-17 — Leaving the band no longer dismisses the bar straight
+> away. `_linger` carries the seconds the bar is still owed: `next_linger()`
+> recharges it to `LINGER_SECONDS` on **any** frame the bar is wanted and drains
+> it otherwise, and `_process` holds the bar while it is above zero. Re-entering
+> mid-window therefore restarts the count from full rather than resuming it, and
+> because a pin counts as "wanted", closing a popup leaves the same reprieve.
+> `snap_hidden()` clears it, so returning focus to the window cannot pop a
+> deliberately concealed bar back open. Tested through the real `_process`,
+> stepped by hand: outside a tree `_wants_reveal()` is false and pins
+> short-circuit ahead of it, so a pin stands in for the cursor with no window and
+> no mouse involved.
+
+`revealed_height()` feeds canvas hit-testing, so a concealed bar never steals
+clicks from the avatar (see Click-to-Select → Panel click-through guard).
+
+### Popups
+
+`anchor_popup(item, popup, size)` hangs a bar-owned popup from the item that
+opens it, clamped to the viewport. The settings menu and mic device list are
+still their original scenes; only their placement moved here, so a later popup
+redesign has one seam to work against rather than scattered literals.
+
+---
+
+## Settings Panel
+
+> Rewritten: 2026-08-07 — `ui_scenes/settings/settings_menu.gd`.
+
+A fixed-size dropdown (420x380) from the menu bar's Settings button, built
+entirely from the shared vocabulary: `AppTabBar` for the strip, `FormUI` for the
+labelled rows, `SidebarUI` for the palette. It replaced a hand-placed panel whose
+children all carried literal coordinates, whose scene file held a 27 KB node tree
+including ten spelled-out hotkey rows, and which grew its own background and
+shifted its own position as code-built sections were appended to it.
+
+Six tabs are declared in `_TABS`; each is built and refreshed by its matching
+`*_settings_tab.gd` component:
+
+| Tab | Contents |
+|---|---|
+| Audio | input device list, mute |
+| Display | background colour presets and picker, texture filtering, max FPS |
+| Motion | bounce force/gravity, bounce on costume change, blink speed/chance |
+| Hotkeys | the ten costume bindings |
+| Output | NDI (enable / width / mode / manual size / source name), recording (format, fps) |
+| Updates | running version (installed/portable), daily check, pre-release opt-in, check now, status (2026-10-21) |
+
+The tab strip is pinned at the top and the active body scrolls, matching the
+right sidebar. `setvalues()` re-reads every control from live state; it runs at
+startup and again on each open. To add a setting, add a row to the matching tab
+component; to add a category, add a component and tab title. The 123-line
+`settings_menu.gd` facade owns only the frame, tab visibility, hover state, and
+the public `setvalues()`/`awaitingCostumeInput` compatibility surface.
+
+> Updated: 2026-08-17 — Settings persistence and callbacks now live with their
+> owning Audio, Display, Motion, Hotkeys, or Output component. Every component
+> receives `Global`/`Saving` explicitly, uses `FormUI` rows and the shared
+> slider theme, and is constructed as part of the real production settings
+> scene. The hotkey component exposes its capture slot through the facade's
+> read-only compatibility property, so `main.gd` does not depend on component
+> internals.
+
+**Audio tab.** Microphone selection used to be a separate `MicInputSelect` popup
+of `mic_select_button.tscn` rows hanging off its own bar button. That scene, its
+script and the bar's `Mic` button are all gone; the Audio tab lists
+`AudioServer.get_input_device_list()` directly, marks the active device with an
+accent dot, and carries the mute toggle that used to be a right-click on the bar
+button.
+
+### Shared UI components
+
+`ui_scenes/common/` is the design system. Nothing in it knows about avatars:
+
+| File | Role |
+|---|---|
+| `sidebar_ui.gd` | palette, geometry constants, slider theme, chrome hit-testing |
+| `form_ui.gd` | labelled control rows: sections, sliders, checks, dropdowns, text fields |
+| `tab_bar.gd` (`AppTabBar`) | the tab strip, shared by both sidebars and the settings panel |
+| `menu_bar.gd` (`AppMenuBar`) | the top bar for both modes |
+| `modal_dialog.gd` (`ModalDialog`) | recovery prompt and every progress dialog |
+
+> Updated: 2026-08-07 — The tab strip moved from
+> `ui_scenes/spriteList/sidebar_tab_bar.gd` to `ui_scenes/common/tab_bar.gd` and
+> was renamed `SidebarTabBar` to `AppTabBar`, since the settings panel now uses
+> it too. It builds its children on demand rather than only in `_ready`, so a
+> caller may add tabs before the strip enters the tree.
+
+> Updated: 2026-09-17 — **The underline slides between tabs.** `_layout()` now
+> only owns the underline's *target* (`_active * segment`) and its width; the
+> position is held in `_underline_x` and eased toward that target by `_process`.
+> The slide covers `SLIDE_WEIGHT` (0.25) of the remaining distance per 60 fps
+> frame, run through `MotionTiming.smooth()` so it takes the same time at any
+> frame rate, and snaps once it is within `SLIDE_SNAP` (0.5 px). It is polled
+> rather than tweened, matching the rest of the app, but `_process` is switched
+> off in `_ensure_built()` and again on arrival, so an idle strip costs nothing:
+> defining `_process` turns processing on by default, which is why the explicit
+> disable is there. Only a tab the user picked slides (`set_active(i, true)`);
+> the owner's startup restore passes `emit = false` and snaps, so the strip does
+> not animate in from the first tab on every launch, and a reflow snaps too
+> unless a slide is already in flight. The target is recomputed from the current
+> width each frame, so resizing the sidebar mid-slide retargets rather than
+> jumping. Covered by `test_ui_components._test_tab_underline_slide`.
+
+---
+
+## Modal Dialogs
+
+> Added: 2026-08-07 — one modal component, `ui_scenes/common/modal_dialog.gd`.
+
+Session recovery, save/load progress, PSD/APNG import progress and video
+encoding all build from `ModalDialog`. It replaced two near-identical builders
+(`main._create_progress_dialog` on the UI layer and `main._create_import_progress_dialog`
+in world space) whose children were placed by hand and whose palettes had drifted
+apart.
+
+- Constructed: a viewport-covering `Control`, a `MOUSE_FILTER_STOP` scrim, and a `CenterContainer` holding the panel. It stays centred at any window size with no per-frame repositioning; the old builders recentred from `_process` and still froze at the viewport size they were created with.
+- The scrim is the modal input guard. World-space dialogs needed a `canvas_input_blocker` Area2D because they had no scrim; `psd_import_dialog` and `replace_review_dialog` still use that mechanism.
+
+> Updated: 2026-08-17 — What actually stops canvas selection during a world-space
+> dialog is `main.isFileSystemOpen()`, cached each frame into
+> `main.fileSystemOpen` and checked at the top of `Global.select()`. Every such
+> dialog has to appear in that function; the single-PNG replace prompt did not,
+> so clicking the canvas during it moved the replacement onto another layer.
+> Dialogs that act on the held layer (both replace prompts) must return true
+> there **without** clearing `heldSprite`, and must capture their target when
+> they open rather than read the selection when they are answered. Layer rows are
+> Controls and never reach the canvas path, so `sprite_list_object._select()`
+> checks the same flag. Note the `canvas_input_blocker` guard inside
+> `Global.select()` cannot fire from the mouse path: `mouse_cursor` filters those
+> areas out of the array before calling it. The group is still what keeps blocker
+> areas from being treated as selectable layers.
+- `visibility_layer = 2` keeps dialogs out of NDI output, which the save progress dialog previously did not do.
+- Callers compose: `set_title`, `add_message`, `add_progress_bar` / `set_progress`, `add_actions`. `main._create_progress_dialog(text)` is the one-line helper for progress dialogs and attaches to `UILayer` itself.
+
+Controllers under `main_scenes/controllers/` are copied into the isolated test
+workspace, which has **no global script class registry**. They must reference
+other scripts through `preload` (`ModalDialogUI`, `SidebarUIFactory`), never by
+bare `class_name`. A bare name compiles in the editor but fails there, and the
+failure silently drops the rest of that suite; `test_main_controllers` now opens
+with a compile guard that turns this into a visible failure.
+
+> Updated: 2026-08-17 — `scripts/run_tests.sh` now runs two complementary
+> layers. The isolated project keeps pure/unit/source contracts deterministic;
+> `tests/integration/avatar_scene_runner.tscn` boots `main.tscn` with the real
+> autoload and UI graph and exercises the complete avatar loader. The
+> `--avatar-integration-test` argument is handled centrally by
+> `Saving.is_isolated_session()`: it uses schema defaults, suppresses settings
+> persistence and startup recovery, and prevents microphone/device startup, but
+> does not replace the production load, worker, sprite, hierarchy, costume, or
+> animation paths. Fixtures cover all ten costumes, effective ancestor
+> visibility, unsigned IDs/references, nested hierarchy, legacy idle sway,
+> rejected duplicate IDs, and a persisted save/load round trip.
 
 ---
 
@@ -157,12 +813,119 @@ Selection in edit mode flows through these components:
 
 1. **`mouse_cursor.gd`** — listens for left-click via `_unhandled_input`, sets `_click_pending`
 2. **`_process()`** in mouse_cursor — when `_click_pending` is true, performs a direct physics space query using `PhysicsDirectSpaceState2D.intersect_point()` at the current mouse position
-3. **`Global.select(areas)`** — receives the array of Area2D hits, resolves parent chain (3 levels up from Area2D to sprite root), handles cycling when clicking the same spot repeatedly, sets `Global.heldSprite`
+3. **`Global.select(areas)`** — receives the array of Area2D hits, resolves each through `sprite_from_hit_area()` (the single owner of the required three-level parent walk), and delegates repeated-hit cycling and the held layer to `SelectionState`
 4. **UI panels update** — SpriteViewer and SpriteList read `Global.heldSprite` each frame to show/hide controls. When `heldSprite` is null, the SpriteViewer disables all sliders/buttons and dims the panel to 35% opacity; all signal handlers also have null guards as a safety net. (Updated: 2026-02-16)
 
 ### Selection lifecycle
 
-`Global.heldSprite` must be nulled before freeing sprites to avoid dangling references. Both `_on_clear_avatar_pressed()` and `_on_load_dialog_file_selected()` set `Global.heldSprite = null` before calling `origin.queue_free()`. The undo system's `_restore_full()` does the same. (Updated: 2026-02-16)
+> Updated: 2026-08-17 — Call `Global.select_sprite()` and
+> `Global.clear_selection()` rather than assigning the held-layer property.
+> `unregister_sprite()` automatically clears a selected sprite during its exit
+> lifecycle, while avatar load, clear, costume, and undo paths clear selection
+> before freeing or replacing scene nodes. `SelectionState.changed` is re-emitted
+> as `Global.selection_changed` for consumers that need event-driven behavior;
+> the existing UI remains intentionally polling-based.
+
+> Updated: 2026-09-19 — **`heldSprite` is read-only, and the page switch no
+> longer relies on clearing it.** The property has a getter onto
+> `SelectionState.current` and, since this update, a setter that only
+> `push_error`s. Without that setter GDScript writes a hidden backing field the
+> getter never reads, so `viewport_controller.swap_mode()`'s
+> `_global.heldSprite = null` silently did nothing from the day the property became
+> a view (2026-08-17). Two things had depended on it. The selection outline and
+> origin handle stayed on the player page, and the edit page's canvas modes,
+> which only ended in `Global._process`'s "nothing selected" branch, survived the
+> switch. Reparent mode's chain line was drawn on the player page.
+>
+> The fix separates the two. The selection now deliberately survives a page
+> switch, so the editor comes back with the same layer. Its chrome is gated on
+> the page: `spriteObject._update_selection_gizmos()` requires
+> `Global.main.editMode`. `Global.end_edit_interactions()` ends reparenting (and
+> hides the chain), origin dragging, ribbon path editing and the eye-track pick,
+> and `swap_mode()` calls it. `test_application_boundaries` now fails on any
+> assignment to `heldSprite` in production code, matched by regex, where it
+> previously checked only the literal `Global.heldSprite = null` and missed
+> `_global.`. Covered by `_test_player_page_hides_edit_chrome`.
+
+> Updated: 2026-09-19 — **A key capture ends with the UI that armed it.** There
+> are three. The animation clip "Bind key" (`awaitingAnimKeyBind`) and the layer
+> visibility binding (`awaitingToggleBind`) are armed from the editor's sidebars
+> for the selected layer. `Global.cancel_layer_key_captures()` ends both, and runs
+> from `end_edit_interactions()` (the page switch) and from `_on_selection_changed`
+> when the active layer changes (not on multi-select edits that keep it). The
+> costume hotkey rebind belongs to Settings, and
+> `hotkey_settings_tab.cancel_capture()` runs when the panel stops being visible in
+> the tree, by closing it or by leaving the player page.
+>
+> Before this, all three outlived their UI, and the next key pressed anywhere was
+> swallowed as a binding: a clip key or a layer's toggle key on the player page,
+> or a costume hotkey. While the visibility binding waited, every layer's toggle
+> key was also ignored (`spriteObject.visToggle`). The visibility section and the
+> costume tab wait on main's key signals across frames. Each keeps a serial,
+> bumped on start and on cancel, and checks it after every `await`, so a cancelled
+> capture neither binds when the signals finally arrive nor clears a newer
+> capture's state. The visibility capture binds to the layer it was armed for, not
+> whatever is selected when the key arrives. Covered by
+> `_test_key_captures_end_with_their_ui`.
+
+### Cycling down a stack of overlapping layers
+
+> Added: 2026-09-16 — Clicking a stack selects its topmost layer; clicking again
+> steps to the next layer down and wraps at the bottom. Two things had to change
+> for that to hold on a live avatar.
+>
+> **The step is anchored to the held layer, not to a stored index.**
+> `SelectionState.choose_from_hits` finds the currently selected layer in the new
+> candidate list and takes the one after it, falling back to the top when it is
+> not there; `_last_hits`/`_hit_index` are gone and `reset_click_cycle()` is now a
+> no-op kept for callers. The old index was keyed on the exact ordered candidate
+> array, and the avatar never stops moving (bounce, wobble, animation clips), so
+> the same screen point resolves to a different array almost every click: measured
+> at a human click rate over a moving rig, the list changed on 10 of 12 clicks, and
+> each change reset the index to the top. That is what made cycling look broken,
+> and a click landing back on the already-selected top layer look like it had not
+> registered at all.
+>
+> **The point query asks for room for every layer.**
+> `PhysicsDirectSpaceState2D.intersect_point` keeps 32 results by default and
+> silently drops the rest, in broadphase order. Since each layer's collider became
+> its whole image rectangle (see below), a rig of canvas-sized layers puts a
+> single click point inside far more colliders than that: on a real 54-layer
+> avatar, one point sat inside 55 and the query returned 32 of them. Whole layers
+> vanished from the candidate list at random, and the set shifted whenever the
+> avatar or the camera moved, which is why selection missed, why cycling skipped
+> layers, and why nudging the view could make a layer pickable again. The query
+> now passes `Global.sprite_count() + 16`, since each layer contributes one shape.
+>
+> **The candidate ordering is total and stable over time.**
+> `mouse_cursor._sort_top_first` orders by z, then depth-first draw order under
+> `OriginMotion/Origin`. Godot's sort is not stable and the physics query returns
+> hits in broadphase order, which shifts as the avatar moves, so with only z to
+> compare, layers sharing a z came back in a different order from one click to the
+> next: six distinct orders over twelve clicks, measured. Draw order is the correct
+> tie-break because Godot draws equal `z_index` in tree order, so the layer later
+> in the tree is the one actually on top.
+>
+> The order deliberately does NOT read talk/blink fade, which it used to: layers
+> whose talk/blink state is not active right now are dimmed to 20% in edit mode
+> rather than hidden, and that bucket flips with the microphone and the blink
+> timer several times a second. Measured on a real rig with the mic live and the
+> avatar standing still, the top of the candidate list alternated on every click
+> and the cycle never came down the stack. Stacking order is what the user is
+> pointing at, so it is the only thing the order reads.
+>
+> `mouse_cursor` also gives the alpha test a 3-screen-pixel tolerance ring
+> (`PICK_TOLERANCE_PX`). The exact cursor pixel is tried first and decides the
+> answer whenever it hits anything; the ring only rescues a click that would
+> otherwise resolve to nothing and therefore clear the selection, which a single
+> texel sampled on a moving, soft-edged layer regularly did.
+>
+> Motion pause (see the menu bar section) also holds talk/blink at rest, so the
+> shown/dimmed layers stop swapping while a rig is being edited.
+>
+> `tests/integration/avatar_scene_runner._test_click_cycling` covers this through
+> the real pick path (physics broad phase, alpha test, ordering) with the rig in
+> motion and only the cursor position injected.
 
 ### Mouse filter configuration
 
@@ -180,15 +943,394 @@ Interactive controls (buttons, sliders, scroll containers) keep the default `MOU
 
 Because the sidebar/menu backgrounds use `MOUSE_FILTER_IGNORE` (above), a canvas click over a panel still reaches `mouse_cursor.gd` and runs the physics pick. `mouse_cursor.gd:_is_over_panel()` is the screen-space guard that rejects those clicks: the pick is applied via `Global.select()` only when `!_is_over_panel()`. Previously the guard also let the click through whenever an opaque sprite sat behind the panel, so clicking blank sidebar space (or the gaps between layer-list rows) could select the element behind it; it now blocks unconditionally while over a panel. Both sidebars are always present in edit mode (the left SpriteViewer dims to 35% but stays visible when nothing is selected; the right SpriteList tracks `editMode`) and selection runs only in edit mode, so the guard does not gate on per-panel visibility. Bounds use each panel's live `panel_width`, so they track sidebar resizing.
 
+> Updated: 2026-08-07 — The shared bounds helper is now `SidebarUIFactory.is_over_app_chrome` (was `is_over_editor_chrome`) and covers both modes. In edit mode it reports the sidebars and the menu bar as before. In viewer mode it reports only the menu bar, and only as far as the bar has slid into view: the caller passes `controlPanel.chrome_height()`, which is `0.0` while concealed, so a hidden bar never steals clicks from the avatar underneath it. `Global.isMouseOverSidebar()` no longer short-circuits on `editMode`.
+
+### The left sidebar names its layer
+
+> Added: 2026-09-16 — The position section opens with the selected layer's name,
+> a heading built by `SidebarUIFactory.create_heading()` and written by
+> `selection_presenter._update_parent()` from `spriteObject.displayName()`, which
+> already strips the path and the extension and follows a rename. It clips with an
+> ellipsis, so a long name cannot widen the panel. With several layers selected it
+> names the ACTIVE layer, the one whose values the panel is showing, while the
+> line under it reads "N layers selected".
+>
+> The two scene labels that used to print position and offset are gone, replaced
+> by the entry rows below.
+
+### Position and offset entry (left sidebar)
+
+> Added: 2026-09-16 — The position and offset readouts are two numeric fields
+> each (`ui_scenes/spriteEditMenu/vector_field_row.gd`), not labels.
+> `selection_presenter` owns both directions: `sync_transform_fields()` refreshes
+> them from the held layer every frame, skipping a field that has focus so a
+> per-frame write cannot overwrite a half-typed number, and an entry commits on
+> Enter or on focus leaving. A field that does not read as a number is ignored, so
+> a stray keystroke and a click away cannot move a layer to zero.
+>
+> **Enter releases focus, and so does a click outside the field.**
+> `Global._is_any_field_focused()` suppresses the app's own shortcuts while a
+> `LineEdit` holds focus, so a field that kept focus swallowed Ctrl+Z and undo
+> appeared not to work. Enter hands focus back, and `Global._release_text_focus_outside`
+> does the same for a click anywhere outside the focused field, since clicking a
+> label, a panel's blank area or the canvas does not move focus by itself. That
+> applies to every text field in the app, not just these two. Both commits also
+> report whether anything actually moved, so a field that was only visited leaves
+> no empty history entry to undo through.
+>
+> Position goes through `setAuthoredPosition`, which is what a wiggle-following
+> child needs. Offset goes through `SpriteOrigin.set_offset`
+> (`ui_scenes/selectedSprite/sprite_origin.gd`), which also re-writes
+> `sprite.offset`, the grab area and the wiggle anchor. Note the difference from
+> the canvas origin gizmo: the gizmo moves `position` and `offset` together so the
+> artwork stays still and the origin slides under it, while typing an offset moves
+> the artwork relative to the origin, which is what the number says.
+>
+> Both act on the ACTIVE layer only, unlike the sliders: handing several layers
+> one absolute position would stack them. They show `MIXED_VALUE` when a
+> multi-selection disagrees.
+
+### Selecting several layers
+
+> Added: 2026-09-16 — Switching costume leaves the selection alone: it changes
+> which layers are SHOWN, not which are being edited, and clearing it meant any
+> key bound to a costume dropped whatever the user had selected.
+>
+> Command-click (Control on Windows and Linux) adds or
+> removes one layer. macOS turns Control-click into a right click before Godot
+> sees it, so on a Mac the multi-select modifier is Command, and a Control-click
+> opens the context menu instead; the row handler accepts `ctrl_pressed` as well
+> for the platforms where it does arrive as a left click. A right click on a row
+> that is already part of a multi-selection keeps the group, so a Control-click
+> inside the selection does not collapse it. Shift-click takes the range between the active layer and the
+> clicked one, in list order, skipping rows hidden by a collapsed parent or the
+> filter. An ordinary click replaces the selection.
+>
+> `SelectionState` keeps the shape it had: `current` is the ACTIVE layer, the one
+> single-layer code (both sidebars, the canvas, the keyboard) reads through
+> `Global.heldSprite`, and `extras` holds the rest. `selection()` returns the
+> active layer followed by the extras, through `Global.selected_sprites()`.
+> Removing the active layer promotes the next one, so there is always an active
+> layer while anything is selected, and `forget()` drops a layer that is being
+> freed without disturbing the rest (deleting a group frees them one at a time).
+>
+> **Sidebar edits apply to the whole selection.** `MutationCommands._write_property`
+> is the one choke point for `set_layer_property` and `drag_layer_property`, so
+> the fan-out lives there: an edit aimed at the ACTIVE layer writes to every
+> selected layer inside one history entry, and an edit aimed at some other layer
+> (an eye-track target being assigned, a restore) is left alone. The left
+> sidebar's parent line reads "N layers selected" so it is clear the panel is
+> showing the active layer's values while writing to all of them. `set_layer_field`
+> does not fan out: it names one entry inside one layer's structured field (an
+> animation clip), which has no meaning on a different layer.
+>
+> Rows draw the whole selection with the same fill; only the active layer carries
+> the border, so the group reads as one selection while the row the sidebars are
+> showing stays identifiable.
+>
+> **Mixed values.** A control shows `Global.MIXED_VALUE` ("—") in place of its
+> number when `Global.selection_is_mixed(property)` reports that the selected
+> layers disagree, so the panel never claims the active layer's number for layers
+> that do not hold it. The comparison is `MutationCommands.values_match`, the same
+> one the commands use to decide whether an edit is a change at all. Covered in
+> the left sidebar's sliders, the Physics tab's sliders, the eye-tracking sliders
+> and the opacity field.
+
+### Layer context menu (right-click a row)
+
+> Added: 2026-09-16 — Right-clicking a row selects that layer and opens
+> `ui_scenes/spriteList/layer_context_menu.gd`: Duplicate, Rename, Delete. The
+> menu is built per click and frees itself on close, so it never outlives the row
+> it belongs to.
+>
+> It opens at `root.get_mouse_position()`. Godot embeds subwindows in the main
+> viewport by default, and an embedded popup is positioned in VIEWPORT
+> coordinates; `root.get_mouse_position()` is the cursor in exactly that space
+> (`(screen cursor - window position) / content_scale_factor`, measured). Screen
+> pixels from `DisplayServer.mouse_get_position()` are far outside a viewport that
+> the 1.5 content scale makes smaller than the window, so the menu was clamped
+> into the top-right corner. `Control.get_screen_position()` is wrong for the same
+> reason.
+>
+> Updated: 2026-09-17 — **Rename is inline on the row, not a prompt.**
+> **Double-clicking a row** opens it (the plain left-click branch of the row's
+> `_gui_input`, after the Command- and Shift-click cases, so a modifier click
+> still extends the selection), and so does the menu item, which calls `LayerContextMenu.begin_rename`, which defers to
+> `viewer.beginRename(sprite)` → `layer_tree_controller.row_for(sprite)` →
+> `sprite_list_object.beginRename()`. The row carries a hidden `_name_edit`
+> `LineEdit` in the name label's own HBox slot: `beginRename` hides the label,
+> shows the field on the current name with it all selected, and grabs focus. The
+> grab is deferred by one frame because the menu still holds the focus as it
+> closes. **Enter** (`text_submitted`) and **clicking away** (`focus_exited`, which
+> Global's click-outside focus release drives) both commit; **Escape** closes the
+> field without writing. An empty field is not a name and is treated as a cancel,
+> since the fallback would be the filename rather than what an abandoned edit
+> means. `_fixed_content_width` measures the field as it measures the label, by
+> the name's own floor, so the row's indentation does not jump while it is open.
+> The old `ModalDialogUI` rename prompt is gone; the delete prompt is unchanged.
+>
+> **Rename** writes `layerName`, a normal layer field: in `SpriteState`'s
+> `SIMPLE_FIELDS`, so it is saved, undone and copied by duplication for free, and
+> absent from older saves, where it defaults to empty. `spriteObject.displayName()`
+> is the one place that decides what a layer is called: `layerName` when set,
+> otherwise the image file's name via `SpriteHierarchy.display_name()` (moved
+> there from the row, so the layer and its row read one implementation).
+>
+> With several layers selected, the menu offers only what it can do to all of
+> them: "Duplicate N layers" and "Delete N layers...". Rename and Replace name one
+> layer and act on it, so they are hidden. Right-clicking a row that is part of
+> the selection keeps that selection; right-clicking any other row replaces it
+> with that one layer. `avatar_controller.duplicate_selected` and
+> `delete_layers` each take the whole group as one history entry, and a deleted
+> layer's surviving children climb to the nearest ancestor that is not also being
+> deleted.
+>
+> **Replace** (`import_controller.replace_layer`) swaps one layer's artwork.
+> The menu bar's Replace takes a PSD or a folder and matches layers by name; this
+> one is aimed at a layer the user has already picked, so it offers PNG files only
+> and hands straight to the existing single-image path, which names and acts on
+> the held layer (the target is selected before the dialog opens, and APNGs still
+> route to the animated import). Its dialog is reported by
+> `is_replace_dialog_open()`, so `main.isFileSystemOpen()` stops canvas selection
+> while it is up.
+>
+> **Delete** asks first, through a `ModalDialogUI` prompt. "Also delete the layers
+> under it" is always on the prompt and always starts unchecked, greyed out when
+> nothing is linked under the layer, so the choice reads the same way every time.
+> The sidebar's trash button opens the same prompt.
+>
+> `avatar_controller.delete_layer(sprite, include_children)` is the one delete
+> path. By default the direct children survive: `unlinkChildren` lifts them to the
+> root keeping their world position, and they are then re-attached to the deleted
+> layer's own parent, so the rig keeps its shape and only the one layer goes.
+> (2026-09-19: both steps work from the rest pose, `_detach_to_origin` and
+> `attach_at_rest`, rather than sampling the moving rig; see "Layers change
+> parent through `moveUnder()`".) With
+> `include_children` the layer and every descendant are freed.
+
+### Panning costs one camera move
+
+> Added: 2026-09-16 — `viewport_controller.handle_unhandled_input` only updates
+> `_pan_offset` while panning; `process_frame()` already moves the camera from
+> that offset every frame. It used to call `window_size_changed()` on every
+> mouse-motion event, which re-laid out the whole right sidebar: measured on a
+> 54-layer rig, 3.3 ms per call, arriving several times per 16 ms frame, which is
+> what made a pan stutter.
+>
+> Nearly all of that 3.3 ms was the layer list's indent re-clamp writing a minimum
+> size on every row, since a minimum-size write invalidates that row's layout.
+> `updateIndent()` now returns early when the clamped width has not changed, which
+> takes a full sidebar re-layout from 3.3 ms to 175 µs and also speeds up real
+> window resizes.
+
+### The list fits the panel
+
+> Added: 2026-09-16 — Rows take their width from the panel, and indentation is
+> the first thing to give. Each row's `custom_minimum_size` is height only; it
+> used to carry a fixed 290 px width, which meant the rows, and therefore the
+> `ScrollContainer` around them (horizontal scrolling is disabled, so its minimum
+> width is its content's), refused to shrink with the sidebar. The whole list then
+> hung outside the panel, carrying the show/hide buttons off the right edge:
+> measured on a deep rig, 26 px over at a 260 px sidebar and 66 px at 220 px, and
+> dragging the sidebar wider was the only way back.
+>
+> `updateIndent(available_width)` treats depth as a budget: the indent spacer gets
+> `indent * INDENT_STEP` px (12, the size other tree panels use: VS Code indents 8,
+> Blender and Unity 14 to 16), clamped so the row still fits everything it cannot
+> give up (the collapse arrow, the thumbnail, the badges, the show/hide button,
+> the separations, and a floor for the name). The name gives way first: it
+> ellipsizes as the row narrows, and indentation is only compressed once the name
+> reaches its floor.
+>
+> That floor is where Godot stops ellipsizing. Its text trimmer drops the ellipsis
+> and hard-cuts the string once fewer than about six characters would be left,
+> which is why deep rows were being sliced mid-word with no mark: verified by
+> rendering, a name ellipsizes down to 65 px at this font size and is cut without
+> a mark at 60. So a row reserves room for its own first `ELLIPSIS_MIN_CHARS`
+> characters plus the ellipsis, measured in the row's own font, and gives up
+> indentation rather than showing an unmarked cut. Badges appearing and a rename
+> both re-spend the budget, since both change what the row must keep.
+>
+> Loading an avatar also calls `viewer.fitPanelToDepth()`, which widens the
+> sidebar until the deepest row can show its indentation in full. It only grows
+> the panel, never past `MAX_WIDTH_RATIO`, and names truncate rather than the tree
+> losing its shape. `layer_tree_controller`
+> passes the scroll area's width minus its vertical scrollbar, and `reflow()`
+> re-clamps every row when the sidebar is resized. The row's `_draw()` guide lines
+> read `indentWidth()` rather than recomputing `indent * step`, so they follow the
+> clamped positions.
+>
+> `viewer._apply_size` leaves `container.custom_minimum_size.x` at 0 and gives the
+> column `SIZE_EXPAND_FILL`: the scroll container then sizes it, which keeps it
+> clear of the scrollbar, and without the fill flag it would settle at the widest
+> row's minimum and leave a dead strip down the right of the panel.
+>
+> `avatar_scene_runner._test_layer_list_fits_panel` chains fixture layers into a
+> deep hierarchy and asserts, at three sidebar widths, that no show/hide button
+> crosses the panel's right edge and that every name keeps some room.
+
+### Visibility Toggle section
+
+> Added: 2026-09-16 — `ui_scenes/spriteList/visibility_toggle_section.gd` owns the
+> key-binding section (build, enable/disable, the capture and the clear), leaving
+> the sidebar to position it. Same split as the blend strip and the physics tab;
+> the sidebar's size ceiling in `test_ui_components` is what forces it.
+
+### Costume row
+
+> Added: 2026-09-19 — `ui_scenes/spriteList/costume_row.gd` draws the ten costume
+> toggles in code as numbered chips, replacing `icons/1-10.svg` (pixel art
+> rasterised at 64 px and scaled to about 26, which blurred it) and the separate
+> `select.png` ring. The sidebar builds it and calls `sync(in_costume, worn)`
+> each frame. `in_costume` holds one bool per costume for the held layer, already
+> folded through `SpriteVisibility.costume_allowed_by_ancestors`, so a costume a
+> parent hides reads as off, as before. An empty array means nothing is selected.
+> A chip is restyled only when its look changes. The row spans the dividers'
+> width, and `_layout()` places the chips by hand: first flush left, last flush
+> right, with a fractional gap and rounded positions. A box container shares out
+> whole pixels and dropped the remainder, leaving the last chip short. Chips are
+> styled as they are created, and every chip style has zero content margins,
+> so no state can raise a chip past `CHIP_SIZE`. Left at default, a
+> `StyleBoxFlat` pads by its border width: the worn chip's 2 px ring made it
+> taller than the others (the first chip, since costume 1 is the default). The
+> ring is drawn outside the chip, as an expand margin, so the fill is not
+> narrowed. A `minimum_size_changed` → `_layout()` hook tried in between looped
+> forever on that ringed chip and was removed. An unstyled button carries the default theme's padding
+> (30x34 here), and a control is never sized below its minimum. The first
+> version sized the row from unstyled chips at 327 px, wider than the 310 px
+> sidebar, and never corrected it, which is the likely cause of the cropped end
+> chips reported in the app (not reproduced headlessly). The palette and sizes are in
+> `docs/ui_styling_guide.md` → Costume Chips. The unused older
+> `ui_scenes/spriteEditMenu/layerButtons/` PNG set was removed with them. Covered
+> by `_test_costume_chips`.
+
+### Row indentation
+
+> Added: 2026-09-16 — `_apply_order_and_indentation` sets `row.indent` from the
+> depth of the row's ancestor chain, and then calls `row.updateIndent()` on
+> **every** row. `updateIndent()` is what actually widens the row's indent spacer,
+> and it used to be called only for rows that had children of their own, so a leaf
+> layer carried the right `indent` value with a zero-width spacer and rendered
+> flush against the left edge: a parent appeared indented past its own children.
+> The spacer is the first child of the row's HBox, so one write moves the collapse
+> arrow, the thumbnail and the name together (measured on a real rig: 19 px per
+> level for all three).
+
+### Collapse survives a hierarchy change
+
+> Added: 2026-09-17 — `refresh_hierarchy()` (the path a link or unlink takes)
+> keeps each row's collapsed flag and ends with `apply_collapse_visibility()`, so
+> a layer linked into a collapsed group is hidden along with the rest of it and
+> the group stays collapsed.
+>
+> It used to clear every collapsed flag and never touch row visibility, which left
+> the two out of step: the group came back with an expanded arrow while its
+> children stayed hidden, and a layer linked in from outside stayed visible inside
+> a group that was supposed to be closed. `_apply_order_and_indentation` still
+> clears the flag for a row that has no children left, which is the one case where
+> dropping it is correct.
+
+### Deleting a layer from the list
+
+> Added: 2026-09-16 — Layers appearing or disappearing reconcile the existing
+> rows (`layer_tree_controller.sync_rows`, via `viewer.syncRows()`) instead of
+> calling `update_data()` to rebuild the list. Rows whose layer is gone are
+> dropped, rows for new layers are added, and the tree is re-flattened and
+> re-indented; `apply_collapse_visibility()` re-shows rows whose collapsed
+> ancestor has just gone, and a live filter is re-applied. A rebuild clears every
+> row and builds the list again a frame later, which blanks the panel and throws
+> away both the scroll position and which groups were collapsed: deleting sent the
+> user back to the top of a long list, and undoing a deletion visibly flashed the
+> whole panel. Deletion, duplication and undo restores all go through the
+> reconciler; `update_data()` stays for avatar loads and costume switches.
+>
+> The z sort breaks ties on registry order (insertion order, which does not move
+> when a layer is removed, nor when a layer is reparented: `register()` keeps an
+> already-registered sprite where it is). That order is therefore the list's
+> tie-break, so a layer that belongs beside another one asks for it explicitly
+> through `Global.place_sprite_after()`. Duplication does, since a duplicate
+> carries the source's z and would otherwise appear at the bottom of everything
+> sharing it rather than next to the layer it was copied from. Godot's sort is not stable and
+> rigs routinely share one z across many layers (20 of 54 on a real avatar), so a
+> bare `a.z > b.z` reshuffled those layers on every rebuild: the list came back in
+> a different order with a different row at the top.
+>
+> Covered by `avatar_scene_runner._test_layer_list_deletion`, which flattens every
+> layer to one z, deletes a row and asserts the order and the scroll position.
+
 ### Auto-scroll sprite list on selection
 
 > Updated: 2026-02-16 — auto-scroll to selected layer
 
 When a sprite is selected (canvas click, keyboard scroll, or any path through `spriteEdit.setImage()`), the sprite list automatically scrolls to bring the corresponding list item into view via `viewer.gd:scroll_to_selected()`, which calls `ScrollContainer.ensure_control_visible()`. This is a no-op when the item is already visible.
 
+> Updated: 2026-09-19 — **After a link, the list follows where the parent was
+> picked.** `Global.linkSprite(sprite, newParent, parent_picked_on_canvas)` takes
+> the route from its caller: the canvas click path in `global.gd` passes `true`,
+> the row click in `sprite_list_object._select()` passes `false`, and the default
+> is `false`. Before the rows move, `linkSprite` calls
+> `viewer.prepareLinkFraming()` → `layer_tree_controller.prepare_link_framing()`,
+> which records the parent row's offset from the top of the view. Whichever
+> rebuild runs next (`refresh_hierarchy` or `update_data`) consumes it a frame
+> later, once rows are laid out:
+>
+> - **Parent picked in the list** (canvas→list, list→list): `_hold_row_at` puts
+>   the parent row back at the offset it had. The user had scrolled to it, so the
+>   view stays put. The raw `scroll_vertical` is NOT what is held: when the
+>   child's old row was above the view, every visible row shifts up one row as it
+>   leaves, and holding the offset would slide the parent.
+> - **Parent picked on the canvas** (canvas→canvas, list→canvas): the child has
+>   just moved out from under the list's frame, so `_frame_link` centres the span
+>   from the parent's row to the child's. When the span is taller than the view,
+>   the child wins (it is the layer that moved) and the parent sits as close
+>   above it as fits. A child hidden inside a collapsed parent has no row to show,
+>   so the parent is centred on its own; linking does not expand the group.
+>
+> Updated: 2026-09-19 — **A duplicate is centred in the list.**
+> `avatar_controller.duplicate_selected()` calls `viewer.frameLayers(copies)` →
+> `layer_tree_controller.frame_sprites()` after its in-place `syncRows()`. A
+> frame later, once rows are laid out, it centres the copies' span, or only the
+> first (active) copy when the span is taller than the view. A copy hidden in a
+> collapsed group is represented by its nearest visible ancestor
+> (`_visible_row_for`), the same rule a canvas link uses. The scroll clamps at
+> the list's ends, so a copy near the top or bottom is as centred as the list
+> allows. `frame_sprites` counts in `_layout_settling`, so the selection-follow
+> in the same frame does not act on stale positions. Covered by
+> `_test_duplicate_is_framed`.
+>
+> Updated: 2026-09-19 — **Every other hierarchy refresh holds the view.**
+> Unlink, undo and redo re-order the rows too, and `refresh_hierarchy()` keeps
+> the list where the user was reading it unless a link is pending. Before the
+> re-order, `_capture_view_anchor()` records the visible rows that are NOT moving,
+> with their offsets. A row moves if its parent changed (`row.parent`, from the
+> last layout, differs from `sprite.parentSprite`, already updated), and so does
+> every row under it. After the layout, `_restore_view_anchor()` puts the topmost
+> of them back at its offset. Anchoring on a moving row would follow the moved
+> layer, and holding the raw scroll offset lets visible rows shift when a moved
+> row leaves or arrives above them.
+>
+> `scroll_to_selected()` stands down while `_layout_settling` counts a refresh in
+> flight. Undo's `on_state_restored()` calls `setImage()` straight after the
+> re-order, and the selection-follow's `ensure_control_visible()` read last
+> frame's row positions. Undoing an unlink therefore scrolled to where the
+> unlinked row HAD been, at the bottom of the list, and the rows then settled
+> back without the scroll. Covered by `_test_unlink_undo_keeps_list_view`.
+>
+> This replaces `viewer._pending_scroll_target`, which scrolled every link's parent
+> to the top of the panel whatever the route. The `setImage()` follow above still
+> runs after a link, but on the parent, which is on screen in the list routes, and
+> is overridden a frame later in the canvas routes. Covered by
+> `avatar_scene_runner._test_link_framing`.
+
 ### Physics query vs cached overlap
 
 The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `Area2D.get_overlapping_areas()` because the latter returns cached results from the previous physics step, creating a one-frame timing mismatch with the cursor position updated in `_process()`.
+
+> Updated: 2026-08-17 — **A layer's collider is one rectangle, and the alpha test decides every hit.** `mouse_cursor._is_pixel_opaque` transforms the click into the sprite's own space, bounds-checks `Sprite2D.get_rect()` and samples the image alpha, so the physics query is only a broad phase producing candidates. The collider therefore only needs to CONTAIN every opaque pixel, and `populate_polygons` builds one `RectangleShape2D` over the image bounds instead of a `CollisionPolygon2D` per traced outline. The traced outlines are still built as `Line2D` children: they are the silhouette drawn around a selected layer and must not change. A `CollisionPolygon2D` decomposes into convex pieces the broadphase re-fits every tick the avatar moves: 36 shapes per layer measured, 45.7 ms/tick across 25 layers against 1.8 ms for one rectangle, which is the floor. Equivalence was checked by running both colliders through the full pick path (query AND alpha test) over every point of a real layer and of an adversarial image (hollow ring, 1px diagonal hair, isolated speck): 65,536 points, identical outcome, nothing gained or lost. The containment direction is also structural, since the rect is the image bounds and the outlines are traced within it, so a click that selects today cannot stop selecting.
+
+> Updated: 2026-08-17 — **The player page runs neither the edit UI nor layer collision.** Both sidebars and every layer row live under `EditControls`, and hiding a node does not stop its `_process`, so the whole edit UI was re-syncing hidden controls 60 times a second behind the player page. `swap_mode()` now sets `EditControls.process_mode` to `PROCESS_MODE_DISABLED` off the edit page (verified: the right sidebar's `_process` ran 0 times in 120 frames on the player page, 120 of 120 on the edit page, and 0 again after switching back). It also calls `set_layer_collision(editMode)`, which toggles every `"saved"` layer's grab shapes through `spriteObject.setCollisionActive()`, because click-to-select is gated on `editMode` and a moving `Area2D` costs the broadphase a re-fitted decomposed polygon every tick regardless. Measured on 25 layers: 23.8 ms/tick live against 2.2 ms disabled. Layers built later inherit the mode through `spriteObject._build_collision()`, the single path that populates shapes. The app starts on the player page (`main._ready()` calls `swapMode()` once), so this is the state it boots into.
+
+> Updated: 2026-08-17 — the layer `Grab` area sets `collision_mask = 0` in `spriteObject.tscn`, and must keep it. The cursor's own `Area2D` carries `collision_mask = 0` for the same reason and `mouse_cursor.gd` names the layer bit in `SELECT_MASK` instead of reading it back off that node: while the cursor's mask matched the layers' bit, the physics server paired the cursor with every layer in the rig every tick, about a third of what the point-query path cost after the layer-vs-layer pairing was removed. A point query matches an area's `collision_layer`, so clearing the mask leaves selection working while telling the physics server this area detects nothing. With the default mask of 1 every layer paired with every other overlapping layer and solved SAT against their traced outline polygons at 60 Hz: measured 198.8 ms/frame for 25 layers versus 16.0 ms cleared, on a 16.1 ms no-pairs floor, and about 43% of a live session's CPU sat in `GodotArea2Pair2D::setup`. `monitoring = false` does not substitute for this; the pair is gated by the *other* area's `monitorable`, which `changeCollision()` drives from costume visibility. `test_performance_memory` guards the mask.
 
 ### Scroll wheel routing (cycle / zoom / slider nudge)
 
@@ -196,10 +1338,18 @@ The mouse cursor uses `PhysicsDirectSpaceState2D.intersect_point()` instead of `
 
 Three behaviors share the wheel, routed by cursor location:
 
-- **Over the open viewport.** Plain scroll cycles sprite selection (`global.gd:scrollSprites()`, fed by a `_scroll_input` accumulator in `Global._input`); `Ctrl`+scroll zooms (`main.gd:zoomScene()`, polled).
+- **Over the open viewport.** Plain scroll cycles sprite selection (`global.gd:scrollSprites()`, fed by a `_scroll_input` accumulator in `Global._input`); `Ctrl`+scroll zooms (`viewport_controller.gd`, polled).
 - **Over a sidebar.** Neither of the above fires. `Global._input` intercepts the wheel first (it runs before GUI `_gui_input`): a `Range` (HSlider) under the cursor adjusts by one `step` and is consumed **only while `Ctrl` is held**. Without `Ctrl` the wheel is left alone so the enclosing scrollable section scrolls (the right sidebar's `ScrollContainer`, or the left sidebar's `position.y` scroll in `sprite_viewer._input`); sidebar sliders are created with `scrollable = false` so they do not self-adjust on that pass-through. Blank space and non-slider widgets behave the same. Either way it returns before the sprite-cycle accumulator.
 
-`zoomScene()` polls the `Input` singleton, so consuming the event cannot stop it; it is gated directly on `Global.isMouseOverSidebar()` instead. That helper is a shared screen-space bounds check (left/right sidebar or top menu bar, in edit mode), kept in screen space because the sidebar backgrounds are `MOUSE_FILTER_IGNORE`, so `gui_get_hovered_control()` reads null over their blank areas. Sliders outside the sidebars (Settings, the volume/sensitivity sliders) keep their default wheel behavior.
+Viewport zoom polls the `Input` singleton, so consuming the event cannot stop it; it is gated directly on `Global.isMouseOverSidebar()` instead. That helper delegates to `SidebarUI.is_over_editor_chrome()`, the canonical screen-space bounds check for the left/right sidebars and top menu bar. `mouse_cursor.gd` uses the same helper before sprite selection, so wheel routing and click-through blocking cannot drift apart. Screen-space bounds remain necessary because decorative backgrounds use `MOUSE_FILTER_IGNORE`, meaning `gui_get_hovered_control()` is null over blank panel areas. Sliders outside the sidebars (Settings, the volume/sensitivity sliders) keep their default wheel behavior.
+
+> Updated: 2026-08-06 — `ui_scenes/common/sidebar_ui.gd` owns the
+> click-through background/divider constructors, slider theme resources,
+> enabled/disabled slider application, resize-edge geometry, safe panel-width
+> clamp, and editor-chrome hit test shared by both sidebars. Every decorative
+> `ColorRect` it creates explicitly uses `MOUSE_FILTER_IGNORE`. Component tests
+> exercise style state, narrow-viewport clamps, resize margins, and open-canvas
+> versus chrome routing in `tests/unit/test_ui_components.gd`.
 
 ---
 
@@ -215,18 +1365,158 @@ Each sprite layer is an instance with:
 - **Visibility**: costume layers (10 slots), toggle key binding, speaking/blinking frames
 - **Eye tracking**: enable flag, distance, speed, invert. In edit mode, tracking is suppressed only for the selected sprite (`Global.heldSprite`) so unselected sprites stay lively; in view mode tracking always runs. (Updated: 2026-02-16)
 
-Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"` group for enumeration.
+Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
+`"saved"` group for scene/debugger compatibility and register with
+`Global.sprite_nodes()`'s backing registry for production enumeration.
+
+> Updated: 2026-08-06 — Persistent sprite state is centralized in
+> `autoload/domain/sprite_state.gd`. Its compatibility map is shared by manual
+> saves, avatar loads, undo capture/restore, and duplication, including deep
+> ownership rules for animation clips and wiggle arrays. New persistent
+> properties must be added to this map and the save schema together. Duplicate
+> and undo now retain NDI-reference, normal-map, clipping,
+> static/ignore-bounce, stretch, toggle, blend, and physics state consistently.
+> `sprite_collision_builder.gd` owns alpha polygon creation and fallback
+> geometry. Animated fallback hitboxes use a single frame width (`sheet width /
+> frame count`) and preserve rectangular frame dimensions. Tests live in
+> `tests/unit/test_sprite_state.gd`. All sprite creation paths use one randomized,
+> collision-checked ID allocator in `AvatarController`; creating a fresh default-seeded
+> generator per layer is no longer allowed.
+
+> Updated: 2026-08-17 — `spriteObject.gd` is a 951-line scene-facing facade,
+> down from 1,573 lines at the Phase 12 boundary. Pure talk/blink/costume rules
+> live in `sprite_visibility_policy.gd`, and cycle-safe child/descendant lookup
+> lives in `sprite_hierarchy.gd`. `sprite_visual_runtime.gd` owns diffuse/normal
+> texture synchronization, blend materials/backbuffers, and depth propagation;
+> `sprite_collision_runtime.gd` owns shape replacement, monitoring, and edit-page
+> activation while `sprite_collision_builder.gd` remains the geometry builder.
+> Existing public sprite methods delegate to these boundaries so scene, UI,
+> persistence, and undo callers retain their contract.
+
+> Updated: 2026-08-17 — Diffuse replacement synchronizes both `size` and
+> `imageSize` before rebuilding textures, wiggle geometry, or collision. This
+> prevents an active wiggle mesh and transparent-image fallback collider from
+> retaining the previous artwork dimensions. The production runner replaces a
+> layer with a differently sized image and verifies the live and broad-phase
+> dimensions.
+
+> Updated: 2026-08-17 — Wiggle is split into three layers:
+> `wiggle_geometry.gd` is deterministic image/path analysis with no scene state;
+> `wiggle_runtime.gd` owns the live appendage, path editor, parameters, and linked
+> child attach/release lifecycle; `wiggle_appendage.gd` remains the mesh and
+> spring-chain implementation. `spriteObject.gd` supplies authored properties
+> and its stable editor facades. Production tests enable and disable a real
+> appendage, while pure tests cover width interpolation, root orientation, arc
+> projection, silhouette reach, auto-fit coverage, visibility, and hierarchy.
+
+> Updated: 2026-09-19 — **Layers change parent through `spriteObject.moveUnder()`,
+> never a bare `reparent()`.** The 2026-08-06 note below is superseded on this
+> point. `reparent()` runs `_exit_tree` then `_enter_tree`, so every hierarchy
+> change unregistered the layer and dropped it from the selection, then
+> re-registered it at the END of the registry, the layer list's tie-break at equal
+> z. `moveUnder()` sets `_changing_parent` around the reparent and both hooks
+> return early while it is set, so the registry position and the selection are
+> untouched. Real additions and removals still register and unregister as before.
+> `test_sprite_state` fails the build if `avatar_controller`, `global`,
+> `undo_manager` or `wiggle_runtime` calls `.reparent(`.
+>
+> This is what broke unlinking. `unlinkSprite()` reparented `heldSprite`, the
+> exit hook cleared `heldSprite`, and the next line (`heldSprite.set_owner`) was a
+> null call. The function aborted with the layer under the avatar origin but its
+> `parentId`, `parentSprite` and parent-relative `position` unchanged. The layer
+> therefore landed at its old offset measured from the origin instead of from its
+> parent, carrying its children, while the rig's data still said it was linked.
+>
+> **Unlinking places a layer from the rest pose, not a live sample.**
+> `Global.rest_transform_in_origin(layer)` composes `authoredRotation()` /
+> `authoredPosition()` up the ancestor chain. At rest an ancestor's WobbleOrigin,
+> DragOrigin and Sprite2D are identity (`sprite_rest_pose.gd`), so the authored
+> transforms are the whole chain. The old code read `global_position` with only
+> the wobbles zeroed, leaving drag lag and rotation, squash, and mic/eye rotation
+> in the sample, and subtracted `origin.position`, which ignores `OriginMotion`.
+> `_detach_to_origin()` is the one unlink step, used by `unlinkSprite()` and
+> `unlinkChildren()`. It also calls `leaveWiggleParent()`, which releases a wiggle
+> child's binding and restores `_wiggleRestPos` / `_wiggleRestRot`: before, an
+> unlinked wiggle child kept `_wiggleFollowing` set and its stale rest position
+> was what saves recorded. `attach_at_rest(layer, new_parent)` is the inverse, and
+> is how a deleted layer's surviving children re-attach to its parent.
+>
+> `linkSprite()` attaches through `attach_at_rest` as well. It used a keep-global
+> reparent of the live pose with only the wobbles zeroed, which baked the new
+> parent's drag lag and rotation into the child's authored position whenever a
+> link was made mid-motion (13 px on the test rig). Link and unlink are therefore
+> exact inverses at rest.
+>
+> **Undo of an unlink.** Every unlink was already one history entry
+> (`MutationCommands.structural`), but the aborted unlink changed no layer data:
+> `parentId` and `position` stayed as they were. `undo_manager` restores by
+> comparing data, so it found nothing to reverse, and the layer stayed where it
+> had jumped. With unlink completing, undo and redo each restore link data,
+> authored position and place at rest (`_test_unlink_undo_round_trip`).
+
+> Updated: 2026-08-06 — Legacy saves without `animClips` migrate their x/y wobble fields into the runtime animation system during shared sprite-state application. Hierarchy changes use `Node.reparent()` consistently. Because reparenting emits `_exit_tree()` / `_enter_tree()` without running `_ready()` again, sprite registry enrollment is owned by `_enter_tree()` and removal by `_exit_tree()`; registration in `_ready()` would permanently lose parented layers from indexed ID lookup.
 
 > Updated: 2026-03-07 — Parenting & hierarchy hardening (14 bugs fixed)
 > - `getAllDescendants()` added for recursive descendant collection (used by `setClip()`)
 > - `unlinkChildren(parentSpr)` on `Global` unlinks direct children before parent delete, preserving grandchild chains
-> - `linkSprite()` / `unlinkSprite()` zero all ancestor wobbles before position calculations to prevent wobble baking
+> - `linkSprite()` / `unlinkSprite()` zero all ancestor wobbles before position calculations to prevent wobble baking (superseded 2026-09-19: both now place from the rest pose)
 > - `_skip_ready_reparent` flag on spriteObject skips `_ready()` timer-based reparent when duplicate handler reparents immediately
 > - Sprite list uses DFS tree flattening for correct sibling ordering, chain-walk indent computation, collapse state preservation across rebuilds, and ancestor-chain visibility in filter
 > - `updateData()` generation counter guards against stale coroutine results on rapid calls
 > - Undo/redo handles missing parents (orphan fallback to origin) and circular reference checks
 
 ---
+
+## Motion timing
+
+> Added: 2026-09-17 — Every motion value in the app was tuned against a 60 fps
+> frame step: the bounce integrated a hardcoded `0.0166` per frame, `drag()`
+> lerped by `1/dragSpeed` per frame, `rotationalDrag()` and `stretch()` read how
+> far the layer moved THIS FRAME, and the oscillating clips and the wiggle's
+> auto-wag took their sine phase from a frame counter. That is correct only while
+> frames arrive exactly 60 times a second; otherwise the motion speeds up, slows
+> down and jitters, and rotational drag shows it worst because it renders a
+> displacement as an angle. Measured before the change: the same bounce over the
+> same elapsed time produced -6.59° of rotational drag at 30 fps and -0.02° at 60.
+>
+> `autoload/domain/motion_timing.gd` keeps the tuning and changes the clock:
+>
+> - `frames(delta)` — how many 60 fps frames this delta is worth. A per-frame
+>   displacement or increment multiplies by it.
+> - `smooth(weight, delta)` — a per-frame lerp weight tuned at 60 fps, corrected to
+>   cover the same fraction per SECOND: `1 - (1 - weight)^frames`.
+> - `per_frame(distance, delta)` — a per-frame displacement read as a speed, for
+>   rotational drag and squash.
+>
+> **At delta = 1/60 all three are identities**, so nothing looks or feels different
+> at 60 fps; that is the point, and the unit tests assert it. A hitch is clamped to
+> `MAX_STEP` (1/15 s) so a stall slows the avatar rather than teleporting it.
+>
+> Applied to: the bounce and its soft landing (`main.gd`), `drag`,
+> `rotationalDrag`, `stretch` and the eye-track smoothing (`spriteObject`), the
+> oscillating clips (`LayerAnimator.evaluate` takes a float phase), and the wiggle
+> auto-wag (`WiggleAppendage.tick`). The wiggle chain itself was already
+> delta-correct and is where the `1 - pow(1 - w, delta * 60)` idiom came from.
+> `spriteObject.motionTime` is the time-based companion to `tick`: the same number
+> at 60 fps, but honest about elapsed time, and it drives everything that
+> oscillates.
+>
+> **The two discrete clocks followed** (2026-09-17). A sprite sheet steps on
+> elapsed time through `_advance_frame_clock()`, at the interval the app has
+> always used at 60 fps (`animSpeed` frames every six seconds). It used to count
+> frames against a divisor derived from `Engine.max_fps`, which held the right
+> rate while that setting matched reality and collapsed to a step EVERY frame at
+> the **Unlimited** setting, where `max_fps` is 0: measured, a sheet then ran at
+> whatever rate the machine hit. `BlinkScheduler.advance(step)` takes how many
+> 60 fps frames the frame was worth and scales both its wait and its per-roll
+> chance by it, so the blink rate no longer follows the frame rate: the same
+> settings gave 1 blink in ten seconds at 60 fps and 3 at 240, and now measure
+> 6.6, 6.8 and 7.2 blinks a minute at 60, 30 and 240.
+>
+> A residual remains in the bounce apex: a bigger step overshoots the true apex by
+> more (2.2 px between 30 and 60 fps on a 31.25 px bounce), because the arc is
+> integrated in steps. The integration scheme was left alone; the arc's shape and
+> timing now match, which is what the eye reads.
 
 ## Key Systems
 
@@ -236,15 +1526,198 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 - 50-state history limit
 - Snapshots store `Image` object references (not base64 PNG) — no encoding cost. PNG encoding only happens at file-save time. (Updated: 2026-02-16)
 - Handles missing parent sprites by falling back to origin; detects circular references during restore (Updated: 2026-03-07)
-- `save_state()` pushes snapshot; `save_state_continuous()` debounces within same frame
+- `begin(gesture)` / `commit()` / `abort()` open one history transaction; an empty gesture is a discrete edit, a named gesture collapses a continuous one
+
+> Updated: 2026-08-06 — `UndoManager` retains history, cache, hierarchy, and
+> scene-reconciliation ownership, but delegates sprite property capture and
+> application to `SpriteState`. Its former parallel save/restore maps were
+> removed. Image caches still hold `Image` references rather than encoding PNGs.
+
+> Updated: 2026-08-17 — **History is transactional and has no interface
+> knowledge.** `save_state()`/`save_state_continuous()` are replaced by
+> `begin(gesture)` / `commit()` / `abort()`. A command that turns out to change
+> nothing calls `abort()`, which pops the snapshot it pushed, so no-op clicks no
+> longer leave dead entries the user has to undo through. Continuous edits are
+> keyed by **gesture** rather than a single global latch: `_active_gesture` holds
+> one key at a time, `end_gesture(name)` ends only that gesture, and a mouse
+> release ends whatever is active. Keying by gesture is what makes switching
+> controls mid-drag start a new entry instead of silently dropping the second
+> control's history, and it lets keyboard-driven edits close their own burst
+> (the old latch only reset on a mouse release, so keyboard edits merged
+> indefinitely). Restore no longer calls into the sidebars: `_restore()` and
+> `_restore_full()` emit **`state_restored(scope)`** and `AvatarController.on_state_restored()`
+> owns every scene consequence (`spriteList.updateData` / `refreshHierarchy`,
+> `spriteEdit.setImage`, `changeCostume`, `onWindowSizeChange`, the light gizmo).
+> Two restore defects were fixed alongside: visibility is re-derived through
+> `applyCostumeVisibility()` instead of reading `costumeLayers` directly (the
+> direct read ignored `userHidden`, so every eye-hidden layer reappeared on
+> undo/redo), and restored sprites reparent synchronously via
+> `_link_restored_parents()` instead of relying on `spriteObject`'s deferred
+> 0.1s `_ready` timer (which left the hierarchy briefly wrong and leaked a
+> `SceneTreeTimer` at exit).
+
+### Mutation Commands (`autoload/domain/mutation_commands.gd`)
+
+The single canonical path for user-initiated mutations that belong in history.
+Production code never opens a history transaction directly; a command owns the
+before/after snapshot boundary exactly once.
+
+| Command | Use |
+|---------|-----|
+| `set_layer_property(layer, prop, value)` | discrete single-property edit (toggle, dropdown, spinbox) |
+| `drag_layer_property(layer, prop, value, gesture)` | continuous single-property edit (slider drag, held key) |
+| `set_layer_field(layer, prop, index, key, value, gesture)` | one key inside a structured field (an `animClips` entry) |
+| `structural(body)` | hierarchy, add/remove, costume, image replacement; `body` returns false to discard the entry |
+| `drag(gesture, body)` | continuous multi-field gesture (canvas drag, ribbon path editing) |
+| `capture_bulk()` | pre-state for work that awaits across frames (avatar load, PSD import) |
+
+- Property writes are validated against `SpriteState`'s persistent field map, so
+  a command naming a non-persistent property is reported rather than silently
+  failing to survive undo or a save round-trip.
+- Unchanged writes return false without touching history, which is what keeps
+  re-selecting the current dropdown entry or re-clicking a settled toggle from
+  accumulating entries.
+- Gesture keys are scoped to layer and property (`_gesture_key`), so the same
+  slider on a different layer is a separate entry.
+- The history sink is resolved at runtime (`/root/UndoManager`) rather than by
+  naming the autoload, so the command layer loads — and is unit-tested against a
+  recording sink — in workspaces that register no singletons.
+
+> Updated: 2026-08-17 — Introduced in Phase 14. `tests/unit/test_release_contract.gd`
+> enforces that no production file outside this module opens a history
+> transaction, so the canonical path cannot quietly regrow a second entrance.
+
+> Updated: 2026-08-17 — **Avatar loads are cancellable.** `load_avatar()` runs
+> across frames (worker-pool image decode, then sprite construction), so
+> `shutdown()` sets `_load_cancelled` and every suspension point re-checks
+> `_load_aborted()`. A cancelled load calls `_abandon_load()`, which releases the
+> decode buffers and dismisses the progress dialog, instead of resuming to build
+> sprites against a scene that is being torn down. `is_loading()` exposes the
+> in-flight state for shutdown paths and the lifecycle gate.
 
 ### Save/Load (`saving.gd`, `main.gd`)
 
 - Format: JSON with base64-encoded PNG image data per sprite
-- File extension: `.pngtp`
+- User-facing file extension: `.pixlab` (legacy `.save` avatars still load; the contents are identical)
 - PNG encoding for file saves runs on a background thread to avoid stalling the main loop (Updated: 2026-02-16)
 - Settings stored separately: volume, sensitivity, window size, background color, costume key bindings, etc.
-- Web build support via localStorage
+
+> Updated: 2026-08-06 — Persistence boundaries are versioned and validated before live scene state is changed. `autoload/persistence/avatar_save_schema.gd` migrates legacy unversioned avatars, supplies typed compatibility defaults, rejects unsupported future versions, duplicate IDs, invalid layers, and hierarchy cycles, and selects sprite entries by their validated shape rather than a fixed metadata allowlist. `settings_schema.gd` owns the complete canonical settings defaults and typed/ranged migration (including legacy NDI ruler-to-crop conversion). `value_codec.gd` is the only persistence-boundary parser for legacy Variant strings. `json_file_store.gd` bounds reads, reports JSON line errors, writes through a same-directory temporary file, and retains/reloads a previous complete `.bak` if replacement is interrupted. Manual saves only update `lastAvatar` after the avatar write succeeds; failed session saves re-arm the dirty flag. The `Saving` singleton remains the compatibility-facing API and exposes `last_error` plus `persistence_error` for actionable UI reporting.
+
+> Updated: 2026-08-06 — Sprite identifiers and their `parentId` / `eyeTrackTargetId` references preserve the complete unsigned 32-bit range produced by Godot's `RandomNumberGenerator.randi()`. Persistence must not narrow these values to signed 32-bit integers before uniqueness and hierarchy validation.
+
+> Updated: 2026-08-06 — Costume membership is serialized as canonical plain Array text (`[0, 1, ...]`). The compatibility decoder also accepts the transient Godot 4.6 typed form (`Array[int]([...])`) written by early schema-normalized builds; disabled slots must never fall back to the all-enabled default during load.
+
+Schema metadata uses `_schemaVersion`; underscore-prefixed root keys are reserved
+for avatar-level metadata. A root entry is treated as a layer only when it is a
+validated dictionary with `type == "sprite"`. Current schema migration and
+atomic round-trip/recovery cases are fixture-tested in
+`tests/unit/test_persistence.gd`.
+
+> Updated: 2026-08-17 — Production-scene regression tests supplement the schema
+> suite at `tests/integration/avatar_scene_runner.tscn`. A valid 12-layer fixture
+> reproduces the previously missed runtime interactions after normalization,
+> while a duplicate-ID fixture proves a rejected document leaves the live avatar
+> root, instances, and registry untouched. `scripts/run_performance.sh` also
+> records full 100- and 250-layer load timings and static-memory observations in
+> `.artifacts/performance-avatar-load.json`.
+
+> Updated: 2026-08-17 — **Lifecycle qualification gate.**
+> `tests/performance/lifecycle_runner.tscn` measures seven production-scene
+> workloads against a 100-layer rig and writes
+> `.artifacts/performance-lifecycle.json`: costume switching, hierarchy rebuild
+> (full versus refresh-only), sidebar refresh on both pages, command undo memory,
+> wiggle tick cost, cancelled-load teardown, and repeated startup/shutdown. Each
+> carries a broad smoke ceiling; the JSON numbers are the trend line.
+>
+> Two measurement rules matter for anyone extending it. First, the runner
+> uncaps `Engine.max_fps` for its whole run: headless frames are otherwise paced,
+> so a paced wall clock reports the frame interval no matter what the frame did.
+> Second, `updateData()` and `refreshHierarchy()` must be awaited. `update_data()`
+> yields a frame and then abandons stale generations, so an un-awaited loop
+> coalesces into a single rebuild and reports a cost unrelated to rebuilding.
+>
+> Two claims are established structurally rather than by timing, because per-frame
+> cost at this layer count is dominated by the layers themselves. "No hidden edit
+> work on the player page" is proved by `can_process()` on both sidebars, not by
+> the millisecond difference. Wiggle cost is measured by driving `_update_wiggle`
+> directly, after asserting the ribbons built their meshes and advance across
+> frames, because a chain's cost could not be separated from frame noise by
+> differencing.
+
+> Updated: 2026-08-06 — Save execution is coordinated by
+> `main_scenes/controllers/save_controller.gd`. It serializes the scene snapshot
+> supplied by `main.gd`, owns both worker threads, joins them on shutdown, and
+> keeps manual-save and recovery-copy writes mutually exclusive. The controller
+> also owns the native file dialogs and the timestamp policy deciding whether a
+> newer `user://session.pngtp` should be offered for recovery.
+
+The versioned field inventory, validation limits, migration rules, and atomic
+write behavior are specified in `docs/save_format.md`.
+
+> Updated: 2026-08-06 — Undo snapshots continue sharing immutable `Image`
+> references rather than copying or encoding them. The live image/normal caches
+> now replace changed references, erase cleared normal maps, and prune IDs no
+> longer present in the rig; retained undo/redo snapshots themselves remain the
+> only owners needed to restore deleted layers.
+
+> Updated: 2026-10-21 — **Avatars save as `.pixlab`.** The save dialog offers
+> only `*.pixlab`, and `AvatarSaveController.avatar_save_path()` makes every
+> manual save end in it: a legacy `.save` name is converted (the new file is
+> written beside the old one, which is left alone) and a bare name gets the
+> extension. The load dialog accepts both extensions, and `lastAvatar` paths to
+> `.save` files keep working, since loading never looks at the extension.
+> Only `.pixlab` is associated with the app by the Windows installer.
+
+### Windows installer and versioning
+
+> Updated: 2026-10-21 — `application/config/version` is the one version, in
+> semver (`1.7.0-alpha.3`, `1.7.0`), and release tags are `v` plus it.
+> `AppVersion` (`autoload/runtime/app_version.gd`) compares versions for the
+> future GitHub-releases updater and folds a version into the 4-part Windows
+> form (alpha N → N, beta N → 100+N, rc N → 200+N, release → 1000). The Windows
+> preset's `file_version`/`product_version` must equal that form;
+> `test_release_contract` and `installer/windows/build.ps1` both check it.
+>
+> `installer/windows/PixelLabStudio.iss` (Inno Setup 6) installs per user to
+> `%LOCALAPPDATA%\Programs\PixelLab Studio` with no elevation, adds the Start
+> menu entry and the Settings → Apps entry, associates `.pixlab` under
+> `HKCU\Software\Classes` (ProgID `PixelLabStudio.Avatar`, open command
+> `"PixelLab Studio.exe" "%1"`) and writes `HKCU\Software\PixelLab Studio\InstallDir`
+> so the app can tell an installed copy from the portable zip. Its `AppId` is
+> fixed forever; upgrades install over the previous version, and a silent
+> `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RELAUNCH` run closes a
+> running copy and starts the new one. Uninstall never touches
+> `user://` (settings, session) or the user's avatars. `build.ps1` exports to
+> `.artifacts/exports/windows/`, checks the Agility SDK DLL is bundled, and
+> writes the installer, the portable zip and `SHA256SUMS.txt` to
+> `.artifacts/installer/windows/` under fixed names
+> (`PixelLabStudio-v<version>-Windows-x64[-Setup].exe/.zip`) that the updater will
+> match on. `.github/workflows/windows-release.yml` runs it on a `v*` tag and
+> attaches the assets to a draft release. Assets are never replaced in place.
+> The plan and test record are in `docs/windows_installer_plan.md`.
+
+> Updated: 2026-10-21 — **The updater.** `UpdateController`
+> (`main_scenes/controllers/update_controller.gd`) checks GitHub's `/releases`
+> list at startup at most once a day (`updateLastCheck`; off with
+> `updateChecks`), never in editor runs or isolated sessions, and on demand
+> from Settings → Updates. `UpdateFeed.pick_update()` offers the newest release
+> newer than `AppVersion.current()`, skipping drafts and tags that are not
+> semver; prereleases count when the user opted in
+> (`updateIncludePrereleases`) or is running one. A background result waits for
+> the recovery prompt, saves and loads to finish, and stays quiet for a version
+> the user skipped (`updateSkippedVersion`). An installed Windows copy (Inno's
+> `unins000.exe` beside the exe) downloads `SHA256SUMS.txt` and the setup to
+> `user://updates/`, refuses anything whose SHA-256 does not match, writes the
+> session synchronously (`AvatarSaveController.save_session_now()`), starts the
+> setup with `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH`
+> without waiting on it, and quits through the window-close path; the installer
+> relaunches the new build, whose next startup clears `user://updates/`. Portable
+> copies and other platforms open the release page instead. `-- --update-feed=<url>`
+> replaces the API URL for testing against a local feed.
+> The prompt and the download count in `main.isFileSystemOpen()`
+> (`UpdateController.is_dialog_open()`), so canvas shortcuts are held while
+> they are up, as for every other modal.
 
 ### PSD Import (`psd_parser.gd`)
 
@@ -253,29 +1726,98 @@ Sprites live under `OriginMotion/Origin` in the scene tree and use the `"saved"`
 - Extracts layer names, bounds, opacity, channel data
 - Import dialog lets user select which layers to add
 
+> Updated: 2026-08-06 — PSD parsing treats the file as untrusted binary input.
+> `autoload/import/import_limits.gd` caps file/section sizes, dimensions,
+> layers, channels, and total decoded working memory. Every length is checked
+> against its enclosing section before a seek/read; PackBits scanline tables
+> and exact decoded row widths are validated before native or GDScript decode.
+> Parser cancellation is checked between records, channels, rows, and layer
+> composition. `main.gd` cancels and joins PSD/APNG workers before it detaches
+> from `Global`, and reports worker-start failures without leaving modal UI or
+> stale thread references behind.
+
+> Updated: 2026-09-17 — `MAX_DECODED_BYTES` is 2 GB, raised from 512 MB. The
+> ceiling has to cover the parser's peak, and that peak is roughly twice the
+> canvas: `parse` decodes EVERY layer's channels into byte arrays first, then
+> walks the layers a second time to compose each RGBA `Image`, freeing a layer's
+> channel arrays only after composing it. A Clip Studio Paint export writes every
+> layer at full canvas size, so 145 untrimmed 1150x1200 layers are budgeted at
+> 1.5 GB (measured peak: 795 MB; the guard's 4 + min(channels, 4) bytes per pixel
+> is an upper bound). Such a file is only 15 MB on disk because PackBits collapses
+> the transparency: about 100 KB per layer against 5.26 MB of pixels, a 51x ratio.
+> The ceiling is a stopgap. The fix is to stream one layer at a time (decode →
+> compose → free) and crop each composed image to its opaque rectangle, carrying
+> the crop as the layer's offset, which would cut both the peak and the per-sprite
+> memory by about that same ratio. `decoded_images_fit`, and so the APNG frame
+> budget, shares the constant and was raised with it.
+
+> Updated: 2026-08-06 — Post-PSD premultiplication and alpha-polygon work uses
+> one `WorkerThreadPool` group task with an isolated result slot per layer,
+> replacing the previous coordinator that created one OS thread per selected
+> layer. Avatar-load pool ownership is tracked too, and both groups are joined
+> before main-scene teardown.
+
 ### Unified Replace (`replace_review_dialog.gd`)
 
 > Updated: 2026-02-28 — Added unified Replace flow
 
-- Uses `DisplayServer.file_dialog_show()` with `FILE_DIALOG_MODE_OPEN_ANY` to select PSD, PNG, or folder
+> Updated: 2026-08-17 — **Folder replace is unreachable.** The Replace dialog is
+> a `FileDialog` in `FILE_MODE_OPEN_FILE` filtered to `*.psd` and `*.png`, so a
+> folder can never be selected and `_on_replace_file_selected()` only ever
+> dispatches to the PSD or single-PNG handler. `_handle_replace_from_folder()`
+> and `_show_replace_review_from_items()` are complete and correct but have no
+> caller. The Phase 16 audit left the implementation in place rather than
+> deleting a documented feature: re-exposing it needs a directory dialog (or
+> `FILE_MODE_OPEN_ANY`) and is a product decision, not a refactor.
+
+- Uses a `FileDialog` in `FILE_MODE_OPEN_FILE` with `*.psd` and `*.png` filters
 - **PSD replace**: Parses PSD (reuses PSD parser thread), matches layer names to existing sprite names (case-insensitive), shows review dialog
-- **Folder replace**: Scans folder for PNGs, matches filenames to sprite names, shows review dialog
+- **Folder replace**: implemented in `_handle_replace_from_folder()` but **not currently reachable** — the Replace dialog only accepts a single PSD or PNG file, so nothing dispatches to it (see the 2026-08-17 note below)
 - **Single PNG replace**: If a sprite is selected, replaces that sprite directly (preserves APNG detection)
 - Review dialog shows matched sprites (will be replaced), new items (checkboxes to optionally add), orphaned sprites (option to remove)
 - Name matching: `psd://Name` → `Name`, `/path/file.png` → `file`, case-insensitive via `.to_lower()`
 - `spriteObject.replaceSpriteFromData()` replaces image data in-place, preserving all properties (position, physics, costumes, parent-child, etc.)
-- All operations are fully undoable via `UndoManager.save_state()`
+- All operations are fully undoable via `MutationCommands.capture_bulk()`
 
-### APNG/GIF Import (`apng_parser.gd`)
+### APNG Import (`apng_parser.gd`)
 
 - Detects animated PNGs by checking for `acTL` chunk
 - Composes frames into horizontal sprite sheet
 - Calculates animation speed from frame delays
 - Caps at max texture width (16384px)
 
+> Updated: 2026-08-06 — APNG detection and parsing validate signature, chunk
+> bounds, CRCs, IHDR/acTL/fcTL shapes, canvas/frame geometry, operation values,
+> declared frame count, compressed-byte accumulation, and total decoded frame
+> memory. Composition uses Godot's bounded image blit/blend operations and the
+> parser supports cooperative cancellation. Integration tests exercise both a
+> generated valid animation and malformed/truncated inputs.
+
+### Stream Deck Integration
+
+> Updated: 2026-08-06 — The Stream Deck autoload remains dormant unless its
+> setting is enabled and a valid platform config/port is available. The local
+> bridge URL is an explicit `ws://127.0.0.1` endpoint. `protocol.gd` validates
+> JSON packet/event/action/payload shapes and project-local scene paths before
+> the singleton emits input or changes scenes. Invalid packets do not interrupt
+> processing of later queued packets, and the websocket is closed explicitly
+> during shutdown. Linux, which has no configured plugin path, now degrades
+> without dereferencing a missing file.
+
 ---
 
 ## Input Handling
+
+> Updated: 2026-08-17 — **The z-index overlay is a component, not singleton
+> state.** `ui_scenes/zIndex/z_index_editor.gd` (a `Node2D` added under `main` on
+> first use) owns the panel construction, styling, confirm-flash tween, and the
+> click-outside hit test. `Global` keeps only what input routing needs:
+> `is_z_index_editor_active()`, `_show_z_input()`, and `_hide_z_input()`. The
+> editor commits through `MutationCommands`, so an entered depth is one undoable
+> command and re-entering the current value adds no history.
+> `Global.detach_main()` drops the reference because the component lives under
+> the scene it was created in.
+
 
 Key bindings (edit mode, handled in `global.gd`):
 
@@ -289,6 +1831,30 @@ Key bindings (edit mode, handled in `global.gd`):
 | Z / Y      | Undo / Redo                               |
 | Mouse wheel| Cycle sprite selection (only while the cursor is over the open viewport) |
 | Ctrl+Scroll| Over the viewport: zoom (10%-400%). Over a sidebar: nudge the hovered slider/spinbox by one `step`. Sliders never adjust without Ctrl, and the viewport never zooms while the cursor is over a sidebar |
+
+> Updated: 2026-08-17 — **One input command decoder.**
+> `autoload/input/input_commands.gd` holds the key/device rules as data and
+> decodes them purely: no engine polling, no scene access. `FOREGROUND` maps each
+> polled action to a command plus its guards (selection, edit mode, control
+> modifier, text focus, open file dialog), and `FOREGROUND_ORDER` fixes dispatch
+> order. `Global._run_key_commands()` builds the guard snapshot and runs whatever
+> the decoder returns; `Global._run_key_command()` is the only place the effects
+> live. Background capture (the optional OS-level hook) and Stream Deck costume
+> keys route through `decode_background()`, `decode_visibility_capture()`, and
+> `decode_device_costume()` in `main.gd`, replacing three separate inline
+> decoders. Stateful, timing-based interactions stay in `Global` where they
+> belong: the origin tap-versus-hold threshold, ribbon-path escape, and the
+> mode-clearing fallbacks are not command decodes. Focus guards and Stream Deck
+> behavior are unchanged; `Global.is_awaiting_animation_key_capture()` was added
+> so the decoder can tell an armed animation bind from a live trigger.
+
+> Updated: 2026-08-06 — The view-mode volume and sensitivity sliders now write
+> `Global`/settings from `value_changed`; they no longer rewrite unchanged
+> values every frame. Layer-list hierarchy builds use direct sprite-to-row maps
+> rather than nested parent searches, and row badges only write Control
+> properties when their underlying state changes. Sprites with no animation
+> clips bypass animator allocation/evaluation and unchanged talk/blink visual
+> state bypasses repeated CanvasItem writes.
 | Middle drag| Pan viewport                              |
 | Ctrl+K     | Tap: screenshot; Hold (≥1s): record transparent video. Format (WebM/APNG/GIF) and FPS (15/30/60) configurable in Settings. APNG/GIF default to 15 FPS, WebM defaults to 30 FPS. When NDI is enabled, captures the NDI crop view (auto-framed avatar) instead of the main camera view (updated 2026-03-12) |
 | Left click | Select sprite / deselect on empty space   |
@@ -301,7 +1867,7 @@ Key signals defined in `global.gd`:
 
 - `startSpeaking` / `stopSpeaking` — mic threshold crossed
 - `pressedKey` — keyboard input forwarded for toggle bindings
-- `fatfuckingballs` — sprite visibility toggle await trigger (legacy naming)
+- `visibility_binding_armed` — sprite visibility toggle await trigger
 
 ---
 
@@ -348,6 +1914,7 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 | File | Purpose |
 |------|---------|
 | `ndi/ndi_output_manager.gd` | Orchestrator: creates SubViewport + Camera + NDIOutput, crop-box framing, dirty flag |
+| `ndi/ndi_output_geometry.gd` | Pure validation, output-size clamp, aspect ratio, center, and zoom calculation |
 | `ndi/ndi_crop_box.gd` | Resizable dashed-orange crop box with 8 gizmos, drawn in edit mode |
 
 ### Framing (manual crop box)
@@ -361,9 +1928,18 @@ The NDI SubViewport shares `world_2d` with the main viewport so the NDI camera s
 
 ### NDI Crop Box
 
-A dashed orange rectangle (`ndi/ndi_crop_box.gd`, spawned by the manager onto `Global.main`, visibility layer 2) visible in edit mode when NDI is enabled — same look as the old crop line. Resize via 8 constant-screen-size gizmos: 4 edge midpoints (move that edge, H/V resize cursors) and 4 corners (move both adjacent edges, diagonal cursors). Grabbing a **bare edge line** (away from any gizmo) returns `H_MOVE` and translates the whole box without resizing (move cursor), so you can reposition the frame by dragging any side. Minimum box size 64 px; sidebars block grabs (same screen-space guard as before). While dragging, bounce/wobble freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in `main._process` and `spriteObject.wobble`).
+A dashed orange rectangle (`ndi/ndi_crop_box.gd`, owned by the NDI manager,
+visibility layer 2) is visible in edit mode when NDI is enabled — same look as
+the old crop line. Resize via 8 constant-screen-size gizmos: 4 edge midpoints
+(move that edge, H/V resize cursors) and 4 corners (move both adjacent edges,
+diagonal cursors). Grabbing a **bare edge line** (away from any gizmo) returns
+`H_MOVE` and translates the whole box without resizing (move cursor), so you can
+reposition the frame by dragging any side. Minimum box size 64 px; sidebars
+block grabs (same screen-space guard as before). While dragging, bounce/wobble
+freeze at worst-case-down via `ndi_manager.crop_dragging` (checked in
+`main._process` and `spriteObject.wobble`).
 
-> Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `_on_load_dialog_file_selected()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
+> Per-avatar persistence (kept from the crop line, 2026-06-12): `_build_avatar_save_data()` writes `"_ndiCropRect"` ([l, t, r, b]) to the avatar JSON (alongside `"_light"` / `"_eyeTrackingGloballyEnabled"`), plus legacy `"_ndiRulerY"` (= box bottom) so older builds still pre-frame. `load_avatar_file()` restores `_ndiCropRect`; a legacy save with only `_ndiRulerY` keeps the current box and snaps its bottom to the line. Saves with neither key keep the current crop. Settings migration: `_load_settings()` seeds `ndiCropRect` from an old `ndiRulerY` (line Y becomes box bottom). Box edits are intentionally non-undoable (not in UndoManager snapshots).
 
 ### Settings (`Saving.settings`)
 
@@ -377,9 +1953,37 @@ A dashed orange rectangle (`ndi/ndi_crop_box.gd`, spawned by the manager onto `G
 
 Uses `ClassDB.class_exists("NDIOutput")` before instantiation. If the godot-ndi plugin is not installed, the NDI settings section shows "plugin not installed" and disables the toggle. The app never crashes from a missing plugin.
 
+> Updated: 2026-08-06 — Missing native support also clears a stale persisted
+> enable flag. Output dimensions, modes, and crop rectangles are normalized at
+> the manager boundary as well as by the settings schema. The manager guards
+> deferred dirty calls and unavailable main viewports, disconnects the root
+> resize signal, stops its timer, and synchronously releases `NDIOutput` before
+> its viewport during application teardown.
+
+> Updated: 2026-08-06 — `NDIOutputManager` owns the crop box as its child rather
+> than attaching it to `Global.main`. Immediate tree shutdown releases only the
+> native `NDIOutput` eagerly and leaves scene-owned viewport/crop containers to
+> Godot's recursive teardown, avoiding double-lifetime work.
+
 ### Plugin Dependency
 
 Requires the godot-ndi GDExtension plugin (by unvermuthet, MPL-2.0) in `addons/godot-ndi/`. Also requires NDI Runtime installed on the user's OS.
+
+> Updated: 2026-08-06 — The macOS v1.2.6 binaries carry the documented MPL
+> patch in `addons/godot-ndi/patches/`. `ViewportTextureRouter` is quiesced at
+> scene deinitialization, so `frame_post_draw` disconnects while
+> `RenderingServer` is valid; the router remains alive through rendering cleanup
+> to absorb queued texture callbacks, then is deleted at core deinitialization.
+> `scripts/run_ndi_teardown_smoke.sh` covers idle extension and rendered active
+> output shutdown on macOS hosts with the NDI runtime installed.
+
+> Updated: 2026-08-17 — The active-output smoke renders 120 frames before
+> requesting shutdown. Three frames intermittently quit Godot 4.6.3 while its
+> Metal `compiler reply queue` still owned a shader-cache callback; macOS crash
+> reports faulted in `RenderingDeviceDriverMetal::shader_cache_free_entry`, not
+> the extension. Allowing pipeline initialization to settle keeps the smoke
+> focused on the NDI scene/core teardown it is designed to validate; five
+> consecutive idle/active repetitions pass on the pinned engine.
 
 ---
 
@@ -432,39 +2036,17 @@ Backward compatible: old saves without these fields load fine via `.has()` check
 
 ### UI
 
-- **Sprite Edit Panel** (`sprite_viewer.gd`): "normal map" section with status label, Import button (opens file dialog), Clear button
+- **Sprite Edit Panel** (`normal_map_panel.gd`, wired by `sprite_viewer.gd`): status label, Import button (opens file dialog), Clear button
 - **Sprite List** (`sprite_list_object.gd`): Blue "N" badge shown next to layer name when normal map is assigned
 
-## Light Gizmo
+## Light Compatibility Data
 
-> Updated: 2026-03-12 — Draggable PointLight2D for normal map visualization
-
-### Overview
-
-A single `PointLight2D` is always present in the scene so that normal-mapped sprites have a light to react to. The light lives inside `ui_scenes/light/light_gizmo.gd` (extends `Node2D`), added as a child of `origin` so it bounces with the avatar.
-
-### Interaction
-
-- **Edit mode**: yellow dot gizmo visible at the light position; click-drag within 20px to reposition
-- **View mode**: gizmo hidden, light stays active
-- Drag uses `_unhandled_input()` with `global_position` offset pattern; calls `get_viewport().set_input_as_handled()` to block sprite selection underneath
-- `UndoManager.save_state()` called on drag start
-
-### Properties
-
-| Property | Type | Default | Maps to |
-|----------|------|---------|---------|
-| `light_energy` | float | 1.0 | `PointLight2D.energy` |
-| `light_color` | Color | white | `PointLight2D.color` |
-| `light_range` | float | 2.0 | `PointLight2D.texture_scale` |
-| `light_enabled` | bool | true | `PointLight2D.enabled` |
-
-### Integration
-
-- **`main.gd`**: `_create_light_gizmo()` instantiates the gizmo and adds it to `origin`. Called in `_ready()` and after origin rebuild (load, undo full restore). `_apply_light_data(dict)` helper sets properties from a dictionary.
-- **`swapMode()`**: calls `_light_gizmo.queue_redraw()` to show/hide gizmo dot
-- **Save/Load**: `"_light"` key in avatar JSON with `{pos, energy, color, range, enabled}`. Old saves without `"_light"` get default values.
-- **Undo**: snapshot includes `"_light"` sub-dictionary; `_restore()` and `_restore_full()` skip it in sprite loops and apply separately
+> Updated: 2026-08-06 — The light gizmo is dormant and is not part of the
+> production scene or release manifest. Normal-map rendering remains supported,
+> but there is no active light-placement UI. The guarded hooks and normalized
+> `_light` avatar metadata remain solely to avoid discarding older save data;
+> they must not be described as an active runtime system until a tracked,
+> tested scene component is restored.
 
 ## Blend Modes & Opacity
 
@@ -519,7 +2101,9 @@ it as `COLOR.a` and ignores `COLOR.rgb`.
 
 ### Data flow
 
-1. **`effects/wiggle/wiggle_appendage.gd`** (`WiggleAppendage2D extends Polygon2D`) — a decoupled port of the remix's angular-momentum spring chain: each joint is a torsional spring toward the previous joint's angle (+ curvature) with momentum, **linear damping**, a hard `max_angle` limit + `comeback_speed` spring, and gravity droop. The root point follows the node's `global_position` (so avatar bounce/drag/wobble propagate in as momentum → the whip), and `auto_wag` adds a **sinusoidal sway to the root direction** — the chain follows it with spring lag, so the base moves smoothly (clean sine) and the tip whips. Propagation smoothness is governed by `max_angular_momentum` (per-joint rotation-speed cap) and `stiffness_decay` (joints soften toward the tip), both scaled from stiffness in `_wiggle_params`. Output is a deformable triangle-strip mesh; `sample_local(t)` exposes the curve for child-follow. No anchor/mirror/`actor` coupling, and the original's brake-on-reversal damping was replaced with linear damping (it caused a rotate-stop-rotate stutter at wag reversals).
+1. **`effects/wiggle/wiggle_appendage.gd`** (`WiggleAppendage2D extends Polygon2D`) — a decoupled port of the remix's angular-momentum spring chain: each joint is a torsional spring toward the previous joint's angle (+ curvature) with momentum, **linear damping**, a hard `max_angle` limit + `comeback_speed` spring, and gravity droop. The root point follows the node's `global_position` (so avatar bounce/drag/wobble propagate in as momentum → the whip), and `auto_wag` adds a **sinusoidal sway to the root direction** — the chain follows it with spring lag, so the base moves smoothly (clean sine) and the tip whips. Propagation smoothness is governed by `max_angular_momentum` (per-joint rotation-speed cap) and `stiffness_decay` (joints soften toward the tip), both scaled from stiffness in `_wiggle_params`. Output is a deformable triangle-strip mesh; `joints_local()` / `rest_joints_local()` expose the live and rest chain joints for child-follow. No anchor/mirror/`actor` coupling, and the original's brake-on-reversal damping was replaced with linear damping (it caused a rotate-stop-rotate stutter at wag reversals).
+
+> Updated: 2026-09-19 — **The spring is linear through rest.** The joint force was `sign(d)·sqrt(|d|)·k`, whose gain is unbounded at zero bend. On a slow idle bob a joint's deflection is mostly velocity-driven, so it swings through rest at the top and bottom of every cycle, and the sqrt yanked it across: a smooth extra flick at each turnaround that no slider removed. Measured on a real rig (60 fps, 5 px / 3 s oscillate): the tip's speed pulsed -0.6, -1.4, -1.9, -1.4, -0.6 px per 4 frames after each turnaround. The force is now `d / sqrt(|d| + SPRING_SOFT_ZONE)` with `SPRING_SOFT_ZONE = 0.02` rad (`_spring_curve`): sqrt-like above about 0.1 rad, linear near rest. The same stretch now eases -0.3, -0.5, -0.7, -0.9, -1.0, -1.1. Side effect: small idle swings read about 10 to 20% larger, because the spring is softer near rest.
 2. **`spriteObject._set_wiggle_active(on)`** — creates/frees the appendage under `DragOrigin` (sibling of the `Sprite2D`, so it shares the layer transform), then `_apply_wiggle_geometry()`; hides/shows the `Sprite2D`.
 3. **`spriteObject._apply_wiggle_geometry()`** — the single geometry path. Catmull-Rom-smooths `wigglePath` (texture-px control points) into `_wiggleSmooth`, `_rebuild_wiggle_chain()` anchors the mesh at the path root and calls `appendage.set_geometry(rest_rel, resolution)` (the chain's rest = the path), then `appendage.build_mesh(_smooth_widths(_wiggleSmooth), _wiggleSmooth[0])` builds the mesh's per-vertex UVs (mapping to the real layer texture) + triangulation from the rest pose. The appendage's `texture` is the layer's own `CanvasTexture` (diffuse + normal). Re-run on path/width/thickness/image/resolution change (event-driven, not per-frame).
 4. **`spriteObject._update_wiggle(delta)`** — each frame when `wiggleEnabled` (and not path-editing): holds the hidden sprite at identity (so linked children map cleanly), `configure()`s the chain from `_wiggle_params()`, and calls `appendage.tick(delta, tick)` (which moves the mesh). `talkBlink()` copies the sprite's `self_modulate`/`visibility_layer` onto the mesh so the talk/blink fade still applies.
@@ -532,11 +2116,15 @@ it as `COLOR.a` and ignores `COLOR.rgb`.
 
 `Global.wigglePathMode` (entered from the Physics tab's **✎ Edit ribbon path**, exited via the toggle / Esc / deselect) spawns a **`WigglePathEditor`** (`effects/wiggle/wiggle_path_editor.gd`) under the held layer's `DragOrigin`, so it inherits the content transform. It shows the static `Sprite2D` to trace over (ribbon hidden, full opacity, NDI layer 2) and draws the band (swept thickness), centerline spline, flow arrows, and root (diamond) / tip (ring) / mid (dot) handles in the theme accent, all at constant on-screen size via `get_global_transform_with_canvas()`. Direct manipulation in texture space: **drag** a position handle to move it, **drag** the amber square **width grip** (on a spoke out to the band edge at each point) to taper that point, **click** empty to add a point (split the nearest segment or extend an end, then drag), **right-click** a handle to remove it (min two). On press it grabs whichever of the position/width grip is closer. `mouse_cursor.gd` skips selection while the mode is on; the editor consumes its own input. On exit (or on releasing a grip) `apply_wiggle_path_changed()` re-bakes the now-visible ribbon.
 
+> Updated: 2026-09-17 — **The selection is locked while the path editor is open.** `mouse_cursor.gd` had always skipped canvas selection during the mode, but a layer-list row is a `Control` and never reaches that path, so clicking a row (the parent, say) moved `Global.heldSprite`. The editor follows the held layer, so it tore down and re-opened on the newly clicked layer, and `wiggle_runtime.enter_path_edit()` auto-fits a path whenever `wigglePath.size() < 2`: every layer clicked mid-edit had a traced ribbon path written onto it. `enter_path_edit()` also forces `sprite.visible = true` and stashes the previous value, so the jumping editor stomped that too. `Global.selection_locked()` is now the single predicate (`wigglePathMode or originMode`); `mouse_cursor` reads it in place of its own two checks, and `sprite_list_object._gui_input` refuses the click with a notification. The row's eye button is a separate `Control` and still works. Guarded by a source contract in `test_ui_components._test_modal_selection_guard`.
+
 ### Children ride the bend
 
 `_apply_wiggle_to_children()` places each directly-linked child (`getAllLinkedSprites()`) at `appendage.sample_local(t)`, where `t` is the child's rest distance along the appendage; rotation follows the local chain tangent. The hidden sprite is held at identity so its local space matches the appendage's. Deeper descendants follow for free via the scene tree.
 
 > Updated: 2026-06-10 — **Linked children are now reparented so they stay visible, and they always ride the bend** (the per-layer *Linked layers follow* toggle was removed; `wiggleChildrenFollow` persists but is unused). Linked children are parented under the layer's `Sprite2D`, which wiggle hides (`sprite.visible = false`) — so the whole subtree vanished. `_attach_wiggle_children()` (called each frame from `_update_wiggle`) reparents direct linked children off the Sprite2D onto **`DragOrigin`** (visible, and where the mesh lives), capturing each child's authored rest offset first; `_release_wiggle_children()` (now called from `_set_wiggle_active(false)`) reparents them back under the Sprite2D and restores that rest exactly (no drift). **Caveat:** a child that was clip-masked by this layer (`setClip` → `sprite.clip_children`) loses the mask while the parent wiggles (clipping to a deforming mesh isn't supported) and re-clips once wiggle turns off.
+
+> Updated: 2026-09-15 — **Children keep their offset from the spine (they used to snap onto it).** The old follow projected the child's rest position onto `smooth_path`, then wrote `child.position = appendage.sample_local(fraction)`. The sideways distance was never stored or restored, so a child attached beside the spine (an earring on an ear, a bow on a tail) jumped onto the centerline the moment wiggle turned on, and one past either end snapped to that end. Two smaller mismatches added to it: the projection ran on the smoothed path while the sample ran on the coarse physics chain (chords cut inside a curve, worse at low **Bones**), and `WiggleGeometry.tangent` read the arc-length fraction as a point index, so the rest and current angles disagreed even at rest. Now `WiggleRuntime.apply_to_children()` binds each child **rigidly to one chain segment** via the pure pair `WiggleGeometry.bind_to_chain()` / `follow_chain()`: which segment, how far along it, and the child's offset in that segment's own frame. Binding runs against `appendage.rest_joints_local()` (the chain's own rest, laid out exactly as `reset()` does), so an at-rest chain reproduces the authored position to floating-point exactness; `_bind_serial` (bumped by `rebuild_chain()` and `sync_to_offset()`) rebinds after a geometry or anchor change. Because the follow overwrites `position` every frame, the authored position now lives in `_wiggleRestPos` and is reached through **`spriteObject.authoredPosition()` / `setAuthoredPosition()`**, which `moveSprite`, `moveOrigin`, `snapOriginToMouse`, the origin-gizmo drag, `SpriteState.capture_properties` / `apply_existing`, and layer duplication all use. Previously a save or undo snapshot taken while wiggle was on stored the snapped position permanently, and dragging a following child was undone on the next frame.
 
 ### Parameters (`spriteObject.gd`)
 
@@ -554,7 +2142,7 @@ All `wiggle*` fields persist alongside the eye-tracking fields (same sites in `m
 
 ## Animation (clips)
 
-> Updated: 2026-06-10 — Per-layer keyframe/transform animations. A layer holds a list of **animation clips** (`spriteObject.animClips`, an Array of Dictionaries) evaluated each frame by `effects/animation/layer_animator.gd` (`LayerAnimator`, RefCounted). Two **shapes** — `twitch` (one-shot half-sine ease out-and-back) and `oscillate` (continuous sine) — on two **channels** — `rotation` (degrees) and `translation` (pixels). Four **triggers**: `always` (idle; oscillate runs continuously, twitch loops), `random` (blink-style per-frame probability `randi() % chance`), `key` (a bound key via `BackgroundInputCapture`), `manual` (the Test button). Designed extensible: new shapes/channels/triggers are added in one place each.
+> Updated: 2026-06-10 — Per-layer keyframe/transform animations. A layer holds a list of **animation clips** (`spriteObject.animClips`, an Array of Dictionaries) evaluated each frame by `effects/animation/layer_animator.gd` (`LayerAnimator`, RefCounted). Two **shapes** — `twitch` (one-shot half-sine ease out-and-back) and `oscillate` (continuous sine) — on two **channels** — `rotation` (degrees) and `translation` (pixels). Four **triggers**: `always` (idle; oscillate runs continuously, twitch loops), `random` (blink-style per-frame probability `randi() % chance`), `key` (a bound key via the optional `BackgroundInputCapture`, with foreground input retained when absent), `manual` (the Test button). Designed extensible: new shapes/channels/triggers are added in one place each.
 
 ### Composition — where it applies
 `LayerAnimator.evaluate(clips, tick, delta)` sums every clip into `rot` (radians) + `trans` (px), read each frame in `spriteObject._process` as `_animRot` / `_animTrans`. **Rotation rides `dragOrigin.rotation`** — the outermost transform on the layer — so it rotates the visible `Sprite2D` AND (for wiggle layers, where the Sprite2D is hidden) the deformable mesh + chain anchor, driving the verlet chain into secondary motion (a twitch whips a wiggly ear). It composes *outside* `sprite.rotation = _micRot + _eyeTrackRotation` (mic sway + eye-track stay inner). **Translation feeds `wob.position`** in `wobble()` (the base, before the eye-track offset is added) — exactly where the legacy wobble wrote. Suppressed while tracing a wiggle path (`_wigglePathEditor != null`).
@@ -566,7 +2154,16 @@ The old free-running wobble (`xFrq/xAmp/yFrq/yAmp`, a free sine on `wob.position
 `sprite_viewer.gd` gained a `SidebarTabBar` (reused from the right sidebar) below the sprite-sheet section: **Animation** and **Reactive**. Preview / Position / Normal-map / sprite-sheet frames+speed stay always-visible above the tabs. **Animation** content is built by `ui_scenes/spriteEditMenu/animation_clip_panel.gd` (`AnimationClipPanel`, RefCounted): a clip **list** with **+ New** / **Remove**, and an **inspector** for the selected clip (name, channel, shape, motion params, trigger → chance slider *or* Bind-key button, **▶ Test**). It rebuilds on a structural signature change (sprite / clip count / selection / channel / shape / trigger) and otherwise only refreshes live values (so undo of a slider edit shows without rebuilding mid-drag). **Reactive** holds drag / rotational-drag + limits / squash. `_layout_panel()` lays out the header sections, the tab strip, then the active tab's sections (re-run on tab switch, freeing prior dividers first); the active tab persists in `Saving.settings["leftSidebarTab"]`.
 
 ### Triggers (keys) & persistence
-Key binding mirrors the costume-hotkey flow: the inspector's Bind button sets `Global.awaitingAnimKeyBind` + `Global.animKeyBindClip` (a reference to the live clip dict); `main.gd`'s `_on_background_input_capture_bg_key_pressed` writes the next captured key into it. At runtime that same handler scans the `"saved"` group and calls `spriteObject.triggerAnimationKey(key)` (guarded by `Global._is_any_field_focused()` and the costume-bind state, so it doesn't fire while typing or binding). `animClips` persists as **one field** via `var_to_str` / `str_to_var` across all sites — `main.gd` save / load / duplicate and `undo_manager.gd` snapshot / `_restore` / `_add_sprite_from_data` — deep-copied (`.duplicate(true)`) in dup + undo so snapshots don't alias the live array.
+Key binding mirrors the costume-hotkey flow: the inspector passes its live clip
+dictionary through `Global.begin_animation_key_capture()`; `main.gd` gives the
+next captured key to `apply_animation_key_capture()`. At runtime that handler
+enumerates `Global.sprite_nodes()` and calls
+`spriteObject.triggerAnimationKey(key)`, guarded by
+`Global.has_text_entry_focus()` and the costume-bind state so it does not fire
+while typing or binding. `animClips` persists as **one field** via `var_to_str` /
+`str_to_var` across all sites — `main.gd` save / load / duplicate and
+`undo_manager.gd` snapshot / `_restore` / `_add_sprite_from_data` — deep-copied
+(`.duplicate(true)`) in dup + undo so snapshots do not alias the live array.
 
 ### Curves & preview graph
 > Updated: 2026-06-10 — A twitch clip carries a **`curve`** field selecting its easing envelope from `LayerAnimator.envelope(curve, ph)` (a `static func`, the single source of truth): `smooth` (half-sine), `ease` (rounded plateau), `snap` (fast attack/slow release), `spring` (overshoot + damped bounce through rest), `pulse` (linear triangle). The runtime (`_eval_twitch`) and the inspector preview both call it, so the preview is exact. Append-only (add a `match` case + a `_CURVES`/`_CURVE_LABELS` entry). The animator tracks live per-clip state in `_rt[i]` (`active` + normalized `ph`) for **both** shapes (twitch: progress 0→1; oscillate: phase within one period) and exposes it via `LayerAnimator.sample(i)` → `spriteObject.getAnimSample(i)`. The inspector adds a **Curve** dropdown (twitch only) and an `AnimationCurveGraph` (`ui_scenes/spriteEditMenu/animation_curve_graph.gd`, `Control` + `_draw`): it plots the curve (value vs normalized time) and a **dot that rides it** whenever the clip plays — Test or organic trigger — by polling `getAnimSample` each frame (only while `is_visible_in_tree()`, so the hidden Reactive tab costs nothing). `curve` rides in `animClips` (no new persistence sites) and is part of the inspector's structural signature so changing it rebuilds the preview.

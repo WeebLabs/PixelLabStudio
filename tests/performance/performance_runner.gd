@@ -1,0 +1,318 @@
+extends SceneTree
+
+const Animator = preload("res://effects/animation/layer_animator.gd")
+const AvatarSave = preload("res://autoload/persistence/avatar_save_schema.gd")
+const BlinkScheduler = preload("res://autoload/runtime/blink_scheduler.gd")
+const MicrophoneMonitor = preload("res://autoload/runtime/microphone_monitor.gd")
+const ImportBudget = preload("res://autoload/import/import_limits.gd")
+const SpriteRegistryService = preload("res://autoload/domain/sprite_registry.gd")
+const WiggleGeometry = preload("res://effects/wiggle/wiggle_geometry.gd")
+
+class BenchmarkSprite extends RefCounted:
+	var id: int
+	var z: int
+	var eyeTrackMode := 1
+	var eyeTrackTargetId: Variant
+
+	func _init(sprite_id: int) -> void:
+		id = sprite_id
+		z = sprite_id
+		eyeTrackTargetId = sprite_id % 100
+
+# These are deliberately generous, hardware-independent smoke ceilings. They
+# catch accidental algorithmic regressions while the JSON artifact retains the
+# exact measurements for trend analysis on consistent CI runners.
+const MAX_ANIMATION_US_PER_LAYER_FRAME := 15.0
+const MAX_SERIALIZATION_MS := 500.0
+const MAX_IMAGE_GEOMETRY_MS := 200.0
+const MAX_WIGGLE_GEOMETRY_MS := 2000.0
+const MAX_AVATAR_VALIDATION_MS := 3000.0
+const MAX_RUNTIME_SERVICES_MS := 1000.0
+const MAX_IMPORT_VALIDATION_MS := 2000.0
+const MAX_SPRITE_REGISTRY_MS := 2000.0
+const MAX_INDEXED_TARGET_LOOKUP_MS := 100.0
+
+var results: Dictionary = {}
+var budget_failures: Array[String] = []
+
+func _initialize() -> void:
+	results["engine"] = Engine.get_version_info()["string"]
+	results["platform"] = OS.get_name()
+	results["processor"] = OS.get_processor_name()
+	results["processor_count"] = OS.get_processor_count()
+	results["animation"] = _benchmark_animation()
+	results["serialization"] = _benchmark_serialization()
+	results["avatar_validation"] = _benchmark_avatar_validation()
+	results["runtime_services"] = _benchmark_runtime_services()
+	results["image_geometry"] = _benchmark_image_geometry()
+	results["wiggle_geometry"] = _benchmark_wiggle_geometry()
+	results["import_validation"] = _benchmark_import_validation()
+	results["sprite_registry"] = _benchmark_sprite_registry()
+	results["eye_target_lookup"] = _benchmark_eye_target_lookup()
+	_check_budgets()
+	results["smoke_budgets"] = {
+		"animation_us_per_layer_frame": MAX_ANIMATION_US_PER_LAYER_FRAME,
+		"serialization_ms": MAX_SERIALIZATION_MS,
+		"image_geometry_ms": MAX_IMAGE_GEOMETRY_MS,
+		"wiggle_geometry_ms": MAX_WIGGLE_GEOMETRY_MS,
+		"avatar_validation_ms": MAX_AVATAR_VALIDATION_MS,
+		"runtime_services_ms": MAX_RUNTIME_SERVICES_MS,
+		"import_validation_ms": MAX_IMPORT_VALIDATION_MS,
+		"sprite_registry_ms": MAX_SPRITE_REGISTRY_MS,
+		"indexed_eye_target_lookup_ms": MAX_INDEXED_TARGET_LOOKUP_MS,
+		"passed": budget_failures.is_empty(),
+	}
+
+	var json := JSON.stringify(results, "\t")
+	print("PERF_RESULT ", JSON.stringify(results))
+	var output_path := _output_path()
+	if output_path != "":
+		var file := FileAccess.open(output_path, FileAccess.WRITE)
+		if file == null:
+			printerr("Unable to write performance results to ", output_path)
+			quit(1)
+			return
+		file.store_string(json + "\n")
+		file.close()
+		print("[PERF] wrote ", output_path)
+	for failure in budget_failures:
+		printerr("[PERF] budget exceeded: ", failure)
+	quit(0 if budget_failures.is_empty() else 1)
+
+func _benchmark_animation() -> Dictionary:
+	var measurements := {}
+	var clips := [
+		{"shape": "oscillate", "channel": "translation", "freqX": 0.01, "freqY": 0.015, "ampX": 10.0, "ampY": 8.0},
+		{"shape": "oscillate", "channel": "rotation", "speed": 0.02, "amount": 12.0},
+		{"shape": "twitch", "channel": "translation", "trigger": "manual", "speed": 1.0, "amount": 6.0},
+	]
+	const FRAMES := 600
+	for layer_count in [1, 10, 50, 100]:
+		var animators: Array = []
+		for _i in layer_count:
+			animators.append(Animator.new())
+		var started := Time.get_ticks_usec()
+		for frame in FRAMES:
+			for animator in animators:
+				animator.evaluate(clips, frame, 1.0 / 60.0)
+		var elapsed := Time.get_ticks_usec() - started
+		measurements[str(layer_count)] = {
+			"total_ms": float(elapsed) / 1000.0,
+			"us_per_layer_frame": float(elapsed) / float(layer_count * FRAMES),
+		}
+	var idle_animators: Array = []
+	for _index in 100:
+		idle_animators.append(Animator.new())
+	var idle_started := Time.get_ticks_usec()
+	for frame in FRAMES:
+		for animator in idle_animators:
+			animator.evaluate([], frame, 1.0 / 60.0)
+	var idle_elapsed := Time.get_ticks_usec() - idle_started
+	measurements["idle_100"] = {
+		"total_ms": float(idle_elapsed) / 1000.0,
+		"us_per_layer_frame": float(idle_elapsed) / float(100 * FRAMES),
+	}
+	return measurements
+
+func _benchmark_serialization() -> Dictionary:
+	var avatar := _avatar_payload()
+	var started := Time.get_ticks_usec()
+	var bytes := 0
+	for _i in 100:
+		bytes = JSON.stringify(avatar).length()
+	var elapsed := Time.get_ticks_usec() - started
+	return {"layers": 100, "iterations": 100, "payload_bytes": bytes, "total_ms": float(elapsed) / 1000.0}
+
+func _benchmark_avatar_validation() -> Dictionary:
+	var avatar := _avatar_payload()
+	var started := Time.get_ticks_usec()
+	var valid := false
+	for _i in 100:
+		valid = AvatarSave.normalize(avatar)["ok"]
+	var elapsed := Time.get_ticks_usec() - started
+	return {"layers": 100, "iterations": 100, "valid": valid, "total_ms": float(elapsed) / 1000.0}
+
+func _avatar_payload() -> Dictionary:
+	var avatar := {}
+	for i in 100:
+		avatar[i] = {
+			"type": "sprite", "path": "user://layer-%d.png" % i,
+			"identification": i, "parentId": i - 1 if i > 0 else null,
+			"pos": "Vector2(%d, %d)" % [i, -i], "offset": "Vector2(0, 0)",
+			"drag": 5.0, "rotDrag": 2.0, "costumeLayers": "[1,1,1,1,1,1,1,1,1,1]",
+			"wigglePath": "PackedVector2Array(0, 0, 10, 10)", "animClips": "[]",
+		}
+	return avatar
+
+func _benchmark_runtime_services() -> Dictionary:
+	var scheduler := BlinkScheduler.new()
+	scheduler.speed = 1.0
+	scheduler.chance = 200
+	var envelope := 0.0
+	const ITERATIONS := 100000
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		scheduler.advance_with_roll(0.0, float(index % 97) / 97.0)
+		envelope = MicrophoneMonitor.follow_envelope(envelope, 0.1, 1.0 / 60.0)
+	var elapsed := Time.get_ticks_usec() - started
+	return {"iterations": ITERATIONS, "total_ms": float(elapsed) / 1000.0, "final_envelope": envelope}
+
+func _benchmark_image_geometry() -> Dictionary:
+	var image := Image.load_from_file("res://test/testBody.png")
+	if image == null or image.is_empty():
+		return {"skipped": true}
+	var started := Time.get_ticks_usec()
+	var polygon_count := 0
+	for _i in 25:
+		var bitmap := BitMap.new()
+		bitmap.create_from_image_alpha(image)
+		polygon_count = bitmap.opaque_to_polygons(Rect2i(Vector2i.ZERO, bitmap.get_size()), 4.0).size()
+	var elapsed := Time.get_ticks_usec() - started
+	return {"iterations": 25, "polygons": polygon_count, "total_ms": float(elapsed) / 1000.0}
+
+
+func _benchmark_wiggle_geometry() -> Dictionary:
+	var image := Image.load_from_file("res://test/testBody.png")
+	if image == null or image.is_empty():
+		return {"skipped": true}
+	const ITERATIONS := 10
+	var path_points := 0
+	var width_points := 0
+	var started := Time.get_ticks_usec()
+	for _iteration in ITERATIONS:
+		var fitted := WiggleGeometry.auto_fit(image, Vector2(image.get_size()), Vector2.ZERO, 12)
+		path_points = fitted["path"].size()
+		width_points = fitted["widths"].size()
+	var elapsed := Time.get_ticks_usec() - started
+	return {
+		"iterations": ITERATIONS,
+		"path_points": path_points,
+		"width_points": width_points,
+		"total_ms": float(elapsed) / 1000.0,
+	}
+
+func _benchmark_import_validation() -> Dictionary:
+	const ITERATIONS := 1000000
+	var accepted := 0
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		if ImportBudget.section_fits(index % 1024, 4096, 8192) \
+			and ImportBudget.dimensions_valid(1920, 1080):
+			accepted += 1
+	var elapsed := Time.get_ticks_usec() - started
+	return {"iterations": ITERATIONS, "accepted": accepted, "total_ms": float(elapsed) / 1000.0}
+
+func _benchmark_sprite_registry() -> Dictionary:
+	var registry := SpriteRegistryService.new()
+	var sprites: Array = []
+	for index in 1000:
+		var sprite := BenchmarkSprite.new(index)
+		sprites.append(sprite)
+		registry.register(sprite)
+	registry.rebuild_eye_targets()
+	const ITERATIONS := 1000000
+	var hits := 0
+	var started := Time.get_ticks_usec()
+	for index in ITERATIONS:
+		if registry.by_id(index % 1000) != null and registry.is_eye_target(index % 100):
+			hits += 1
+	var elapsed := Time.get_ticks_usec() - started
+	return {"sprites": 1000, "iterations": ITERATIONS, "hits": hits, "total_ms": float(elapsed) / 1000.0}
+
+func _benchmark_eye_target_lookup() -> Dictionary:
+	const LAYERS := 250
+	const FRAMES := 60
+	var registry := SpriteRegistryService.new()
+	var sprites: Array = []
+	for index in LAYERS:
+		var sprite := BenchmarkSprite.new(index)
+		sprites.append(sprite)
+		registry.register(sprite)
+	registry.rebuild_eye_targets()
+
+	var scan_hits := 0
+	var scan_started := Time.get_ticks_usec()
+	for _frame in FRAMES:
+		for target in sprites:
+			for source in sprites:
+				if source.eyeTrackMode == 1 and source.eyeTrackTargetId == target.id:
+					scan_hits += 1
+					break
+	var scan_elapsed := Time.get_ticks_usec() - scan_started
+
+	var indexed_hits := 0
+	var indexed_started := Time.get_ticks_usec()
+	for _frame in FRAMES:
+		for target in sprites:
+			if registry.is_eye_target(target.id):
+				indexed_hits += 1
+	var indexed_elapsed := Time.get_ticks_usec() - indexed_started
+	return {
+		"layers": LAYERS,
+		"frames": FRAMES,
+		"scan_hits": scan_hits,
+		"indexed_hits": indexed_hits,
+		"quadratic_scan_ms": float(scan_elapsed) / 1000.0,
+		"indexed_ms": float(indexed_elapsed) / 1000.0,
+		"speedup": float(scan_elapsed) / maxf(float(indexed_elapsed), 1.0),
+	}
+
+func _output_path() -> String:
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--output="):
+			return argument.trim_prefix("--output=")
+	return ""
+
+func _check_budgets() -> void:
+	var animation_100: Dictionary = results["animation"]["100"]
+	_check_budget(
+		"100-layer animation %.3f us/layer-frame > %.3f" % [animation_100["us_per_layer_frame"], MAX_ANIMATION_US_PER_LAYER_FRAME],
+		float(animation_100["us_per_layer_frame"]),
+		MAX_ANIMATION_US_PER_LAYER_FRAME
+	)
+	_check_budget(
+		"serialization %.3f ms > %.3f" % [results["serialization"]["total_ms"], MAX_SERIALIZATION_MS],
+		float(results["serialization"]["total_ms"]),
+		MAX_SERIALIZATION_MS
+	)
+	_check_budget(
+		"avatar validation %.3f ms > %.3f" % [results["avatar_validation"]["total_ms"], MAX_AVATAR_VALIDATION_MS],
+		float(results["avatar_validation"]["total_ms"]),
+		MAX_AVATAR_VALIDATION_MS
+	)
+	_check_budget(
+		"runtime services %.3f ms > %.3f" % [results["runtime_services"]["total_ms"], MAX_RUNTIME_SERVICES_MS],
+		float(results["runtime_services"]["total_ms"]),
+		MAX_RUNTIME_SERVICES_MS
+	)
+	_check_budget(
+		"import validation %.3f ms > %.3f" % [results["import_validation"]["total_ms"], MAX_IMPORT_VALIDATION_MS],
+		float(results["import_validation"]["total_ms"]),
+		MAX_IMPORT_VALIDATION_MS
+	)
+	_check_budget(
+		"sprite registry %.3f ms > %.3f" % [results["sprite_registry"]["total_ms"], MAX_SPRITE_REGISTRY_MS],
+		float(results["sprite_registry"]["total_ms"]),
+		MAX_SPRITE_REGISTRY_MS
+	)
+	_check_budget(
+		"indexed eye-target lookup %.3f ms > %.3f" % [results["eye_target_lookup"]["indexed_ms"], MAX_INDEXED_TARGET_LOOKUP_MS],
+		float(results["eye_target_lookup"]["indexed_ms"]),
+		MAX_INDEXED_TARGET_LOOKUP_MS
+	)
+	if not results["image_geometry"].has("skipped"):
+		_check_budget(
+			"image geometry %.3f ms > %.3f" % [results["image_geometry"]["total_ms"], MAX_IMAGE_GEOMETRY_MS],
+			float(results["image_geometry"]["total_ms"]),
+			MAX_IMAGE_GEOMETRY_MS
+		)
+	if not results["wiggle_geometry"].has("skipped"):
+		_check_budget(
+			"wiggle geometry %.3f ms > %.3f" % [results["wiggle_geometry"]["total_ms"], MAX_WIGGLE_GEOMETRY_MS],
+			float(results["wiggle_geometry"]["total_ms"]),
+			MAX_WIGGLE_GEOMETRY_MS,
+		)
+
+func _check_budget(message: String, actual: float, maximum: float) -> void:
+	if actual > maximum:
+		budget_failures.append(message)

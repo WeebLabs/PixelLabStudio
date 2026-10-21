@@ -1,5 +1,25 @@
 extends PanelContainer
 
+const MutationCommands = preload("res://autoload/domain/mutation_commands.gd")
+const LayerContextMenu = preload("res://ui_scenes/spriteList/layer_context_menu.gd")
+
+const ROW_HEIGHT := 42
+const ITEM_SEPARATION := 4
+# Per level. Kept small on purpose: a deep rig stays inside the panel without the
+# budget clamp ever having to compress it, and the guide lines carry the
+# structure that a wider step would.
+const INDENT_STEP := 12
+# The name gives way first, ellipsizing as the row narrows, and indentation is
+# only compressed once the name is down to its floor.
+#
+# That floor is where Godot stops ellipsizing: its text trimmer drops the
+# ellipsis and hard-cuts the string instead once fewer than about six characters
+# would be left (verified by rendering: at this font size a name ellipsizes down
+# to 65 px and is cut without a mark at 60). So a row reserves room for its own
+# first six characters plus the ellipsis, and gives up indentation rather than
+# showing a name sliced mid-word with nothing to say it was.
+const ELLIPSIS_MIN_CHARS := 6
+
 var sprite = null
 var parent = null
 var spritePath = ""
@@ -12,33 +32,48 @@ var collapsed = false
 var _collapse_btn: Button
 var _thumbnail: TextureRect
 var _name_label: Label
+var _name_edit: LineEdit
+var _rename_reverting := false
 var _vis_btn: Button
 var _normal_badge: Label
 var _eye_target_badge: Label
 var _eye_track_badge: TextureRect
 var _indent_spacer: Control
+var _hbox: HBoxContainer
+var _indent_budget := -1.0
 var _hovered = false
-var _was_selected = false
+var _was_selected = -1   # 0 unselected, 1 selected alongside, 2 the active layer
 var _was_visible = true       # tracks effective (in-tree) visibility to refresh the eye
 var _vis_synced = false       # force a first-frame eye sync (sprites aren't visible-in-tree yet at row setup)
+var _was_normal_map: Variant = null
+var _was_eye_target: Variant = null
+var _was_eye_track_enabled: Variant = null
+var _was_global_eye_tracking: Variant = null
 
 static var _style_normal: StyleBoxFlat
 static var _style_hover: StyleBoxFlat
 static var _style_selected: StyleBoxFlat
+static var _style_co_selected: StyleBoxFlat
 static var _styles_ready = false
 static var _eye_tex: Texture2D = null
 
 func _ready():
 	_init_styles()
 
-	custom_minimum_size = Vector2(290, 42)
+	# Height only. A fixed minimum WIDTH makes every row demand that width from
+	# the list, so a narrower sidebar cannot shrink the rows: they overflow to the
+	# right and the show/hide button goes off the edge of the panel.
+	custom_minimum_size = Vector2(0, ROW_HEIGHT)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	# The row keeps the ordinary arrow. A pointing hand reads as a link, and the
+	# row's own hover highlight already says it is clickable.
+	mouse_default_cursor_shape = Control.CURSOR_ARROW
 	add_theme_stylebox_override("panel", _style_normal)
 
 	var hbox = HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 4)
+	_hbox = hbox
+	hbox.add_theme_constant_override("separation", ITEM_SEPARATION)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(hbox)
@@ -84,7 +119,7 @@ func _ready():
 
 	# Sprite name — expands to fill, absorbs remaining space as indent grows
 	_name_label = Label.new()
-	_name_label.text = _display_name(spritePath)
+	_name_label.text = sprite.displayName()
 	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_name_label.clip_text = true
 	_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -92,6 +127,23 @@ func _ready():
 	_name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(_name_label)
+
+	# The inline rename field, in the name's own slot so the row does not reflow
+	# when it opens. It replaces the label rather than sitting beside it, and is
+	# only ever visible while a rename is in progress.
+	_name_edit = LineEdit.new()
+	_name_edit.visible = false
+	_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_name_edit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_name_edit.custom_minimum_size = Vector2(0, 26)
+	_name_edit.add_theme_font_size_override("font_size", 15)
+	_name_edit.text_submitted.connect(func(_text: String): _commit_rename())
+	# Clicking away is a commit, the same as Enter. Global releases text focus on
+	# any click outside the focused field, so this covers a click on another row,
+	# on a panel, or on the canvas.
+	_name_edit.focus_exited.connect(_commit_rename)
+	_name_edit.gui_input.connect(_gui_input_rename)
+	hbox.add_child(_name_edit)
 
 	# Normal map indicator
 	_normal_badge = Label.new()
@@ -173,10 +225,22 @@ static func _init_styles():
 	_style_selected.border_color = Color(0.45, 0.45, 0.45, 0.6)
 	_style_selected.set_border_width_all(1)
 
+	# Selected alongside the active layer: the same fill, without the border, so
+	# the group reads as one selection and the row the sidebars are showing is
+	# still identifiable.
+	_style_co_selected = StyleBoxFlat.new()
+	_style_co_selected.bg_color = _style_selected.bg_color
+	_style_co_selected.set_corner_radius_all(4)
+	_style_co_selected.content_margin_left = 4
+	_style_co_selected.content_margin_right = 4
+	_style_co_selected.content_margin_top = 2
+	_style_co_selected.content_margin_bottom = 2
+
 func _update_style():
-	var is_selected = sprite == Global.heldSprite
-	if is_selected:
+	if sprite == Global.heldSprite:
 		add_theme_stylebox_override("panel", _style_selected)
+	elif Global.is_sprite_selected(sprite):
+		add_theme_stylebox_override("panel", _style_co_selected)
 	elif _hovered:
 		add_theme_stylebox_override("panel", _style_hover)
 	else:
@@ -202,26 +266,135 @@ func _on_vis_toggled():
 	_update_vis_display()
 
 func _gui_input(event: InputEvent):
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		_select()
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	# A layer row is a Control, so it bypasses the canvas click path and the
+	# selection lock that guards it. Without this the ribbon path editor followed
+	# the click onto the clicked layer and auto-fitted a ribbon path there. The
+	# row's own eye button is a separate Control and keeps working.
+	if Global.selection_locked():
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			Global.notify_user("Finish editing this layer before selecting another.")
+		accept_event()
+		return
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		# Command on macOS, Control elsewhere, and Control on macOS too whenever
+		# the OS lets it through as a left click rather than turning it into a
+		# right click, which is the platform's own convention.
+		if event.is_command_or_control_pressed() or event.ctrl_pressed:
+			# Add or remove this one layer.
+			Global.toggle_sprite_selection(sprite)
+			Global.spriteEdit.setImage()
+		elif event.shift_pressed and Global.heldSprite != null:
+			# Everything between the active layer and this one, as the list reads.
+			Global.select_sprites(Global.spriteList.layersBetween(Global.heldSprite, sprite))
+			Global.spriteEdit.setImage()
+		elif event.double_click:
+			# Double-clicking a row renames it in place, the same edit the menu's
+			# Rename opens. The first click of the pair already selected the row,
+			# so this only has to open the field.
+			_select()
+			beginRename()
+		else:
+			_select()
+		accept_event()
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
+		# Right-click acts on the row under the cursor, so it selects first,
+		# unless that row is already part of a multi-selection: then the menu is
+		# about the group the user built. A Control-click on macOS arrives here,
+		# as the OS turns it into a right click, so a row already in the selection
+		# keeps the group rather than collapsing it to one layer.
+		if not Global.is_sprite_selected(sprite) or Global.selected_sprites().size() < 2:
+			_select()
+		LayerContextMenu.open(Global.spriteList, sprite)
 		accept_event()
 
+
+# Re-read the layer's name, after a rename. The indent budget depends on the
+# name, so it is re-spent here.
+func refreshName():
+	if is_instance_valid(sprite):
+		_name_label.text = sprite.displayName()
+		updateIndent()
+
+
+# Start renaming this layer in place. The field takes the name's slot, starts on
+# the current name with it all selected, and takes the keyboard: Global's
+# shortcut handling stands down while a LineEdit has focus.
+func beginRename() -> void:
+	if _name_edit == null or not is_instance_valid(sprite):
+		return
+	if _name_edit.visible:
+		_name_edit.grab_focus()
+		return
+	_rename_reverting = false
+	_name_edit.text = sprite.displayName()
+	_name_label.visible = false
+	_name_edit.visible = true
+	_name_edit.grab_focus()
+	_name_edit.select_all()
+
+
+func isRenaming() -> bool:
+	return _name_edit != null and _name_edit.visible
+
+
+# Escape abandons the edit. The flag is what tells the focus_exited handler that
+# this close is a cancel, since releasing focus is how the field is closed either
+# way.
+func _gui_input_rename(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if event.keycode == KEY_ESCAPE:
+		_rename_reverting = true
+		_end_rename()
+		_name_edit.accept_event()
+
+
+func _commit_rename() -> void:
+	if _name_edit == null or not _name_edit.visible:
+		return
+	var wanted: String = _name_edit.text.strip_edges()
+	_end_rename()
+	if _rename_reverting or not is_instance_valid(sprite):
+		return
+	# An empty field is not a name. Leaving it empty would drop the layer back to
+	# its filename, which is not what an unfinished edit means.
+	if wanted.is_empty() or wanted == sprite.displayName():
+		return
+	MutationCommands.set_layer_property(sprite, "layerName", wanted)
+	Global.spriteList.refreshNames()
+
+
+func _end_rename() -> void:
+	_name_edit.visible = false
+	_name_label.visible = true
+	if _name_edit.has_focus():
+		_name_edit.release_focus()
+
 func _select():
+	# A layer row is a Control, so it never reaches the canvas click path and its
+	# modal guard. A dialog that acts on the held layer (the replace prompts) must
+	# still be safe from the list changing that layer underneath it.
+	if Global.main != null and Global.main.fileSystemOpen:
+		return
+
 	# Eye-tracking pick mode: consume the click as a target assignment, don't
 	# change selection.
 	if Global.eyeTrackPickMode:
-		Global._finish_eye_track_pick(sprite)
+		Global.finish_eye_track_pick(sprite)
 		return
 
 	if Global.heldSprite != null and Global.reparentMode:
-		UndoManager.save_state()
-		Global.linkSprite(Global.heldSprite, sprite)
+		MutationCommands.structural(func():
+			Global.linkSprite(Global.heldSprite, sprite, false)
+			return true)
 		Global.chain.enable(false)
 
-	Global.heldSprite = sprite
+	Global.select_sprite(sprite)
 	Global.spriteEdit.setImage()
 
-	Global.pushUpdate("Selected sprite \"" + _display_name(sprite.path) + "\".")
+	Global.notify_user("Selected sprite \"" + sprite.displayName() + "\".")
 
 	sprite.set_physics_process(true)
 
@@ -229,24 +402,42 @@ func _draw():
 	# Ancestor guide lines — each child draws a segment for every parent in its chain
 	var ancestor = parentTag
 	while ancestor != null:
-		var line_x = 18 + ancestor.indent * 19
+		# The ancestor's own spacer, not depth times the step: indentation is
+		# clamped to what the panel can spare, so the arithmetic version drifts
+		# away from where the rows actually sit.
+		var line_x = 18 + ancestor.indentWidth()
 		draw_line(Vector2(line_x, 0), Vector2(line_x, size.y), Color(0.4, 0.4, 0.48, 0.45), 1.5, true)
 		ancestor = ancestor.parentTag
 	# Own guide line — parent draws from arrow center down when expanded
 	if childrenTags.size() > 0 and not collapsed:
-		var my_x = 18 + indent * 19
+		var my_x = 18 + indentWidth()
 		draw_line(Vector2(my_x, size.y * 0.5), Vector2(my_x, size.y), Color(0.4, 0.4, 0.48, 0.45), 1.5, true)
 
 func _process(_delta):
 	if !is_instance_valid(sprite):
 		return
-	var is_selected = sprite == Global.heldSprite
-	if is_selected != _was_selected:
-		_was_selected = is_selected
+	var selection_state := 2 if sprite == Global.heldSprite else int(Global.is_sprite_selected(sprite))
+	if selection_state != _was_selected:
+		_was_selected = selection_state
 		_update_style()
-	_normal_badge.visible = sprite.hasNormalMap()
-	_eye_target_badge.visible = _is_eye_track_target()
-	_update_eye_track_badge()
+	var has_normal: bool = bool(sprite.hasNormalMap())
+	if has_normal != _was_normal_map:
+		_was_normal_map = has_normal
+		_normal_badge.visible = has_normal
+		# A badge appearing takes room the indent had been spending, so the budget
+		# is re-spent rather than leaving the name squeezed under its floor.
+		updateIndent()
+	var is_target := _is_eye_track_target()
+	if is_target != _was_eye_target:
+		_was_eye_target = is_target
+		_eye_target_badge.visible = is_target
+		updateIndent()
+	var eye_enabled: bool = sprite.eyeTrack
+	var global_enabled: bool = Global.eyeTrackingGloballyEnabled
+	if eye_enabled != _was_eye_track_enabled or global_enabled != _was_global_eye_tracking:
+		_was_eye_track_enabled = eye_enabled
+		_was_global_eye_tracking = global_enabled
+		_update_eye_track_badge()
 	# Refresh the eye when effective visibility changes (e.g. a parent was hidden,
 	# cascading down via the scene tree), and force a first-frame sync so the eye
 	# matches once the sprites settle visible after a session load.
@@ -257,10 +448,7 @@ func _process(_delta):
 		_update_vis_display()
 
 func _is_eye_track_target() -> bool:
-	for spr in get_tree().get_nodes_in_group("saved"):
-		if spr.eyeTrackMode == 1 and spr.eyeTrackTargetId == sprite.id:
-			return true
-	return false
+	return Global.is_eye_track_target(sprite.id)
 
 # Tracking-enabled badge icon: a white GPS/target glyph (gps.svg), loaded once and tinted to
 # a light / dimmed gray via modulate. Shared across all rows.
@@ -275,19 +463,78 @@ func _update_eye_track_badge():
 	if _eye_track_badge == null or not is_instance_valid(sprite):
 		return
 	var on: bool = sprite.eyeTrack
-	_eye_track_badge.visible = on
+	if _eye_track_badge.visible != on:
+		_eye_track_badge.visible = on
+		updateIndent()
 	if on:
 		_eye_track_badge.modulate = Color(0.78, 0.78, 0.82) if Global.eyeTrackingGloballyEnabled else Color(0.4, 0.4, 0.45)
 
-func updateChildren():
-	if childrenTags.size() > 0:
-		_collapse_btn.text = "▼"
-		_collapse_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-
-func updateIndent():
-	_indent_spacer.custom_minimum_size.x = indent * 19
+# Indentation is a budget, not a fixed step. Depth would otherwise push the
+# thumbnail, the name and the show/hide button along until the right-hand end of
+# the row left the panel; the row cannot grow to fit, so what falls off the end
+# is the controls. `available_width` is what the list has to give (-1 when the
+# caller does not know yet, which keeps the plain step).
+func updateIndent(available_width: float = -1.0):
+	# Callable from the row's own build, before the row has all its parts.
+	if _hbox == null or _vis_btn == null:
+		return
+	if available_width >= 0.0:
+		_indent_budget = available_width
+	else:
+		available_width = _indent_budget
+	var wanted := float(indent * INDENT_STEP)
+	if available_width >= 0.0:
+		wanted = minf(wanted, maxf(0.0, available_width - _fixed_content_width()))
+	if is_equal_approx(_indent_spacer.custom_minimum_size.x, wanted):
+		return
+	# Writing a minimum size invalidates the row's layout, so a re-clamp that
+	# changes nothing would still cost a relayout per row: 3.0 ms across 54 rows,
+	# and the sidebar re-clamps on every resize.
+	_indent_spacer.custom_minimum_size.x = wanted
 	_update_vis_display()
 	queue_redraw()
+
+
+# The narrowest this name may get while Godot will still ellipsize it.
+func _min_name_width() -> float:
+	var font := _name_label.get_theme_font("font")
+	if font == null:
+		return 0.0
+	var sample: String = _name_label.text.substr(0, ELLIPSIS_MIN_CHARS)
+	if sample.length() < _name_label.text.length():
+		sample += "…"
+	return font.get_string_size(
+		sample, HORIZONTAL_ALIGNMENT_LEFT, -1, _name_label.get_theme_font_size("font_size")
+	).x
+
+
+# The width this row wants: its full indentation plus everything it cannot give
+# up. A list given this much never has to compress anyone's indentation.
+func requiredWidth() -> float:
+	return indent * INDENT_STEP + _fixed_content_width()
+
+
+# How far this row is actually indented, after the budget clamp.
+func indentWidth() -> float:
+	return _indent_spacer.custom_minimum_size.x
+
+
+# Everything in the row that cannot be given up: each visible item except the
+# indent spacer and the name, the separations between them, and the space the
+# name itself must keep.
+func _fixed_content_width() -> float:
+	var fixed := _min_name_width()
+	var items := 0
+	for child in _hbox.get_children():
+		if not child.visible:
+			continue
+		items += 1
+		# The rename field stands in for the name, so it is measured the same way:
+		# by the name's own floor, not by the field's minimum width.
+		if child == _indent_spacer or child == _name_label or child == _name_edit:
+			continue
+		fixed += child.get_combined_minimum_size().x
+	return fixed + maxf(0.0, items - 1) * ITEM_SEPARATION
 
 func updateVis():
 	_update_vis_display()
@@ -307,14 +554,3 @@ func _set_descendants_visible(vis: bool):
 			child._set_descendants_visible(false)
 		else:
 			child._set_descendants_visible(true)
-
-static func _display_name(p: String) -> String:
-	if p.begins_with("psd://"):
-		return p.substr(6)
-	if p.begins_with("animated://"):
-		return p.substr(11)
-	var filename = p.get_file()
-	var ext = filename.get_extension()
-	if ext != "":
-		filename = filename.substr(0, filename.length() - ext.length() - 1)
-	return filename

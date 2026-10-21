@@ -3,16 +3,13 @@
 Build script for PSD Native GDExtension.
 
 Usage:
-    # 1. Clone godot-cpp (one-time setup):
+    # 1. Initialize the repository-pinned Godot 4.6 bindings:
+    git submodule update --init addons/psd-native/godot-cpp
+
+    # 2. Build the extension and its godot-cpp dependency:
     cd addons/psd-native
-    git clone https://github.com/godotengine/godot-cpp --branch 4.4 --depth 1
-
-    # 2. Build godot-cpp bindings (one-time per platform):
-    cd godot-cpp && scons platform=<macos|windows> && cd ..
-
-    # 3. Build the extension:
-    scons platform=macos arch=universal     # -> bin/macos/libpsd_native.macos.universal.dylib
-    scons platform=windows arch=x86_64      # -> bin/windows/libpsd_native.windows.x86_64.dll
+    scons platform=macos arch=universal target=template_debug
+    scons platform=windows arch=x86_64 target=template_debug
 """
 
 import os

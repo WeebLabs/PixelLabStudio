@@ -15,6 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="PixelLab Studio"
+config/version="1.7.0-alpha.3"
 run/main_scene="res://main_scenes/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 run/max_fps=60
@@ -33,10 +34,11 @@ buses/channel_disable_time=0.0
 
 [autoload]
 
+InstanceLock="*res://autoload/instance_lock.gd"
+DefaultAvatarData="*res://autoload/defaultAvatarData.gd"
 Saving="*res://autoload/saving.gd"
 Global="*res://autoload/global.gd"
 ElgatoStreamDeck="*uid://b6nrub7s3o8e7"
-DefaultAvatarData="*res://autoload/defaultAvatarData.gd"
 UndoManager="*res://autoload/undo_manager.gd"
 
 [debug]
@@ -56,11 +58,6 @@ window/per_pixel_transparency/allowed=true
 [dotnet]
 
 project/assembly_name="PNGTuberPlus"
-
-[editor]
-
-version_control/plugin_name="GitPlugin"
-version_control/autoload_on_startup=true
 
 [editor_plugins]
 

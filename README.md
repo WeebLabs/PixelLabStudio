@@ -32,6 +32,7 @@ parenting workflow.
   - [NDI output](#ndi-output)
   - [Recording](#recording)
   - [Screenshot](#screenshot)
+  - [Updates](#updates)
   - [Persistence](#persistence)
   - [Editor ergonomics](#editor-ergonomics)
   - [Microphone and voice activation](#microphone-and-voice-activation)
@@ -74,8 +75,8 @@ What's added on top:
 - **Normal maps.** Pair a `_NRML`-suffixed image with any diffuse sprite
   for lighting response (UI for placing lights is on the roadmap, see
   below).
-- **PSD import.** Drop a `.psd` and each Photoshop layer becomes a sprite,
-  preserving group hierarchy and layer order.
+- **PSD import.** Drop a supported RGB 8-bit `.psd` and each visible Photoshop
+  layer becomes a positioned sprite in layer order.
 - **Undo/redo.** Most edit operations are reversible.
 - **Rotational limits.** Clamp how far each sprite can rotate (min and
   max angle).
@@ -116,28 +117,16 @@ There are three persistent regions:
 
 1. **Top menu bar.** Exit, Import, Duplicate, Replace, Save, Load, Clear,
    Reset.
-2. **Left sidebar (edit mode only).** Per-sprite controls for the
-   currently selected sprite, in order from top to bottom:
-   - Preview thumbnail
-   - Normal-map import/clear
-   - Position, offset, parent, layer info (read-only)
-   - Animation frames + speed
-   - Drag
-   - Squash + rotational drag
-   - Toggles: ignore bounce, clip linked sprites, static element, NDI
-     reference layer
-   - X frequency/amplitude, Y frequency/amplitude (wobble)
-   - Rotational limits min/max + a live rotation gauge
-3. **Right sidebar (always visible).** Avatar-wide controls:
-   - Top row: speaking/blinking preview, link, unlink, trash
-   - Layer search/filter
-   - Sprite list
-   - A draggable divider sets where the sprite list ends and the
-     controls below begin
-   - Costume buttons (10 quick-switch icons)
-   - Eye tracking: enable, invert, mode (Cursor/Layer), pick target,
-     distance, speed
-   - Visibility toggle: bind a key to show/hide the selected sprite
+2. **Left sidebar (edit mode only).** The selected layer's preview, normal-map
+   controls, position/hierarchy information, and sprite-sheet frames stay at
+   the top. Tabs separate keyframe **Animation** clips from **Reactive** motion
+   such as drag, rotational limits, and squash/stretch.
+3. **Right sidebar (edit mode).** Speaking/blinking preview, link/unlink/delete,
+   search, the layer tree, and costume buttons sit above three tabs:
+   **Details** (layer flags and blend/opacity), **Tracking** (position/rotation
+   targeting), and **Physics** (wiggle path and presets). A bottom visibility
+   binding stays pinned below the tab content. Both sidebars are resizable and
+   remember their widths.
 
 The bottom-right corner holds the non-edit-mode controls: microphone,
 settings, edit-mode toggle, volume/sensitivity meters, zoom indicator,
@@ -151,9 +140,9 @@ divider padding) so adjusting one value reflows the whole panel.
 
 > **This section is for people who bought a ready-made avatar** and just
 > want to get it on screen and into a stream or a Discord call. You don't
-> need any art or software experience. If you've got the `.save` file
-> that came with your purchase, you're a few minutes away from your
-> character talking along with you.
+> need any art or software experience. If you've got the `.pixlab` file
+> (or, for older avatars, the `.save` file) that came with your purchase,
+> you're a few minutes away from your character talking along with you.
 >
 > If instead you want to *build* an avatar from scratch (importing
 > Photoshop files, arranging sprites, setting up the physics), head to
@@ -169,9 +158,13 @@ Grab the latest release for your platform from the
   macOS may warn that it's from an unidentified developer. That's
   normal for indie apps. Right-click (or Control-click) the app icon and
   choose **Open**, then confirm. You only have to do this once.
-- **Windows**: you'll get a `.zip` file. Right-click it, choose **Extract
-  All**, then open the folder and double-click `PixelLab Studio.exe`. You
-  can move that folder anywhere you like (for example, your Desktop).
+- **Windows**: download the file ending in `-Setup.exe` and run it. It
+  installs PixelLab Studio for your Windows account (no administrator
+  password needed) and adds it to the Start menu. Windows may show a
+  "Windows protected your PC" warning the first time; click **More info**,
+  then **Run anyway**. If you'd rather not install anything, the `.zip`
+  download is the same app: right-click it, choose **Extract All**, then
+  open the folder and double-click `PixelLab Studio.exe`.
 
 When the app opens you'll see an empty stage with a small cluster of
 controls in the **bottom-right corner**. The app starts in *display
@@ -181,11 +174,13 @@ it.
 
 ### 2. Load your avatar
 
-Your purchase downloads as a **`.zip` file**. Inside it is a **`.save`
-file**. That single file *is* your avatar (artwork, layers, and movement
-all bundled together). Before you can load it, you need to **unzip
-(extract)** the download so the app can see the `.save` file inside.
-Follow these steps in order:
+Your purchase downloads as a **`.zip` file**. Inside it is a **`.pixlab`
+file** (older avatars use **`.save`**, which works exactly the same way).
+That single file *is* your avatar (artwork, layers, and movement all
+bundled together). Before you can load it, you need to **unzip (extract)**
+the download so the app can see the avatar file inside. If you installed
+the app on Windows, double-clicking a `.pixlab` file after extracting it
+opens it straight away. Otherwise, follow these steps in order:
 
 1. Find the **`.zip` file** you downloaded (usually in your **Downloads**
    folder) and extract it:
@@ -193,7 +188,7 @@ Follow these steps in order:
      click **Extract**. A new folder opens with the contents inside.
    - **macOS**: double-click the `.zip`. A new folder with the same name
      appears right next to it.
-   You should now see a **`.save` file** in the extracted folder. That's
+   You should now see a **`.pixlab` (or `.save`) file** in the extracted folder. That's
    your avatar. (Loading straight from inside the `.zip` won't work, which
    is why this step matters.)
 2. Now open the app's loading menu. In the **bottom-right corner** of the
@@ -204,8 +199,8 @@ Follow these steps in order:
    like Exit, Import, Save, and **Load**.
 4. Click **Load** in that top menu bar.
 5. A file window opens (Finder on macOS, File Explorer on Windows).
-   Navigate to the **extracted folder** from step 1, click the **`.save`
-   file**, and choose **Open**.
+   Navigate to the **extracted folder** from step 1, click the **`.pixlab`
+   (or `.save`) file**, and choose **Open**.
 6. Your character appears on the stage. 🎉
 7. When you're happy, click **Exit** at the far-left of the top menu bar
    to leave Edit mode and return to the clean display view. (You can
@@ -347,11 +342,10 @@ bit of patience for fiddling with settings.
 
 Two ways to bring artwork in, both from **Import** in the top menu bar:
 
-- **Import a PSD.** Pick a `.psd` and each Photoshop layer becomes its
-  own sprite, Photoshop groups become parent/child relationships, and the
-  whole rig is positioned around the world origin. Layers whose names end
-  in `_NRML` (case-insensitive) automatically pair up as normal maps for
-  their matching artwork layer (handy for lighting later).
+- **Import a PSD.** Pick a supported RGB 8-bit `.psd` and each visible
+  Photoshop layer becomes its own positioned sprite in layer order. Layers
+  whose names end in `_NRML` (case-insensitive) automatically pair up as normal
+  maps for their matching artwork layer (handy for lighting later).
 - **Import PNGs.** Import also accepts one or more `.png` files. Once
   they're on the stage you can set a frame count (for sprite-sheet
   animations like talking mouths), choose parents, and tune each sprite's
@@ -382,7 +376,7 @@ modifier keys), see
 Click **Save** in the top menu. A progress bar appears while the images
 encode, followed by a confirmation message when it's done. Saves default
 to the app's data folder, but the file window lets you navigate anywhere.
-The resulting `.save` file is exactly the kind of self-contained avatar
+The resulting `.pixlab` file is exactly the kind of self-contained avatar
 file an end user loads in step 2 above.
 
 ## Features in detail
@@ -487,8 +481,8 @@ Other details:
 - Custom source name (what shows up in OBS's NDI Source dropdown).
 - Renders on its own SubViewport, so the editor UI doesn't appear in
   the broadcast.
-- Available on macOS (universal), Windows (x64), and Linux (x64 and
-  ARM64) via the `godot-ndi` plugin.
+- Available in the configured desktop exports for macOS (universal), Windows
+  (x64), and Linux (x64) via the `godot-ndi` plugin.
 
 ### Recording
 
@@ -503,6 +497,14 @@ Other details:
 
 `Ctrl+K` captures the current frame to a `.png` of your choice. Like
 the recorder, respects NDI cropping when NDI is enabled.
+
+### Updates
+
+The installed Windows app checks for a new version once a day and asks
+before updating; updating closes the app, installs the new version and
+opens it again, keeping unsaved changes for recovery. **Settings → Updates**
+turns the daily check off, opts in to pre-release versions, or checks right
+away. The portable `.zip` and macOS builds open the download page instead.
 
 ### Persistence
 
@@ -556,9 +558,6 @@ Planned but not shipped yet:
 - **Light2D UI controls.** Currently the renderer reads paired normal
   maps; the next step is a UI for placing, coloring, and animating
   lights.
-- **Right-sidebar tabs.** Eye Tracking / Lighting / Details tabs to
-  consolidate the bottom-half controls (and move the normal-map row
-  and per-sprite toggles over from the left sidebar).
 - **Settings dialog cleanup.** Apply the same spacing model the
   sidebars use.
 - **Theme consolidation.** Move the inline slider/checkbox styling to
@@ -566,11 +565,16 @@ Planned but not shipped yet:
 
 ## Tech notes
 
-- Built with **Godot 4.6** (GL Compatibility renderer).
-- Native GDExtensions: `godot-ndi` (NDI output), `psd-native` (PSD
+- Built and tested with **Godot 4.6.3** (GL Compatibility renderer).
+- Native GDExtensions: `godot-ndi` v1.2.6 with the documented macOS teardown
+  patch (NDI output), `psd-native` (PSD
   parsing), `godot-streamdeck-addon` (Stream Deck input).
+- The PSD extension is built against the exact Godot 4.6 `godot-cpp`
+  revision pinned by the repository submodule.
 - All UI on a single CanvasLayer (`UILayer`) for camera-independent
   rendering.
+- Native/runtime versions, licenses, platform coverage, and known risks are in
+  [the dependency inventory](docs/dependencies.md).
 
 ## Credits
 
@@ -591,9 +595,11 @@ was inspired by their `_auto_save_session` implementation.
 
 ## Contributing
 
-Issues and pull requests are welcome. If you're working on UI,
-`docs/architecture_guide.md` describes the spacing model, the layout
-pass, and the persistence patterns used elsewhere in the codebase.
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). The system map is in
+[docs/architecture_guide.md](docs/architecture_guide.md), the versioned avatar
+contract in [docs/save_format.md](docs/save_format.md), and the quality gates in
+[docs/quality_baseline.md](docs/quality_baseline.md).
 
 ## License
 
