@@ -6,7 +6,6 @@ const Form = preload("res://ui_scenes/common/form_ui.gd")
 var _global: Node
 var _saving: Node
 var _device_list: VBoxContainer
-var _mute_check: CheckBox
 
 
 func build(body: VBoxContainer, global: Node, saving: Node) -> void:
@@ -14,9 +13,6 @@ func build(body: VBoxContainer, global: Node, saving: Node) -> void:
 	_saving = saving
 	var input_group := Form.section(body, "Input device")
 	_device_list = Form.column(input_group, 2)
-	var behaviour := Form.section(body, "Behaviour")
-	_mute_check = Form.check_row(behaviour, "Mute microphone")
-	_mute_check.toggled.connect(_on_mute_toggled)
 
 
 func refresh() -> void:
@@ -31,7 +27,6 @@ func refresh() -> void:
 		_device_list.add_child(empty)
 	for device in devices:
 		_add_device_row(device)
-	_mute_check.set_pressed_no_signal(_global.micMuted)
 
 
 func _add_device_row(device: String) -> void:
@@ -69,8 +64,3 @@ func _on_device_selected(device: String) -> void:
 	else:
 		_global.notify_user("Microphone is no longer available.")
 	refresh()
-
-
-func _on_mute_toggled(pressed: bool) -> void:
-	_global.micMuted = pressed
-	_global.notify_user("Microphone muted." if pressed else "Microphone unmuted.")

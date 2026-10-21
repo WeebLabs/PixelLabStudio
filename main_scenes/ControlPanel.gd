@@ -13,6 +13,8 @@ extends Node2D
 
 
 const GEAR_ICON = preload("res://ui_scenes/settings/settingsWheel.png")
+const MIC_ICON = preload("res://ui_scenes/common/mic.svg")
+const MIC_MUTED_ICON = preload("res://ui_scenes/common/mic_muted.svg")
 
 const LEVEL_COLOR := Color(0.55, 0.78, 1.0)
 const DURATION_COLOR := Color(1.0, 0.7, 0.8)
@@ -29,6 +31,9 @@ const ZOOM_HOLD := 6.0
 var menu_bar: AppMenuBar = null
 
 var _settings_button: Button = null
+var _mute_button: Button = null
+# The mute state the button last drew, so it is only restyled on a change.
+var _shown_muted := false
 var _zoom_label: Label = null
 var _meters: Array = []
 var _active := false
@@ -56,13 +61,29 @@ func _build_actions() -> void:
 
 
 
-# Right zone: the mic meters, then Settings closing the bar opposite the mode
-# switch.
+# Right zone: the mic meters, then mic mute and Settings closing the bar
+# opposite the mode switch. The two icons sit together as one pair.
 func _build_right_zone() -> void:
 	_build_mic_meters()
+	var icons := menu_bar.add_group(menu_bar.right)
+	_mute_button = menu_bar.add_icon_button(icons, MIC_ICON, "Mute microphone", _on_mute_pressed)
 	_settings_button = menu_bar.add_icon_button(
-		menu_bar.right, GEAR_ICON, "Settings", _on_settings_pressed
+		icons, GEAR_ICON, "Settings", _on_settings_pressed
 	)
+	_show_mute_state(Global.micMuted)
+
+
+# Muted reads at a glance: the slashed microphone in the danger tone, on a pill
+# of the same tone. Unmuted is a plain microphone like any other bar icon.
+func _show_mute_state(muted: bool) -> void:
+	_shown_muted = muted
+	_mute_button.icon = MIC_MUTED_ICON if muted else MIC_ICON
+	_mute_button.tooltip_text = "Unmute microphone" if muted else "Mute microphone"
+	if muted:
+		menu_bar.set_button_tone(_mute_button, AppMenuBar.COLOR_DANGER, AppMenuBar.COLOR_DANGER_HOVER)
+	else:
+		menu_bar.set_button_tone(_mute_button, AppMenuBar.COLOR_NORMAL, AppMenuBar.COLOR_HOVER)
+	menu_bar.set_button_backdrop(_mute_button, muted, AppMenuBar.COLOR_DANGER)
 
 
 # The two microphone controls are the same widget with different wiring, so they
@@ -179,6 +200,8 @@ func _process(_delta: float) -> void:
 	for entry in _meters:
 		entry["meter"].value = entry["source"].call()
 	menu_bar.set_pin(&"popup", settings_menu.visible)
+	if Global.micMuted != _shown_muted:
+		_show_mute_state(Global.micMuted)
 	_zoom_label.modulate.a = lerpf(_zoom_label.modulate.a, 0.0, ZOOM_FADE)
 
 
@@ -186,6 +209,12 @@ func _process(_delta: float) -> void:
 
 func _on_edit_pressed() -> void:
 	Global.main.swapMode()
+
+
+func _on_mute_pressed() -> void:
+	Global.micMuted = not Global.micMuted
+	Global.notify_user("Microphone muted." if Global.micMuted else "Microphone unmuted.")
+	_show_mute_state(Global.micMuted)
 
 
 func _on_settings_pressed() -> void:

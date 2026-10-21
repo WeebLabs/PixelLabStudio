@@ -44,6 +44,11 @@ const COLOR_DANGER := Color(0.9, 0.45, 0.5)
 const COLOR_DANGER_HOVER := Color(1.0, 0.6, 0.65)
 const COLOR_SEPARATOR := Color(0.4, 0.4, 0.45)
 const COLOR_MUTED := Color(0.6, 0.6, 0.65)
+# The soft pill behind an item in a standing state. It grows past the item
+# vertically rather than padding it, so the bar does not reflow when it shows.
+const BACKDROP_CORNER_RADIUS := 5
+const BACKDROP_EXPAND := 4.0
+const BACKDROP_ALPHA := 0.18
 
 # --- Level meter widget ------------------------------------------------------
 # A live meter with a threshold marker riding on top of it, which is how the mic
@@ -345,6 +350,23 @@ func set_button_tone(button: Button, color: Color, hover_color: Color) -> void:
 		button.add_theme_color_override(state, color)
 	for state in ["font_hover_color", "font_pressed_color", "icon_hover_color", "icon_pressed_color"]:
 		button.add_theme_color_override(state, hover_color)
+
+
+# A pill behind an item, for a state that should read at a glance (a muted
+# microphone). The pill is the item's own tone, faded. Clear it with `false`.
+func set_button_backdrop(button: Button, shown: bool, color := COLOR_NORMAL) -> void:
+	var style: StyleBox = StyleBoxEmpty.new()
+	if shown:
+		var pill := StyleBoxFlat.new()
+		pill.bg_color = Color(color, BACKDROP_ALPHA)
+		pill.set_corner_radius_all(BACKDROP_CORNER_RADIUS)
+		pill.expand_margin_top = BACKDROP_EXPAND
+		pill.expand_margin_bottom = BACKDROP_EXPAND
+		style = pill
+	style.content_margin_left = ITEM_PADDING
+	style.content_margin_right = ITEM_PADDING
+	for state in ["normal", "hover", "pressed", "focus"]:
+		button.add_theme_stylebox_override(state, style)
 
 
 func set_button_enabled(button: Button, enabled: bool) -> void:

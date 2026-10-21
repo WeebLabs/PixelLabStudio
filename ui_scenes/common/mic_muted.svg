@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- The slash cuts a clean gap through the microphone instead of lying on top of it. -->
+  <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M5 5L27 27" stroke="#000" stroke-width="6.5" stroke-linecap="round"/>
+  </mask>
+  <g mask="url(#cut)">
+    <rect x="11" y="3" width="10" height="16.5" rx="5" fill="#fff"/>
+    <g fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round">
+      <path d="M7 14.5a9 9 0 0 0 18 0"/>
+      <path d="M16 23.5v4.75M11.5 28.25h9"/>
+    </g>
+  </g>
+  <path d="M5 5L27 27" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

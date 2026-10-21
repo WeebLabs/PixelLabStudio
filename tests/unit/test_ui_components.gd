@@ -409,6 +409,12 @@ func _test_settings_panel_contract(t) -> void:
 		"the standalone microphone popup is gone",
 	)
 
+	# Mute lives on the viewer bar beside Settings, not inside the panel.
+	t.assert_false(audio_source.contains("micMuted"), "the Audio tab no longer carries the mute toggle")
+	var control_panel := FileAccess.get_file_as_string(source_root.path_join("main_scenes/ControlPanel.gd"))
+	t.assert_true(control_panel.contains("MIC_MUTED_ICON"), "the viewer bar shows the muted state with its own icon")
+	t.assert_true(control_panel.contains("_on_mute_pressed"), "the viewer bar toggles the microphone mute")
+
 
 func _test_sidebar_call_sites(t) -> void:
 	var source_root := _source_root()

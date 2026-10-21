@@ -484,7 +484,16 @@ Edit mode keeps its editing actions in the center and puts the mode switch in th
 left zone; the viewer bar uses all three.
 
 - **Edit bar** (`main_scenes/EditControls.gd`): `Switch to Player` left; `Import Duplicate Replace | Save Load | Clear Reset` center; `Pause Motion` right. The file now only declares items; it owns no styling.
-- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a gear icon for Settings, right.
+- **Viewer bar** (`main_scenes/ControlPanel.gd`): `Switch to Editor` left; `Save Load | Clear Reset` center; the `Duration` and `Level` mic meters then a mic-mute icon and a gear icon for Settings, right.
+
+> Updated: 2026-10-21 — **Mic mute moved onto the viewer bar.** The mute and
+> Settings icons share one tight group at the right end. The button toggles
+> `Global.micMuted` and swaps between `ui_scenes/common/mic.svg` and
+> `mic_muted.svg` (32px white silhouettes, tinted like every bar icon; the slash
+> is cut through the mic with an SVG mask). Muted shows in `COLOR_DANGER` on a
+> faded pill drawn by `AppMenuBar.set_button_backdrop`, whose expand margins keep
+> the bar from reflowing. `_process` re-syncs the icon if `micMuted` changes
+> elsewhere.
 
 > Added: 2026-09-16 — **Motion pause** (edit bar, right zone). A toggle button
 > that holds the whole avatar at its authored rest pose so a rig can be edited
@@ -700,7 +709,7 @@ Six tabs are declared in `_TABS`; each is built and refreshed by its matching
 
 | Tab | Contents |
 |---|---|
-| Audio | input device list, mute |
+| Audio | input device list (mute moved to the viewer bar, 2026-10-21) |
 | Display | background colour presets and picker, texture filtering, max FPS |
 | Motion | bounce force/gravity, bounce on costume change, blink speed/chance |
 | Hotkeys | the ten costume bindings |
@@ -728,6 +737,9 @@ script and the bar's `Mic` button are all gone; the Audio tab lists
 `AudioServer.get_input_device_list()` directly, marks the active device with an
 accent dot, and carries the mute toggle that used to be a right-click on the bar
 button.
+
+> Updated: 2026-10-21 — The mute toggle left the Audio tab (and its `Behaviour`
+> section with it) for its own icon on the viewer bar beside Settings.
 
 ### Shared UI components
 
