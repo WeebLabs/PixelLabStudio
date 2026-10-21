@@ -36,6 +36,7 @@ func run(t) -> void:
 	_test_maintainer_documentation(t, source_root)
 	_test_mutation_boundary_contract(t, source_root)
 	_test_lifecycle_gate_contract(t, source_root)
+	_test_windows_install_contract(t, source_root)
 
 
 func _test_product_metadata(t, source_root: String) -> void:
@@ -254,6 +255,36 @@ func _test_lifecycle_gate_contract(t, source_root: String) -> void:
 	t.assert_true(controller.contains("_load_cancelled"), "avatar load carries an explicit cancellation flag")
 	t.assert_true(controller.contains("func _load_aborted"), "avatar load re-checks cancellation at its suspension points")
 	t.assert_true(controller.contains("func is_loading"), "in-flight loads are observable for shutdown and tests")
+
+
+# The installer, the single-instance handoff and the future updater all depend
+# on identifiers that must never drift once a build has shipped.
+func _test_windows_install_contract(t, source_root: String) -> void:
+	var project := FileAccess.get_file_as_string(source_root.path_join("project.godot"))
+	var autoloads := project.substr(project.find("[autoload]"))
+	autoloads = autoloads.substr(0, autoloads.find("\n[", 1))
+	var first_entry := ""
+	for line in autoloads.split("\n"):
+		if line.contains("="):
+			first_entry = line
+			break
+	t.assert_true(first_entry.begins_with("InstanceLock="), "InstanceLock is the first autoload, so a duplicate launch exits before any state loads")
+
+	var lock_source := FileAccess.get_file_as_string(source_root.path_join("autoload/instance_lock.gd"))
+	var flags_line := RegEx.create_from_string("const ISOLATED_SESSION_FLAGS := (\\[[^\\]]*\\])")
+	var saving_flags := flags_line.search(FileAccess.get_file_as_string(source_root.path_join("autoload/saving.gd")))
+	var lock_flags := flags_line.search(lock_source)
+	t.assert_true(saving_flags != null and lock_flags != null and saving_flags.get_string(1) == lock_flags.get_string(1), "automated runs never hand off to, or listen for, another instance")
+	t.assert_true(lock_source.contains("OS.has_feature(\"editor\")"), "editor runs never hand off to an installed copy")
+
+	var installer := FileAccess.get_file_as_string(source_root.path_join("installer/windows/PixelLabStudio.iss"))
+	t.assert_true(installer.contains("AppId={{1A865213-A4D3-4225-A8BE-7CEC90BD90F9}"), "the installer AppId is fixed, so upgrades replace the existing install")
+	t.assert_true(installer.contains("PrivilegesRequired=lowest"), "the install is per user, so silent updates need no elevation")
+	t.assert_true(installer.contains("Software\\Classes\\.pixlab"), "the installer associates the avatar extension")
+	t.assert_true(installer.contains("#define AppExeName \"PixelLab Studio.exe\""), "the installed executable keeps the exported name")
+	var build_script := FileAccess.get_file_as_string(source_root.path_join("installer/windows/build.ps1"))
+	t.assert_true(build_script.contains("PixelLabStudio-v$Version-Windows-x64"), "release asset names follow the fixed pattern the updater matches")
+	t.assert_true(FileAccess.file_exists(source_root.path_join(".github/workflows/windows-release.yml")), "tagged releases build the Windows installer")
 
 
 func _collect_files(root: String, extensions: Array[String]) -> Array[String]:

@@ -159,13 +159,15 @@ PNGTuberPlus/
 │   ├── dependencies.md            Native/runtime provenance and upgrade policy
 │   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
 │   ├── refactor_plan.md           Phased execution and acceptance gates
-│   └── save_format.md             Versioned avatar/settings compatibility contract
+│   ├── save_format.md             Versioned avatar/settings compatibility contract
+│   └── windows_installer_plan.md  Installer decisions, release steps, test record (2026-10-21)
 ├── tests/
 │   ├── integration/               Isolated production-scene behavioral runner
 │   ├── performance/               Pure, avatar-load, and lifecycle benchmarks
 │   ├── native/                    Native extension lifecycle smokes
 │   └── unit/                      Headless unit and source-contract suites
 ├── scripts/                       Local quality-gate entry points
+├── installer/windows/             Inno Setup script + build.ps1 (installer, zip, checksums; 2026-10-21)
 ├── CONTRIBUTING.md                Setup, acceptance gates, and change contracts
 └── project.godot                  Godot project configuration
 ```
@@ -1651,6 +1653,35 @@ write behavior are specified in `docs/save_format.md`.
 > written beside the old one, which is left alone) and a bare name gets the
 > extension. The load dialog accepts both extensions, and `lastAvatar` paths to
 > `.save` files keep working, since loading never looks at the extension.
+> Only `.pixlab` is associated with the app by the Windows installer.
+
+### Windows installer and versioning
+
+> Updated: 2026-10-21 — `application/config/version` is the one version, in
+> semver (`1.7.0-alpha.3`, `1.7.0`), and release tags are `v` plus it.
+> `AppVersion` (`autoload/runtime/app_version.gd`) compares versions for the
+> future GitHub-releases updater and folds a version into the 4-part Windows
+> form (alpha N → N, beta N → 100+N, rc N → 200+N, release → 1000). The Windows
+> preset's `file_version`/`product_version` must equal that form;
+> `test_release_contract` and `installer/windows/build.ps1` both check it.
+>
+> `installer/windows/PixelLabStudio.iss` (Inno Setup 6) installs per user to
+> `%LOCALAPPDATA%\Programs\PixelLab Studio` with no elevation, adds the Start
+> menu entry and the Settings → Apps entry, associates `.pixlab` under
+> `HKCU\Software\Classes` (ProgID `PixelLabStudio.Avatar`, open command
+> `"PixelLab Studio.exe" "%1"`) and writes `HKCU\Software\PixelLab Studio\InstallDir`
+> so the app can tell an installed copy from the portable zip. Its `AppId` is
+> fixed forever; upgrades install over the previous version, and a silent
+> `/VERYSILENT /SUPPRESSMSGBOXES /CLOSEAPPLICATIONS /RELAUNCH` run closes a
+> running copy and starts the new one. Uninstall never touches
+> `user://` (settings, session) or the user's avatars. `build.ps1` exports to
+> `.artifacts/exports/windows/`, checks the Agility SDK DLL is bundled, and
+> writes the installer, the portable zip and `SHA256SUMS.txt` to
+> `.artifacts/installer/windows/` under fixed names
+> (`PixelLabStudio-v<version>-Windows-x64[-Setup].exe/.zip`) that the updater will
+> match on. `.github/workflows/windows-release.yml` runs it on a `v*` tag and
+> attaches the assets to a draft release. Assets are never replaced in place.
+> The plan and test record are in `docs/windows_installer_plan.md`.
 
 ### PSD Import (`psd_parser.gd`)
 
