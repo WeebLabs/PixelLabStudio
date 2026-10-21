@@ -67,6 +67,11 @@ func is_busy() -> bool:
 	return _busy
 
 
+## The update prompt or download progress is up; main.gd stops canvas input.
+func is_dialog_open() -> bool:
+	return is_instance_valid(_dialog)
+
+
 ## Whether an update would install itself (true) or only open the release page.
 func can_self_install() -> bool:
 	return UpdateFeed.is_installed_copy(OS.get_executable_path(), OS.get_name() == "Windows") and not OS.has_feature("editor")

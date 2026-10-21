@@ -23,11 +23,17 @@ const PORT_FILE := "user://instance.port"
 # The handshake guards against a stale port file now owned by another process.
 const HELLO := "PIXLAB1"
 const ACK := "OK"
+# Reaching the port is quick or not at all, so a dead port is given up on fast.
+# Once a listener has accepted, the reply only comes when the running instance's
+# main loop polls, which waits out its own startup (scene load, avatar restore);
+# giving up sooner would open a second window that also loads the file.
 const CONNECT_TIMEOUT_MS := 500
+const ACK_TIMEOUT_MS := 10000
 const PEER_TIMEOUT_MS := 2000
 
 ## Avatar passed on this process's command line ("" if none). The save
-## controller loads it at startup in place of the recovery / lastAvatar restore.
+## controller opens it at startup in place of lastAvatar, after any recovery
+## prompt.
 var launch_file := ""
 
 var _server: TCPServer = null
@@ -86,6 +92,7 @@ func _hand_off_to_running_instance() -> bool:
 				# An empty path still tells the running instance to come forward.
 				peer.put_data((HELLO + " " + launch_file + "\n").to_utf8_buffer())
 				sent = true
+				deadline = Time.get_ticks_msec() + ACK_TIMEOUT_MS
 			var available := peer.get_available_bytes()
 			if available > 0:
 				reply += peer.get_utf8_string(available)

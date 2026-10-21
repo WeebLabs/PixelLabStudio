@@ -203,12 +203,23 @@ Registered in `project.godot` under `[autoload]`:
 > controller runs, so a duplicate never loads an avatar or writes settings on
 > exit; it is why the autoload must stay first. The running instance emits
 > `file_requested`, and `AvatarSaveController.open_external_avatar()` waits out
-> any in-flight load or save, drops a pending recovery prompt and loads the
-> file. At startup `startup_restore(InstanceLock.launch_file)` loads a launch
-> file instead of offering recovery or restoring `lastAvatar`. Files dropped on
-> the window take the same path. Editor runs, web builds and the isolated
-> automated sessions (`--release-smoke`, `--avatar-integration-test`) neither
-> listen nor hand off.
+> any in-flight load or save, then loads the file. At startup
+> `startup_restore(InstanceLock.launch_file)` opens a launch file in place of
+> `lastAvatar`. Files dropped on the window take the same path. Editor runs, web
+> builds and the isolated automated sessions (`--release-smoke`,
+> `--avatar-integration-test`) neither listen nor hand off.
+
+> Updated: 2026-10-21 — **A launch file never skips crash recovery.** The first
+> version loaded a double-clicked avatar outright, so reopening an avatar that
+> way after a crash bypassed the recovery prompt and the next auto-save
+> overwrote the session. `AvatarSaveController.startup_choice()` now judges
+> recovery against `lastAvatar` (the file the session was editing) as before;
+> a launch file only changes what Discard opens, and the prompt names it. A file
+> handed over while the prompt is still up re-asks with that file rather than
+> dismissing it. Once a listener has accepted, a second launch now waits up to
+> `ACK_TIMEOUT_MS` (10 s) for the reply, which only comes when the running
+> instance's main loop polls; the old 500 ms limit could expire during that
+> instance's startup and open a second window that also loaded the file.
 
 Additional parsers (not autoloaded, instantiated on demand):
 - `PSDParser` (`autoload/psd_parser.gd`) — threaded PSD file parsing
@@ -1704,6 +1715,9 @@ write behavior are specified in `docs/save_format.md`.
 > relaunches the new build, whose next startup clears `user://updates/`. Portable
 > copies and other platforms open the release page instead. `-- --update-feed=<url>`
 > replaces the API URL for testing against a local feed.
+> The prompt and the download count in `main.isFileSystemOpen()`
+> (`UpdateController.is_dialog_open()`), so canvas shortcuts are held while
+> they are up, as for every other modal.
 
 ### PSD Import (`psd_parser.gd`)
 

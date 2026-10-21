@@ -393,6 +393,10 @@ func isFileSystemOpen():
 		return true
 	if capture_controller != null and capture_controller.is_dialog_open():
 		return true
+	# The update prompt, and the download that follows "Update now", hold the
+	# canvas like every other modal; edits behind them would surprise the user.
+	if update_controller != null and update_controller.is_dialog_open():
+		return true
 	return false
 
 #Displays control panel whether or not application is focused

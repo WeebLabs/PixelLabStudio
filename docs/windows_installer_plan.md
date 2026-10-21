@@ -119,6 +119,19 @@ One-time machine setup:
     deleted, nothing ran, and the app stayed on 1.7.0.3.
   - Unit suites: 1117 assertions, 0 failures. Integration: 849 assertions,
     the same 4 failures already there.
+- **Audit fixes (installed build):**
+  - **Handoff during a slow startup:** the running copy was frozen for 3 s while a
+    second avatar was opened. The old 500 ms wait left 2 windows; the fixed build
+    kept 1, which loaded the file.
+  - **Crash recovery:** a crashed session plus a double-clicked avatar now shows
+    the recovery prompt, naming that file, instead of loading over the session.
+    Opening another avatar while the prompt was up re-asked with that file. The
+    session file survived both.
+  - **Input behind modals:** the update prompt and download now hold canvas
+    shortcuts like other modals. This is covered by a source contract, not by
+    hand.
+  - Unit suites: 1127 assertions, 0 failures. Integration: the same 4 failures
+    already there.
 - **Installer:**
   - Silent install: files, Start menu shortcut, Settings → Apps entry
     (publisher Weeb Labs, version 1.7.0-alpha.3) and the association were all

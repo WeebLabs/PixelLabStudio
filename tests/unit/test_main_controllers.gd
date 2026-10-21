@@ -82,6 +82,18 @@ func _test_session_recovery_contract(t) -> void:
 	t.assert_false(SaveCoordinator.should_recover(true, true, 10, 20), "an older session does not replace a newer avatar")
 	t.assert_false(SaveCoordinator.should_recover(true, true, 10, 10), "equal timestamps do not prompt recovery")
 
+	# A double-clicked avatar must not skip recovery: after a crash it is the
+	# natural way back in, and loading it outright would let the next auto-save
+	# overwrite the session. It only changes what Discard opens.
+	t.assert_equal(SaveCoordinator.startup_choice("C:/a/Opened.pixlab", "C:/a/Last.pixlab", true), {"action": "recover", "path": "C:/a/Opened.pixlab"}, "a launch file still asks to recover first, and Discard opens it")
+	t.assert_equal(SaveCoordinator.startup_choice("", "C:/a/Last.pixlab", true), {"action": "recover", "path": "C:/a/Last.pixlab"}, "a plain start offers recovery over lastAvatar")
+	t.assert_equal(SaveCoordinator.startup_choice("C:/a/Opened.pixlab", "C:/a/Last.pixlab", false), {"action": "load", "path": "C:/a/Opened.pixlab"}, "with nothing to recover the launch file opens")
+	t.assert_equal(SaveCoordinator.startup_choice("", "C:/a/Last.pixlab", false), {"action": "load", "path": "C:/a/Last.pixlab"}, "with nothing to recover lastAvatar reopens")
+	t.assert_equal(SaveCoordinator.startup_choice("", "", false), {"action": "none", "path": ""}, "a first run opens nothing")
+	t.assert_equal(SaveCoordinator.startup_choice("", "", true)["action"], "recover", "a session with no saved avatar is still offered")
+	var save_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/controllers/save_controller.gd"))
+	t.assert_true(save_source.contains("_show_session_recovery_dialog(path, true)"), "a file handed over while the recovery prompt is up re-asks instead of dismissing it")
+
 
 # Avatars are written as .pixlab, legacy .save files still open, and a path
 # Windows passes on launch (double-click) is recognised before any state loads.
@@ -97,6 +109,11 @@ func _test_avatar_file_extension_contract(t) -> void:
 
 	var lock_script: GDScript = InstanceLock
 	t.assert_true(lock_script != null and lock_script.can_instantiate(), "the instance lock compiles in the isolated test workspace")
+	t.assert_true(InstanceLock.ACK_TIMEOUT_MS >= 5000, "a second launch waits out the running instance's startup before opening its own window")
+	t.assert_true(InstanceLock.CONNECT_TIMEOUT_MS <= 1000, "but gives up on a dead port quickly")
+	var main_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/main.gd"))
+	t.assert_true(main_source.contains("update_controller.is_dialog_open()"), "the update prompt and download hold the canvas like every other modal")
+
 	var launch_dir := OS.get_temp_dir().path_join("pixlab launch ä %d" % OS.get_process_id())
 	DirAccess.make_dir_recursive_absolute(launch_dir)
 	var launch_path := launch_dir.path_join("Lennie one.pixlab")

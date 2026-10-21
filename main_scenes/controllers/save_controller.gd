@@ -72,17 +72,18 @@ func process_frame(delta: float) -> void:
 	_session_thread.start(_session_save_worker.bind(data))
 
 
-# An avatar passed on the command line (a double-clicked .pixlab) wins over
-# both the recovery prompt and lastAvatar; the session file is left untouched.
+# An avatar passed on the command line (a double-clicked .pixlab) replaces
+# lastAvatar as the file to open, but never the recovery prompt: after a crash,
+# double-clicking the avatar is the natural way back in, and loading it straight
+# away would let the next auto-save overwrite the unsaved session.
 func startup_restore(launch_file: String = "") -> void:
-	if not launch_file.is_empty():
-		_main.load_avatar_file(launch_file)
-		return
 	var last_avatar_path := String(_saving.settings.get("lastAvatar", ""))
-	if _has_recoverable_session(last_avatar_path):
-		_show_session_recovery_dialog(last_avatar_path)
-	elif not last_avatar_path.is_empty():
-		_main.load_avatar_file(last_avatar_path)
+	var choice := startup_choice(launch_file, last_avatar_path, _has_recoverable_session(last_avatar_path))
+	match choice["action"]:
+		"recover":
+			_show_session_recovery_dialog(choice["path"], not launch_file.is_empty())
+		"load":
+			_main.load_avatar_file(choice["path"])
 
 
 func show_save_dialog() -> void:
@@ -104,8 +105,9 @@ func is_dialog_open() -> bool:
 
 # An avatar opened from outside while running: a second launch handing its file
 # over, or a file dropped on the window. Waits out a load or save in flight,
-# since both span frames, and drops a pending recovery prompt because the user
-# has picked a file instead.
+# since both span frames. A pending recovery prompt is not dismissed: it is
+# re-asked with this file as what Discard opens, so the session is never lost
+# to a file the user picked before answering.
 func open_external_avatar(path: String) -> void:
 	while _main.avatar_controller.is_loading() or _save_thread != null:
 		await _main.get_tree().create_timer(0.25).timeout
@@ -115,6 +117,8 @@ func open_external_avatar(path: String) -> void:
 	if is_instance_valid(_session_recovery_dialog):
 		_session_recovery_dialog.queue_free()
 		_session_recovery_dialog = null
+		_show_session_recovery_dialog(path, true)
+		return
 	_main.load_avatar_file(path)
 
 
@@ -251,15 +255,22 @@ func _has_recoverable_session(last_avatar_path: String) -> bool:
 
 
 # Session recovery prompt. Layout, palette and centring come from ModalDialogUI;
-# this only declares the copy and the two choices.
-func _show_session_recovery_dialog(last_avatar_path: String) -> void:
+# this only declares the copy and the two choices. Discard opens
+# `last_avatar_path`, which is the file the user just opened when
+# `opening_file` is set.
+func _show_session_recovery_dialog(last_avatar_path: String, opening_file := false) -> void:
 	var dialog := ModalDialogUI.new()
 	_main.get_node("UILayer").add_child(dialog)
 	dialog.set_panel_min_size(RECOVERY_DIALOG_SIZE)
 	dialog.set_title("Recover unsaved session?")
-	dialog.add_message(
-		"A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
-	)
+	if opening_file:
+		dialog.add_message(
+			"A more recent in-progress session was found. Restore it, or discard it and open %s?" % last_avatar_path.get_file()
+		)
+	else:
+		dialog.add_message(
+			"A more recent in-progress session was found. Restore it, or discard and load your last saved avatar?"
+		)
 	dialog.add_actions([
 		{
 			"text": "Restore",
@@ -351,6 +362,19 @@ static func avatar_save_path(path: String) -> String:
 		LEGACY_AVATAR_EXTENSION:
 			return path.get_basename() + "." + AVATAR_EXTENSION
 	return path + "." + AVATAR_EXTENSION
+
+
+# What startup opens. Recovery is judged against lastAvatar, the file the
+# session was editing; a launch file only changes what Discard (or a startup
+# with nothing to recover) opens. Returns {"action": "recover" | "load" |
+# "none", "path": String}.
+static func startup_choice(launch_file: String, last_avatar_path: String, recoverable: bool) -> Dictionary:
+	var target := launch_file if not launch_file.is_empty() else last_avatar_path
+	if recoverable:
+		return {"action": "recover", "path": target}
+	if not target.is_empty():
+		return {"action": "load", "path": target}
+	return {"action": "none", "path": ""}
 
 
 static func should_recover(session_exists: bool, avatar_exists: bool, session_modified: int, avatar_modified: int) -> bool:
