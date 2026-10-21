@@ -62,6 +62,7 @@ PNGTuberPlus/
 │   │   ├── capture_controller.gd  Screenshot, recording, FFmpeg ownership
 │   │   ├── import_controller.gd   PSD/APNG/PNG workers and import dialogs
 │   │   ├── import_matcher.gd      Pure replacement name matching
+│   │   ├── quit_controller.gd     Unsaved-changes prompt on close; the one quit path (2026-10-21)
 │   │   ├── save_controller.gd     Save dialogs, workers, session recovery
 │   │   ├── update_controller.gd   GitHub-releases update check, prompt, download, install (2026-10-21)
 │   │   └── viewport_controller.gd Window, pan, zoom, edit/view layout
@@ -126,6 +127,7 @@ PNGTuberPlus/
 │   ├── domain/sprite_registry.gd  Canonical live layer enumeration/ID index
 │   ├── domain/selection_state.gd  Selected layer and click-cycle state
 │   ├── domain/mutation_commands.gd Canonical undoable mutation commands
+│   ├── domain/edit_revisions.gd   Live vs last-saved revision for unsaved-changes checks (2026-10-21)
 │   ├── domain/legacy_canvas_compat.gd Full-canvas rig detection and replace placement
 │   ├── input/input_commands.gd    Pure key/device command decoding
 │   ├── import/import_limits.gd    Shared binary import resource budgets
@@ -1557,6 +1559,20 @@ Sprites live under `OriginMotion/Origin` in the scene tree. They retain the
 > 0.1s `_ready` timer (which left the hierarchy briefly wrong and leaked a
 > `SceneTreeTimer` at exit).
 
+> Updated: 2026-10-21 — **History knows whether the rig is saved.**
+> `EditRevisions` (`autoload/domain/edit_revisions.gd`) numbers each state of the
+> rig and keeps one revision per undo/redo entry, in step with the stacks: a
+> push starts a new revision, `abort()` puts the previous one back, undo and redo
+> swap them. `has_unsaved_changes()` compares the live revision with the one last
+> written to a file, so undoing back to the saved state reads as clean and a
+> no-op edit leaves no trace. `mark_saved(revision)` records the revision a save
+> *captured* (`AvatarSaveController` takes it before building the save data, so
+> an edit made while the write runs stays unsaved); `load_avatar()` calls
+> `mark_clean()` for a real file and `mark_unsaved()` for a recovered session.
+> `state_saved` is replaced by **`revision_changed`**, emitted on push, abort,
+> undo and redo. The session auto-save listens to it, so undo and redo now reach
+> the recovery copy, which they previously never did.
+
 ### Mutation Commands (`autoload/domain/mutation_commands.gd`)
 
 The single canonical path for user-initiated mutations that belong in history.
@@ -1669,6 +1685,18 @@ write behavior are specified in `docs/save_format.md`.
 > extension. The load dialog accepts both extensions, and `lastAvatar` paths to
 > `.save` files keep working, since loading never looks at the extension.
 > Only `.pixlab` is associated with the app by the Windows installer.
+
+#### Quitting with unsaved changes
+
+> Added: 2026-10-21 — `main_scenes/controllers/quit_controller.gd`.
+
+- `QuitController.setup()` turns off `auto_accept_quit`, so a window close (the X, Alt+F4, the taskbar) only reaches `main._notification(NOTIFICATION_WM_CLOSE_REQUEST)`, which calls `request_quit()`.
+- `close_action(unsaved, busy, recovery_pending)` decides: `"wait"` while a manual save or an avatar load is in flight (polled, then asked again), `"prompt"` when `UndoManager.has_unsaved_changes()`, otherwise `"quit"`. An unanswered startup recovery prompt quits without asking.
+- The prompt is a `ModalDialog`: **Save**, **Discard Changes**, **Cancel**; Escape cancels. It is listed in `main.isFileSystemOpen()`. A minimised window is restored first so the prompt is seen.
+- **Save** calls `AvatarSaveController.save_current()`: it writes straight to `current_avatar_path()` (`lastAvatar`, if its folder still exists) and opens the save dialog only when there is none. The app quits on `save_finished(true)`; a failed save or a cancelled dialog (`save_dialog.canceled`) leaves it open.
+- `quit_app(keep_session)` is the only exit: joins the save threads, deletes `user://session.pngtp`, writes settings, `quit()`. The session file is kept when a recovery prompt is unanswered, and when the updater calls `quit_app(true)` after `save_session_now()`. The updater no longer propagates a fake `NOTIFICATION_WM_CLOSE_REQUEST`, which would now raise the prompt.
+- Deleting the session on every deliberate quit matters because a rig undone back to its saved state is clean, yet its auto-saved session can be newer than the file, which would otherwise offer a pointless recovery on the next launch.
+- Not covered: Load, Reset and opening another file (drop, double-click) still replace the rig without asking. A crash or Windows log-off still relies on the 60 s auto-save.
 
 ### Windows installer and versioning
 

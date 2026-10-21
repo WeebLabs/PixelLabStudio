@@ -83,6 +83,11 @@ invalid. `lastAvatar` changes only after a successful manual save.
 Session recovery uses the same avatar schema at `user://session.pngtp`. Settings
 use a separate schema, a 4 MiB read limit, and canonical typed defaults.
 
+The session file only outlives a crash. A deliberate quit deletes it once the
+work is saved or discarded, except when the startup recovery prompt was never
+answered or the app is closing to install an update.
+(Updated: 2026-10-21)
+
 ## Versioning rule
 
 Additive fields with safe defaults may remain within schema 1, but they must be

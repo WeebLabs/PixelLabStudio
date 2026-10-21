@@ -197,10 +197,10 @@ func _install(update: Dictionary) -> void:
 	if pid <= 0:
 		_fail("Could not start the installer.")
 		return
-	# Leave the way a window close does, so every shutdown path runs; the
-	# installer waits for this process before replacing its files.
-	_main.get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
-	_main.get_tree().quit()
+	# Leave through the one shutdown path, without the unsaved-changes prompt:
+	# the session just written is offered back after the update. The installer
+	# waits for this process before replacing its files.
+	_main.quit_controller.quit_app(true)
 
 
 func _fail(message: String) -> void:
