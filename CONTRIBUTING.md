@@ -70,6 +70,9 @@ resources loaded indirectly. When adding `load()`/`preload()` targets that are
 not scene dependencies, extend every preset's `include_filter` and the release
 contract tests. Release outputs stay below `.artifacts/exports/`.
 
+To publish a release (version bump, tag, CI installer build, macOS build,
+notes, and what to do when something goes wrong), follow `docs/releasing.md`.
+
 ## Pull requests
 
 Keep commits scoped and explain any compatibility, performance, or native

@@ -161,6 +161,7 @@ PNGTuberPlus/
 │   ├── dependencies.md            Native/runtime provenance and upgrade policy
 │   ├── quality_baseline.md        Toolchain, tests, performance, dependency risks
 │   ├── refactor_plan.md           Phased execution and acceptance gates
+│   ├── releasing.md               How to publish a release, end to end (2026-10-21)
 │   ├── save_format.md             Versioned avatar/settings compatibility contract
 │   └── windows_installer_plan.md  Installer decisions, release steps, test record (2026-10-21)
 ├── tests/

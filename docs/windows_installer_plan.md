@@ -59,6 +59,9 @@ One-time machine setup:
 3. The workflow attaches the assets to a draft release. Add notes and the macOS
    build there, then publish.
 
+The full procedure, including the macOS build, release notes, recovery from a
+bad release and error messages, is in `docs/releasing.md`.
+
 ## Phase 6 — The updater
 
 - **When it checks:** at startup at most once a day (setting `updateChecks`, last run in
