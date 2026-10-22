@@ -84,6 +84,7 @@ func _run() -> void:
 	await _test_sidebar_fits_depth()
 	await _test_wiggle_child_follow()
 	await _test_wiggle_clear_path()
+	await _test_resize_recentre_is_rigid()
 	await _test_costumes()
 	await _test_command_history()
 	await _test_z_index_editor()
@@ -2146,6 +2147,82 @@ func _test_wiggle_clear_path() -> void:
 	assert_true(runtime.exit_path_edit(), "leaving with a cleared path reports the refit")
 	assert_true(base.wigglePath.size() >= 2, "leaving the editor with a cleared path auto-fits a usable one")
 	assert_equal(base.wigglePathWidths.size(), base.wigglePath.size(), "the refit path has a width per point")
+	base.setWiggle(false)
+	for field in saved:
+		base.set(field, saved[field])
+	base.setWiggle(saved["wiggleEnabled"])
+	await get_tree().process_frame
+
+
+# A window resize re-centres the avatar. The wiggle chain and the drag tracker
+# keep world positions, so they have to be carried along or the first frame
+# afterwards reads the whole re-centre as motion and flings the ribbon.
+func _test_resize_recentre_is_rigid() -> void:
+	var base = Global.sprite_by_id(BASE_ID)
+	if base == null:
+		return
+	var saved := {}
+	for field in ["animClips", "wigglePath", "wigglePathWidths", "wiggleWagEnabled", "wiggleEnabled"]:
+		saved[field] = base.get(field)
+	base.animClips = []
+	base.wigglePath = PackedVector2Array([
+		base._local_to_tex(Vector2(-20, 0)), base._local_to_tex(Vector2.ZERO), base._local_to_tex(Vector2(20, 0)),
+	])
+	base.wigglePathWidths = PackedFloat32Array([8.0, 8.0, 8.0])
+	base.wiggleWagEnabled = false
+	base.wiggleEnabled = true
+	base.setWiggle(true)
+	for _frame in range(20):
+		await get_tree().process_frame
+	var appendage = base._wiggleRuntime.appendage
+	assert_not_null(appendage, "the resize test layer has a wiggle chain")
+	if appendage == null:
+		return
+	var before: PackedVector2Array = appendage.polygon.duplicate()
+
+	# Put the avatar off-centre the consistent way, then let the real resize path
+	# bring it back: 240 px of re-centre in one call.
+	var offset := Vector2(240, 120)
+	_main.origin.position += offset
+	for sprite in Global.sprite_nodes():
+		sprite.translate_world(offset)
+	_main.viewport_controller.window_size_changed()
+	_main.resize_active = false
+	for _frame in range(2):
+		await get_tree().process_frame
+
+	var worst := 0.0
+	var after: PackedVector2Array = appendage.polygon
+	for i in mini(before.size(), after.size()):
+		worst = maxf(worst, before[i].distance_to(after[i]))
+	assert_true(worst < 6.0, "a re-centre does not fling the wiggle ribbon (worst vertex moved %.1f px)" % worst)
+	assert_true(
+		base.dragger.global_position.distance_to(base.wob.global_position) < 6.0,
+		"the drag tracker rides along with a re-centre",
+	)
+
+	# The avatar keeps animating through a resize, whose frames arrive late and in
+	# bursts: a run of re-centres, each followed by a half-second frame, must not
+	# throw the ribbon around.
+	before = appendage.polygon.duplicate()
+	for step in range(8):
+		# Re-armed each step: the headless window never changes size, so the
+		# controller's settle check turns it back off between frames.
+		_main.resize_active = true
+		var nudge := Vector2(30, -20) if step % 2 == 0 else Vector2(-45, 25)
+		_main.origin.position += nudge
+		for sprite in Global.sprite_nodes():
+			sprite.translate_world(nudge)
+		_main.viewport_controller.window_size_changed()
+		base._process(0.5)
+		await get_tree().process_frame
+	worst = 0.0
+	after = appendage.polygon
+	for i in mini(before.size(), after.size()):
+		worst = maxf(worst, before[i].distance_to(after[i]))
+	assert_true(worst < 12.0, "animating through a burst of resize frames keeps the ribbon steady (worst vertex moved %.1f px)" % worst)
+	_main.resize_active = false
+
 	base.setWiggle(false)
 	for field in saved:
 		base.set(field, saved[field])

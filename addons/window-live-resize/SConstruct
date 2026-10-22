@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+"""
+Build script for the Window Live Resize GDExtension.
+
+Keeps the app drawing while a window edge is dragged quickly on Windows (see
+src/window_live_resize.h). Other platforms build a stub whose install() returns
+false; it exists only so the extension loads everywhere without an error.
+
+godot-cpp: CI clones a fresh copy into ./godot-cpp (branch 4.4); locally the
+psd-native submodule is used when ./godot-cpp is absent. Mirrors
+virtualcam/native/SConstruct.
+
+    scons platform=windows target=template_debug arch=x86_64
+    scons platform=macos   target=template_debug arch=universal
+"""
+
+import os
+
+godot_cpp = "godot-cpp" if os.path.exists("godot-cpp/SConstruct") \
+	else "../psd-native/godot-cpp"
+env = SConscript(godot_cpp + "/SConstruct")
+
+env.Append(CPPPATH=["src/"])
+
+sources = Glob("src/*.cpp")
+
+platform = env["platform"]
+arch = env.get("arch", "x86_64")
+
+if platform == "windows":
+	# SetWindowSubclass lives in comctl32.
+	env.Append(LIBS=["comctl32", "user32"])
+
+if platform == "macos":
+	libpath = "bin/macos/libwindowliveresize.macos.{}.dylib".format(arch)
+elif platform == "windows":
+	libpath = "bin/windows/libwindowliveresize.windows.{}.dll".format(arch)
+elif platform == "linux":
+	libpath = "bin/linux/libwindowliveresize.linux.{}.so".format(arch)
+else:
+	libpath = "bin/libwindowliveresize.{}".format(platform)
+
+library = env.SharedLibrary(libpath, source=sources)
+
+Default(library)

@@ -109,6 +109,19 @@ func _test_native_manifests(t, source_root: String) -> void:
 			var absolute_path := source_root.path_join(library_path.trim_prefix("res://")) if library_path.begins_with("res://") else manifest_path.get_base_dir().path_join(library_path)
 			t.assert_true(FileAccess.file_exists(absolute_path), "native library mapping exists: %s -> %s" % [key, library_path])
 
+	# The live-resize hook only does anything on Windows, so only the Windows export
+	# ships it; macOS and Linux would otherwise log a missing-library error until
+	# the CI-built macOS stub is committed.
+	var live_resize := ConfigFile.new()
+	t.assert_equal(live_resize.load(source_root.path_join("addons/window-live-resize/window_live_resize.gdextension")), OK, "live-resize manifest loads")
+	var live_resize_dll := String(live_resize.get_value("libraries", "windows.x86_64.single", ""))
+	t.assert_true(FileAccess.file_exists(source_root.path_join("addons/window-live-resize").path_join(live_resize_dll)), "the live-resize Windows library is committed")
+	var export_presets := ConfigFile.new()
+	export_presets.load(source_root.path_join("export_presets.cfg"))
+	for index in range(3):
+		var filter: PackedStringArray = String(export_presets.get_value("preset.%d" % index, "include_filter", "")).split(",")
+		t.assert_equal(filter.has("addons/window-live-resize/*.gdextension"), index == 0, "only the Windows preset ships the live-resize extension (preset %d)" % index)
+
 	t.assert_true(FileAccess.file_exists(source_root.path_join("addons/godot-streamdeck-addon/LICENSE.md")), "Stream Deck addon ships its MIT license")
 	var ndi_patch_path := source_root.path_join("addons/godot-ndi/patches/0001-fix-render-router-teardown.patch")
 	t.assert_true(FileAccess.file_exists(ndi_patch_path), "the modified NDI binary ships its source patch")

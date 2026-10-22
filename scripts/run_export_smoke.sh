@@ -53,10 +53,12 @@ fi
 # The pack ships the GDExtension manifests, so the launch needs the native
 # libraries beside it exactly as a real export places them next to the binary.
 rm -rf "$ARTIFACT_DIR/bin" "$ARTIFACT_DIR/addons"
-mkdir -p "$ARTIFACT_DIR/bin" "$ARTIFACT_DIR/addons/godot-ndi" "$ARTIFACT_DIR/addons/psd-native"
+mkdir -p "$ARTIFACT_DIR/bin" "$ARTIFACT_DIR/addons/godot-ndi" "$ARTIFACT_DIR/addons/psd-native" "$ARTIFACT_DIR/addons/window-live-resize"
 cp -R "$PROJECT_ROOT/bin/." "$ARTIFACT_DIR/bin/"
 cp -R "$PROJECT_ROOT/addons/godot-ndi/bin" "$ARTIFACT_DIR/addons/godot-ndi/"
 cp -R "$PROJECT_ROOT/addons/psd-native/bin" "$ARTIFACT_DIR/addons/psd-native/"
+# Only the Windows pack carries this manifest; copying it everywhere is harmless.
+cp -R "$PROJECT_ROOT/addons/window-live-resize/bin" "$ARTIFACT_DIR/addons/window-live-resize/"
 
 set +e
 (

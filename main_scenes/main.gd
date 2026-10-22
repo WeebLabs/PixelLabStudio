@@ -60,8 +60,8 @@ var saveLoaded = false
 var yVel = 0
 var bounceSlider = 250
 
-# Compatibility-facing flag polled by spriteObject while ViewportController
-# owns the resize cooldown and one-shot drag snap.
+# True while the window is being resized; motion runs on a capped frame step.
+# Polled by spriteObject; ViewportController owns when it starts and ends.
 var resize_active: bool = false
 
 var bounceGravity = 1000
@@ -330,6 +330,8 @@ func _process(delta):
 	# Freeze bounce while dragging the NDI crop box, and while edit-mode motion is
 	# paused — both want the avatar held at its resting height rather than mid-arc.
 	var crop_frozen = ndi_manager != null and ndi_manager.crop_dragging
+	if resize_active:  # Keeps bouncing through a resize, on the layers' capped step.
+		delta = minf(delta, MotionTiming.RESIZE_MAX_STEP)
 	if crop_frozen or Global.motion_paused():
 		origin.get_parent().position.y = 0
 		yVel = 0

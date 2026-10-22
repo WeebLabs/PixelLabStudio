@@ -27,6 +27,12 @@ const REFERENCE_FPS := 60.0
 ## avoids a spring exploding after one.
 const MAX_STEP := 1.0 / 15.0
 
+## While the window is being resized, frames arrive late and in bursts. The
+## avatar keeps animating through it, but no frame counts for more than this, so
+## a burst slows the motion for a moment instead of kicking the springs. Applied
+## to the raw delta, so it also reaches the wiggle chain, which is not on frames().
+const RESIZE_MAX_STEP := 1.0 / 30.0
+
 
 static func frames(delta: float) -> float:
 	return clampf(delta, 0.0, MAX_STEP) * REFERENCE_FPS

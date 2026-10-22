@@ -1,0 +1,60 @@
+name: Build Window Live Resize
+
+# Builds the Window Live Resize GDExtension: the Windows DLL that keeps the app
+# drawing during a fast window drag, and the macOS stub that lets the extension
+# load there without an error (install() is a no-op off Windows). Mirrors
+# windows-build.yml: clone godot-cpp (branch 4.4) next to the SConstruct, build
+# with SCons, upload each library as an artifact to commit under
+# addons/window-live-resize/bin/.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'addons/window-live-resize/src/**'
+      - 'addons/window-live-resize/SConstruct'
+      - '.github/workflows/window-live-resize-build.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows
+            arch: x86_64
+            library: bin/windows/libwindowliveresize.windows.x86_64.dll
+            artifact: libwindowliveresize-windows-x86_64
+          - runner: macos-latest
+            platform: macos
+            arch: universal
+            library: bin/macos/libwindowliveresize.macos.universal.dylib
+            artifact: libwindowliveresize-macos-universal
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install SCons
+        run: pip install scons
+
+      - name: Clone godot-cpp (branch 4.4)
+        run: git clone https://github.com/godotengine/godot-cpp --branch 4.4 --depth 1 addons/window-live-resize/godot-cpp
+
+      - name: Build extension
+        working-directory: addons/window-live-resize
+        run: scons platform=${{ matrix.platform }} target=template_debug arch=${{ matrix.arch }}
+
+      - name: Upload library artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: addons/window-live-resize/${{ matrix.library }}
+          if-no-files-found: error

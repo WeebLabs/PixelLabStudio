@@ -122,6 +122,15 @@ func reset() -> void:
 		_points.append([_points[-1], pos, ang, 0.0])
 	_update_mesh()
 
+# Carry the chain along when the whole avatar is moved in world space without
+# being animated (the window re-centring it). The points are world positions,
+# so left alone the next tick would read the move as motion and whip the tip.
+func translate_world(offset: Vector2) -> void:
+	for point in _points:
+		point[_POS] += offset
+	_smoothed_root += offset
+	_prev_root_pos += offset
+
 # Advance one frame. `frame_tick` drives auto-wag: elapsed time counted in 60 fps
 # frames, so the sway keeps its speed whatever the frame rate.
 func tick(delta: float, frame_tick: float) -> void:

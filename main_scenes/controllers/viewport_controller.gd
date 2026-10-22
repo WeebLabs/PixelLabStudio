@@ -1,7 +1,10 @@
 class_name ViewportController
 extends RefCounted
 
-const RESIZE_COOLDOWN_FRAMES := 5
+# A resize counts as over once the size has held still this long; until then
+# motion runs on MotionTiming.RESIZE_MAX_STEP. Counted in time, not frames: a
+# drag-resize delivers sizes in uneven bursts with gaps of several frames.
+const RESIZE_SETTLE_MSEC := 300
 const MIN_ZOOM_PERCENT := 10
 const MAX_ZOOM_PERCENT := 400
 const ZOOM_STEP_PERCENT := 10
@@ -12,7 +15,7 @@ var _global: Node = null
 var _saving: Node = null
 var _panning := false
 var _pan_offset := Vector2.ZERO
-var _resize_cooldown := 0
+var _last_resize_msec := 0
 var _last_viewport_size := Vector2.ZERO
 var _scale_percent := 100
 
@@ -21,6 +24,18 @@ func setup(main_node: Node2D, global_service: Node, saving_service: Node) -> voi
 	_main = main_node
 	_global = global_service
 	_saving = saving_service
+	_install_live_resize()
+
+
+# A fast drag of the window edge starves Godot's own redraw timer on Windows, so
+# the avatar froze mid-drag. The native WindowLiveResize hook
+# (addons/window-live-resize) runs a frame on each size change instead. Looked up
+# by name: only Windows exports ship the extension.
+func _install_live_resize() -> void:
+	if not ClassDB.class_exists("WindowLiveResize") or DisplayServer.get_name() != "Windows":
+		return
+	var handle := DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE)
+	ClassDB.class_call_static("WindowLiveResize", "install", handle)
 
 
 func process_frame() -> void:
@@ -50,7 +65,13 @@ func window_size_changed() -> void:
 		return
 	_saving.settings["windowSize"] = var_to_str(_main.get_window().size)
 	var viewport_size := _main.get_viewport().get_visible_rect().size
+	var before: Vector2 = _main.origin.global_position
 	_main.origin.position = viewport_size * 0.5
+	var moved: Vector2 = _main.origin.global_position - before
+	if moved != Vector2.ZERO:
+		for sprite in _global.sprite_nodes():
+			if not sprite.is_queued_for_deletion():
+				sprite.translate_world(moved)
 	_main.lines.position = viewport_size * 0.5
 	_main.lines.drawLine()
 	_main.camera.position = _main.origin.position + _pan_offset
@@ -126,17 +147,18 @@ func set_layer_collision(active: bool) -> void:
 
 func _update_resize_state() -> void:
 	var viewport_size := _main.get_viewport().get_visible_rect().size
+	var now := Time.get_ticks_msec()
 	if viewport_size != _last_viewport_size:
+		# The first size seen is the window opening, not a resize.
+		var first := _last_viewport_size == Vector2.ZERO
 		_last_viewport_size = viewport_size
-		_main.resize_active = true
-		_resize_cooldown = RESIZE_COOLDOWN_FRAMES
+		_last_resize_msec = now
+		_main.resize_active = not first
 		return
-	if _resize_cooldown > 0:
-		_resize_cooldown -= 1
-		if _resize_cooldown == 0:
-			_main.resize_active = false
-			for sprite in _global.sprite_nodes():
-				sprite._force_drag_snap = true
+	# No snap on the way out: window_size_changed carried every layer's world-space
+	# state along, so there is nothing stale to correct.
+	if _main.resize_active and resize_settled(now, _last_resize_msec):
+		_main.resize_active = false
 
 
 func _update_zoom_input() -> void:
@@ -184,6 +206,10 @@ func _set_native_window_transparent(want_transparent: bool) -> void:
 		return
 	if _main.get_window().transparent != want_transparent:
 		_main.get_window().transparent = want_transparent
+
+
+static func resize_settled(now_msec: int, last_resize_msec: int) -> bool:
+	return now_msec - last_resize_msec >= RESIZE_SETTLE_MSEC
 
 
 static func next_zoom_percent(current_percent: int, direction: int) -> int:

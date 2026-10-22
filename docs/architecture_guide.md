@@ -292,6 +292,47 @@ Key child nodes:
 > wrappers on `main.gd`. Pure format, zoom-boundary, recovery-policy, and image
 > encoding contracts live in `tests/unit/test_main_controllers.gd`.
 
+> Updated: 2026-10-21 — **The avatar keeps animating while the window resizes.**
+> `main.resize_active` is on from a size change until the size has held still
+> for `RESIZE_SETTLE_MSEC` (300 ms). The first size seen at startup is not a
+> resize. While on, `spriteObject._process` and the bounce in `main._process`
+> cap their frame delta at `MotionTiming.RESIZE_MAX_STEP` (1/30 s): a live
+> resize delivers late, bursty frames, and the wiggle chain integrates the raw
+> delta (it is not on `MotionTiming.frames()`), so an uncapped half-second frame
+> threw a ribbon ~50 px. (It used to freeze every layer instead; that hid the
+> re-centre problem below until the freeze lifted.) Re-centring is rigid: `window_size_changed()` measures how far
+> `origin` moved in world space and calls `spriteObject.translate_world()` on
+> every layer, which shifts the two pieces of motion state kept in world
+> coordinates, the `top_level` `Dragger` and the wiggle chain
+> (`WiggleAppendage2D.translate_world`: points, smoothed root, previous root).
+> Without that, the first frame after a resize read the re-centre as motion and
+> whipped every ribbon across the distance. Because the state is carried, the
+> end-of-resize `_force_drag_snap` is gone. Covered by
+> `_test_resize_recentre_is_rigid` (integration: one large re-centre, then a
+> burst of re-centres with half-second frames) and `resize_settled` (unit).
+
+> Updated: 2026-10-21 — **Fast drags keep drawing (Windows).** During a
+> window drag Windows runs a modal loop, and Godot 4.6 only gets a frame when
+> the `TIMER_ID_MOVE_REDRAW` (id 1) timer it sets on `WM_ENTERSIZEMOVE` fires.
+> `WM_TIMER` is the lowest-priority message, so a fast drag starved it: a trace
+> showed 200–580 ms with no frame, each ending in a large size jump, while slow
+> drags ran at 16 ms. The native `WindowLiveResize` class, in its own
+> extension `addons/window-live-resize/` (so it outlives any other add-on),
+> subclasses the window with `SetWindowSubclass`. After Godot handles each `WM_WINDOWPOSCHANGED` that
+> changes size inside a drag, it sends `WM_TIMER` with id 1, which runs one frame
+> through Godot's own handler (guarded by `Main::is_iterating()`; ignored outside
+> a drag, where `move_timer_id` is 0). `ViewportController._install_live_resize()`
+> installs it at startup by name (`ClassDB.class_exists` /
+> `class_call_static`), so the macOS dylib and headless runs skip it. Depends on
+> Godot's internal timer id: re-check `display_server_windows.cpp` on an engine
+> upgrade. Only the Windows export preset includes the manifest (the hook does
+> nothing elsewhere), so macOS and Linux releases never look for its library;
+> `test_release_contract` pins that. The DLL and a macOS stub (whose `install()`
+> returns false, so running from source on a Mac loads cleanly) are built by
+> `.github/workflows/window-live-resize-build.yml`; commit its artifacts under
+> `bin/`. Until the macOS stub is committed, running from source on a Mac logs
+> one missing-library error.
+
 > Updated: 2026-08-17 — `main.gd` is now a 597-line lifecycle and scene-signal
 > facade. `AvatarController` owns transactional avatar assembly, validation,
 > hierarchy reconstruction, save-data construction, edit commands, costume

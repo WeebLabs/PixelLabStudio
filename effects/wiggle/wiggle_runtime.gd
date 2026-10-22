@@ -209,6 +209,11 @@ func update(delta: float) -> void:
 	apply_to_children()
 
 
+func translate_world(offset: Vector2) -> void:
+	if appendage != null:
+		appendage.translate_world(offset)
+
+
 # Hold the chain at its rest shape (edit-mode motion pause). Same bookkeeping as
 # update(), minus the physics step: the chain is snapped onto the rest path and
 # linked children are re-placed on it, which by construction puts each of them

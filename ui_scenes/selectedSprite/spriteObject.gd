@@ -401,15 +401,21 @@ func restoreImage(img: Image, source_path: String) -> void:
 	SpriteImageSwap.adopt(self, img, source_path, false)
 
 
+# The window re-centred the avatar: carry the motion state that lives in world
+# space (the top_level dragger, the wiggle chain) along by the same amount, so
+# the move is rigid and is never read as motion when the avatar resumes.
+func translate_world(offset: Vector2) -> void:
+	dragger.global_position += offset
+	_wiggleRuntime.translate_world(offset)
+
+
 func _process(delta):
-	# While the window is being resized, freeze the avatar entirely: don't
-	# advance wobble/animation/drag, since the viewport size and origin position
-	# are mid-flight and feeding partial deltas into physics produces visible
-	# glitches and stretches. main.gd flips Global.main.resize_active to true
-	# when size changes and back to false (with a one-shot drag-snap) when it
-	# stabilizes.
+	# The avatar keeps animating while the window is resized. ViewportController
+	# carries the world-space state along with each re-centre (translate_world), so
+	# the move never reads as motion; the cap keeps the uneven frames of a live
+	# resize from kicking the springs.
 	if Global.main != null and Global.main.resize_active:
-		return
+		delta = minf(delta, MotionTiming.RESIZE_MAX_STEP)
 	# Edit-mode motion pause: hold this layer at its authored rest pose (see
 	# sprite_rest_pose.gd) instead of advancing anything. Re-applied every frame, so
 	# a layer moved while paused still shows its true rest position. `tick` does not

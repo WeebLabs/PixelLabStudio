@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "window_live_resize_init"
+compatibility_minimum = "4.4"
+reloadable = false
+
+[libraries]
+macos.single = "bin/macos/libwindowliveresize.macos.universal.dylib"
+windows.x86_64.single = "bin/windows/libwindowliveresize.windows.x86_64.dll"

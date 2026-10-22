@@ -76,6 +76,12 @@ func _test_viewport_zoom_contract(t) -> void:
 	t.assert_equal(ViewportCoordinator.next_zoom_percent(400, 1), 400, "viewport zoom respects the maximum")
 	t.assert_equal(ViewportCoordinator.next_zoom_percent(10, -1), 10, "viewport zoom respects the minimum")
 	t.assert_equal(ViewportCoordinator.next_zoom_percent(100, 0), 100, "zero direction leaves viewport zoom unchanged")
+	var settle: int = ViewportCoordinator.RESIZE_SETTLE_MSEC
+	t.assert_false(ViewportCoordinator.resize_settled(1000 + settle - 1, 1000), "a resize lasts until the size has been still long enough")
+	t.assert_true(ViewportCoordinator.resize_settled(1000 + settle, 1000), "a resize ends once the size has held still")
+	var viewport_source := FileAccess.get_file_as_string(_source_root().path_join("main_scenes/controllers/viewport_controller.gd"))
+	t.assert_true(viewport_source.contains('ClassDB.class_exists("WindowLiveResize")'), "the live-resize hook is looked up by name, so builds without it still load")
+	t.assert_false(viewport_source.contains("WindowLiveResize."), "the live-resize hook is never referenced as a class, which would not compile where it is absent")
 
 
 func _test_session_recovery_contract(t) -> void:
